@@ -1,0 +1,126 @@
+//! Rust implementation corresponding to:
+//! - Java class: `btools.mapaccess.NodesCache`
+//! - Java source: `https://github.com/abrensch/brouter/blob/master/brouter-mapaccess/src/main/java/btools/mapaccess/NodesCache.java`
+//! - Java class: `btools.mapaccess.StorageConfigHelper`
+//! - Java source: `https://github.com/abrensch/brouter/blob/master/brouter-mapaccess/src/main/java/btools/mapaccess/StorageConfigHelper.java`
+//!
+//! # Summary
+//! Manages open `.rd5` physical files in a segment directory, computes tile coordinates,
+//! and loads/decodes 1°×1° squares and MicroCache cells.
+
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{self, Error, ErrorKind};
+use std::path::{Path, PathBuf};
+
+use super::codec::tag_coder::TagValueValidator;
+use super::micro_cache::DecodedMicroCache;
+use super::osm_file::OsmFile;
+use super::physical_file::PhysicalFile;
+
+pub struct TileManager {
+    pub segment_dir: PathBuf,
+    pub files: HashMap<String, PhysicalFile>,
+}
+
+impl TileManager {
+    pub fn new<P: AsRef<Path>>(segment_dir: P) -> Self {
+        Self {
+            segment_dir: segment_dir.as_ref().to_path_buf(),
+            files: HashMap::new(),
+        }
+    }
+
+    /// Computes the 5°×5° filename base (e.g., "W5_N50") from microdegree coordinates.
+    pub fn get_segment_filename_base(ilon: i32, ilat: i32) -> String {
+        let lon_degree = ilon / 1_000_000;
+        let lat_degree = ilat / 1_000_000;
+
+        let lon_mod5 = lon_degree % 5;
+        let lat_mod5 = lat_degree % 5;
+
+        let lon = lon_degree - 180 - lon_mod5;
+        let lat = lat_degree - 90 - lat_mod5;
+
+        let slon = if lon < 0 {
+            format!("W{}", -lon)
+        } else {
+            format!("E{}", lon)
+        };
+        let slat = if lat < 0 {
+            format!("S{}", -lat)
+        } else {
+            format!("N{}", lat)
+        };
+
+        format!("{}_{}", slon, slat)
+    }
+
+    /// Opens or retrieves an existing PhysicalFile for the given tile name (e.g., "W5_N50").
+    pub fn get_physical_file(&mut self, filename_base: &str) -> io::Result<&mut PhysicalFile> {
+        if !self.files.contains_key(filename_base) {
+            let path = self.segment_dir.join(format!("{}.rd5", filename_base));
+            if !path.exists() {
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    format!("RD5 segment file not found: {:?}", path),
+                ));
+            }
+            let pf = PhysicalFile::open(&path)?;
+            self.files.insert(filename_base.to_string(), pf);
+        }
+
+        Ok(self.files.get_mut(filename_base).unwrap())
+    }
+
+    /// Loads the `OsmFile` for a specific 1°×1° square.
+    pub fn load_osm_file(
+        &mut self,
+        lon_degree: i32,
+        lat_degree: i32,
+    ) -> io::Result<(OsmFile, File)> {
+        let ilon = lon_degree * 1_000_000;
+        let ilat = lat_degree * 1_000_000;
+        let filename_base = Self::get_segment_filename_base(ilon, ilat);
+        let pf = self.get_physical_file(&filename_base)?;
+
+        let osmf = OsmFile::new(pf, lon_degree, lat_degree)?;
+        let file_clone = pf.file.try_clone()?;
+        Ok((osmf, file_clone))
+    }
+
+    /// Decodes all microcaches in a 1°×1° square.
+    pub fn decode_all_in_square(
+        &mut self,
+        lon_degree: i32,
+        lat_degree: i32,
+        way_validator: Option<&dyn TagValueValidator>,
+    ) -> io::Result<Vec<DecodedMicroCache>> {
+        let (osmf, mut file) = self.load_osm_file(lon_degree, lat_degree)?;
+        if !osmf.has_data {
+            return Ok(Vec::new());
+        }
+
+        let divisor = osmf.divisor;
+        let ncaches = (divisor * divisor) as usize;
+        let mut results = Vec::with_capacity(ncaches);
+
+        for sub_idx in 0..ncaches {
+            let bytes = osmf.read_cell_bytes(&mut file, sub_idx)?;
+            if bytes.is_empty() {
+                continue;
+            }
+            let rel_lat = (sub_idx as i32) / divisor;
+            let rel_lon = (sub_idx as i32) % divisor;
+            let lon_idx = divisor * lon_degree + rel_lon;
+            let lat_idx = divisor * lat_degree + rel_lat;
+
+            let mc = DecodedMicroCache::decode(bytes, lon_idx, lat_idx, divisor, way_validator)?;
+            if !mc.nodes.is_empty() {
+                results.push(mc);
+            }
+        }
+
+        Ok(results)
+    }
+}
