@@ -73,6 +73,18 @@ impl TileManager {
         Ok(self.files.get_mut(filename_base).unwrap())
     }
 
+    /// Returns the elevation type (1 = 1-arcsec, 3 = 3-arcsec) for the given 1°×1° square.
+    pub fn get_elevation_type(&mut self, lon_degree: i32, lat_degree: i32) -> u8 {
+        let ilon = lon_degree * 1_000_000;
+        let ilat = lat_degree * 1_000_000;
+        let filename_base = Self::get_segment_filename_base(ilon, ilat);
+        if let Ok(pf) = self.get_physical_file(&filename_base) {
+            pf.elevation_type
+        } else {
+            3
+        }
+    }
+
     /// Loads the `OsmFile` for a specific 1°×1° square.
     pub fn load_osm_file(
         &mut self,

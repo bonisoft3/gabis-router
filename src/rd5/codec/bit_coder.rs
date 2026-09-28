@@ -94,6 +94,163 @@ pub struct BitCoderContext<'a> {
     pub b: i32,
 }
 
+/// Bit-level stream reader over an immutable byte slice (zero allocations).
+pub struct BitReader<'a> {
+    pub ab: &'a [u8],
+    idx_max: isize,
+    idx: isize,
+    pub bits: i32,
+    pub b: i32,
+}
+
+impl<'a> BitReader<'a> {
+    pub fn new(ab: &'a [u8]) -> Self {
+        let len = ab.len() as isize;
+        Self {
+            ab,
+            idx_max: len - 1,
+            idx: -1,
+            bits: 0,
+            b: 0,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.idx = -1;
+        self.bits = 0;
+        self.b = 0;
+    }
+
+    pub fn decode_bit(&mut self) -> bool {
+        if self.bits == 0 {
+            self.bits = 8;
+            self.idx += 1;
+            self.b = if self.idx < self.ab.len() as isize {
+                self.ab[self.idx as usize] as i32 & 0xff
+            } else {
+                0
+            };
+        }
+        let value = (self.b & 1) != 0;
+        self.b = ((self.b as u32) >> 1) as i32;
+        self.bits -= 1;
+        value
+    }
+
+    pub fn decode_bounded(&mut self, max: i32) -> i32 {
+        let mut value = 0i32;
+        let mut im = 1i32;
+        while (value | im) <= max {
+            if self.bits == 0 {
+                self.bits = 8;
+                self.idx += 1;
+                self.b = if self.idx < self.ab.len() as isize {
+                    self.ab[self.idx as usize] as i32 & 0xff
+                } else {
+                    0
+                };
+            }
+            if (self.b & 1) != 0 {
+                value |= im;
+            }
+            self.b = ((self.b as u32) >> 1) as i32;
+            self.bits -= 1;
+            im <<= 1;
+        }
+        value
+    }
+
+    pub fn decode_var_bits2(&mut self) -> i32 {
+        let mut range = 0i32;
+        while !self.decode_bit() {
+            range = 2 * range + 1;
+        }
+        range + self.decode_bounded(range)
+    }
+
+    pub fn decode_var_bits(&mut self) -> i32 {
+        self.fill_buffer();
+        let tables = get_tables();
+        let b12 = (self.b & 0xfff) as usize;
+        let len = tables.vl_length[b12];
+
+        if len <= 12 {
+            self.b = ((self.b as u32) >> len) as i32;
+            self.bits -= len;
+            return tables.vl_values[b12];
+        }
+
+        if len <= 23 {
+            let len2 = len >> 1;
+            self.b = ((self.b as u32) >> (len2 + 1)) as i32;
+            let mut mask = (0xffff_ffffu32 >> (32 - len2)) as i32;
+            mask += self.b & mask;
+            self.b = ((self.b as u32) >> len2) as i32;
+            self.bits -= len;
+            return mask;
+        }
+
+        if (self.b & 0x00ff_ffff) != 0 {
+            self.b = ((self.b as u32) >> 12) as i32;
+            let len3 = 1 + (tables.vl_length[(self.b & 0xfff) as usize] >> 1);
+            self.b = ((self.b as u32) >> len3) as i32;
+            let len2 = 11 + len3;
+            self.bits -= len2 + 1;
+            self.fill_buffer();
+            let mut mask = (0xffff_ffffu32 >> (32 - len2)) as i32;
+            mask += self.b & mask;
+            self.b = ((self.b as u32) >> len2) as i32;
+            self.bits -= len2;
+            return mask;
+        }
+
+        self.decode_var_bits2()
+    }
+
+    pub fn decode_bits(&mut self, count: i32) -> i32 {
+        if count == 0 {
+            return 0;
+        }
+        self.fill_buffer();
+        let mask = (0xffff_ffffu32 >> (32 - count)) as i32;
+        let value = self.b & mask;
+        self.b = ((self.b as u32) >> count) as i32;
+        self.bits -= count;
+        value
+    }
+
+    pub fn decode_bits_reverse(&mut self, mut count: i32) -> i32 {
+        self.fill_buffer();
+        let tables = get_tables();
+        let mut value = 0i32;
+
+        while count > 8 {
+            value = (value << 8) | (tables.reverse_byte[(self.b & 0xff) as usize] as i32);
+            self.b = ((self.b as u32) >> 8) as i32;
+            count -= 8;
+            self.bits -= 8;
+            self.fill_buffer();
+        }
+
+        let rev = (tables.reverse_byte[(self.b & 0xff) as usize] as i32) >> (8 - count);
+        value = (value << count) | rev;
+        self.bits -= count;
+        self.b = ((self.b as u32) >> count) as i32;
+        value
+    }
+
+    fn fill_buffer(&mut self) {
+        while self.bits < 24 {
+            self.idx += 1;
+            if self.idx <= self.idx_max {
+                let byte_val = self.ab[self.idx as usize] as i32 & 0xff;
+                self.b |= byte_val << self.bits;
+            }
+            self.bits += 8;
+        }
+    }
+}
+
 impl<'a> BitCoderContext<'a> {
     pub fn new(ab: &'a mut [u8]) -> Self {
         let len = ab.len() as isize;

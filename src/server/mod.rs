@@ -147,10 +147,12 @@ async fn handle_brouter(
     let start = coords[0];
     let end = coords[coords.len() - 1];
 
-    let min_lon = start.0.min(end.0);
-    let max_lon = start.0.max(end.0);
-    let min_lat = start.1.min(end.1);
-    let max_lat = start.1.max(end.1);
+    let margin_lon = 0.15;
+    let margin_lat = 0.10;
+    let min_lon = (start.0.min(end.0) - margin_lon).clamp(-180.0, 180.0);
+    let max_lon = (start.0.max(end.0) + margin_lon).clamp(-180.0, 180.0);
+    let min_lat = (start.1.min(end.1) - margin_lat).clamp(-90.0, 90.0);
+    let max_lat = (start.1.max(end.1) + margin_lat).clamp(-90.0, 90.0);
 
     let mut tile_mgr = TileManager::new(&state.segments_dir);
     let mut graph = RoutingGraph::with_capacities(100_000, 250_000);

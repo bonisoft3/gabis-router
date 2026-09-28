@@ -120,8 +120,8 @@ impl WaypointMatcher {
                 let wayfraction = -s2 / (d * d);
                 let xm = x2 - wayfraction * dx;
                 let ym = y2 - wayfraction * dy;
-                mwp.crosspoint_lon = (xm / dlon2m).round() as i32 + wp_lon;
-                mwp.crosspoint_lat = (ym / dlat2m).round() as i32 + wp_lat;
+                mwp.crosspoint_lon = (xm / dlon2m + wp_lon as f64) as i32;
+                mwp.crosspoint_lat = (ym / dlat2m + wp_lat as f64) as i32;
             } else if s1 > s2 {
                 mwp.crosspoint_lon = lon2;
                 mwp.crosspoint_lat = lat2;

@@ -152,7 +152,13 @@ fn test_real_rd5_graph_loading_and_snapping() {
     let query_lon = sample_lon_deg + 0.0001;
     let query_lat = sample_lat_deg + 0.0001;
 
-    let snap_res = graph.snap_waypoint("query_point", query_lon, query_lat, 200.0);
+    let lookups = rsrouter::dsl::lookups::LookupData::load_from_file("profiles/lookups.dat")
+        .expect("Failed to load lookups");
+    let profile = rsrouter::dsl::parser::Profile::load_from_file("profiles/trekking.brf", &lookups)
+        .expect("Failed to load trekking profile");
+    let mut evaluator = rsrouter::dsl::evaluator::ProfileEvaluator::new(&profile, &lookups.way, &lookups.node);
+
+    let snap_res = graph.snap_waypoint("query_point", query_lon, query_lat, 200.0, &mut evaluator, &lookups);
     assert!(snap_res.is_some(), "Should find a snap candidate near real graph node");
 
     let matched = snap_res.unwrap();
@@ -165,4 +171,53 @@ fn test_real_rd5_graph_loading_and_snapping() {
         matched.radius
     );
     assert!(matched.radius <= 200.0);
+
+    // Verify profile access filtering:
+    // A profile with costfactor >= 9999 should reject all edges and return None.
+    let forbidden_profile = rsrouter::dsl::parser::Profile::parse(
+        "forbidden",
+        "---context:global\n---context:way\nassign costfactor = 9999.0\n---context:node\n",
+        &lookups,
+    ).expect("Failed to parse forbidden profile");
+    let mut forbidden_evaluator = rsrouter::dsl::evaluator::ProfileEvaluator::new(
+        &forbidden_profile,
+        &lookups.way,
+        &lookups.node,
+    );
+    let snap_forbidden = graph.snap_waypoint(
+        "query_point",
+        query_lon,
+        query_lat,
+        200.0,
+        &mut forbidden_evaluator,
+        &lookups,
+    );
+    assert!(
+        snap_forbidden.is_none(),
+        "Forbidden road (costfactor >= 9999) must not be snapped to"
+    );
+
+    // An allowed profile with costfactor < 9999 should successfully snap.
+    let allowed_profile = rsrouter::dsl::parser::Profile::parse(
+        "allowed",
+        "---context:global\n---context:way\nassign costfactor = 1.5\n---context:node\n",
+        &lookups,
+    ).expect("Failed to parse allowed profile");
+    let mut allowed_evaluator = rsrouter::dsl::evaluator::ProfileEvaluator::new(
+        &allowed_profile,
+        &lookups.way,
+        &lookups.node,
+    );
+    let snap_allowed = graph.snap_waypoint(
+        "query_point",
+        query_lon,
+        query_lat,
+        200.0,
+        &mut allowed_evaluator,
+        &lookups,
+    );
+    assert!(
+        snap_allowed.is_some(),
+        "Allowed road (costfactor < 9999) should be snapped to"
+    );
 }

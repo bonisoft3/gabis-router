@@ -15,7 +15,7 @@ use super::lookups::ContextLookups;
 use super::parser::Profile;
 
 /// Computed cost metrics for an OSM way segment.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct WayCostResult {
     pub costfactor: f32,
     pub turncost: f32,
@@ -37,6 +37,52 @@ pub struct WayCostResult {
     pub downhillmaxslope: f32,
     pub uphillmaxslopecost: f32,
     pub downhillmaxslopecost: f32,
+    // Precomputed derived fields
+    pub uphillcutoff_i: i32,
+    pub downhillcutoff_i: i32,
+    pub uphillmaxslope_i: i32,
+    pub downhillmaxslope_i: i32,
+    pub downhillcostdiv: i32,
+    pub downhillmaxslopecostdiv: i32,
+    pub uphillcostdiv: i32,
+    pub uphillmaxslopecostdiv: i32,
+}
+
+impl WayCostResult {
+    pub fn init_derived(&mut self) {
+        self.uphillcutoff_i = (self.uphillcutoff * 10000.0) as i32;
+        self.downhillcutoff_i = (self.downhillcutoff * 10000.0) as i32;
+        self.uphillmaxslope_i = (self.uphillmaxslope * 10000.0) as i32;
+        self.downhillmaxslope_i = (self.downhillmaxslope * 10000.0) as i32;
+
+        let down_cost = self.downhillcost as i32;
+        self.downhillcostdiv = if down_cost > 0 {
+            1_000_000 / down_cost
+        } else {
+            0
+        };
+
+        let down_max_cost = self.downhillmaxslopecost as i32;
+        self.downhillmaxslopecostdiv = if down_max_cost > 0 {
+            1_000_000 / down_max_cost
+        } else {
+            self.downhillcostdiv
+        };
+
+        let up_cost = self.uphillcost as i32;
+        self.uphillcostdiv = if up_cost > 0 {
+            1_000_000 / up_cost
+        } else {
+            0
+        };
+
+        let up_max_cost = self.uphillmaxslopecost as i32;
+        self.uphillmaxslopecostdiv = if up_max_cost > 0 {
+            1_000_000 / up_max_cost
+        } else {
+            self.uphillcostdiv
+        };
+    }
 }
 
 /// Computed cost penalty for a node.
@@ -124,7 +170,7 @@ impl<'a> ProfileEvaluator<'a> {
         let uphillmaxslopecost = get_var(18);
         let downhillmaxslopecost = get_var(19);
 
-        WayCostResult {
+        let mut res = WayCostResult {
             costfactor: cf,
             turncost,
             uphillcostfactor: if cfup == 0.0 { cf } else { cfup },
@@ -145,7 +191,10 @@ impl<'a> ProfileEvaluator<'a> {
             downhillmaxslope,
             uphillmaxslopecost,
             downhillmaxslopecost,
-        }
+            ..Default::default()
+        };
+        res.init_derived();
+        res
     }
 
     /// Evaluates a node using its dense lookup array.

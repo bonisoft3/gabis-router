@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
-use crate::rd5::codec::bit_coder::BitCoderContext;
+use crate::rd5::codec::bit_coder::BitReader;
 
 #[derive(Debug, Clone)]
 pub struct LookupValue {
@@ -119,8 +119,7 @@ impl ContextLookups {
             return;
         }
 
-        let mut buf = bitmap.to_vec();
-        let mut ctx = BitCoderContext::new(&mut buf);
+        let mut ctx = BitReader::new(bitmap);
 
         // ld[0] is hardwired for reversedirection / nodeaccessgranted
         ld[0] = if is_reverse { 2 } else { 0 };

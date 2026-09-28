@@ -8,6 +8,8 @@
 //! Physics-based kinematics for speed, power, rolling resistance, aerodynamic drag,
 //! and travel time computation using Newton-Raphson cubic equation solving.
 
+use crate::dsl::parser::Profile;
+
 pub const GRAVITY: f64 = 9.81;
 
 /// Configuration parameters for bicycle or pedestrian kinematics.
@@ -35,6 +37,18 @@ impl Default for KinematicConfig {
 }
 
 impl KinematicConfig {
+    pub fn from_profile(profile: &Profile) -> Self {
+        let valid_for_foot = profile.get_global_var("validForFoot", 0.0) != 0.0;
+        let default_max_speed = if valid_for_foot { 6.0 } else { 45.0 };
+        Self {
+            total_mass: profile.get_global_var("totalMass", 90.0) as f64,
+            max_speed: (profile.get_global_var("maxSpeed", default_max_speed) as f64) / 3.6,
+            s_c_x: profile.get_global_var("S_C_x", 0.5 * 0.45) as f64,
+            c_r: profile.get_global_var("C_r", 0.01) as f64,
+            biker_power: profile.get_global_var("bikerPower", 100.0) as f64,
+            is_foot_mode: valid_for_foot,
+        }
+    }
     /// Solves the cubic power-velocity equation: `a * v^3 + c * v = d`
     /// using the Newton-Raphson method matching BRouter's `solveCubic`.
     pub fn solve_cubic(a: f64, c: f64, d: f64) -> f64 {
@@ -78,7 +92,7 @@ impl KinematicConfig {
             v.min(max_speed)
         } else {
             let v = Self::solve_cubic(self.s_c_x, f_roll, self.biker_power);
-            v.min(max_speed).max(1.0)
+            v.min(max_speed)
         };
 
         // Mechanical energy (only positive energy is counted; braking does not add negative work)

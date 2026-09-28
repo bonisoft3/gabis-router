@@ -10,25 +10,78 @@
 
 use std::collections::HashMap;
 
+use crate::dsl::evaluator::ProfileEvaluator;
+use crate::dsl::lookups::LookupData;
 use crate::rd5::micro_cache::{DecodedGeometryPoint, DecodedMicroCache, DecodedTurnRestriction};
 use super::matcher::{MatchedWaypoint, WaypointMatcher};
 use super::node::{make_node_id, OsmNode};
 use super::spatial;
 
+pub const NO_DESC: u32 = u32::MAX;
+
 /// Directed edge in the routing graph with polyline geometry.
 #[derive(Debug, Clone)]
 pub struct GraphEdge {
-    pub source_id: u64,
     pub target_id: u64,
     pub target_lon: i32,
     pub target_lat: i32,
+    pub desc_id: u32,
+    pub target_selev: i16,
     pub is_reverse: bool,
-    pub description: Option<Vec<u8>>,
     pub geometry: Vec<DecodedGeometryPoint>,
-    pub distance_meters: f64,
 }
 
 impl GraphEdge {
+    /// Returns the raw description bytes from the graph if present.
+    #[inline]
+    pub fn description<'a>(&self, graph: &'a RoutingGraph) -> Option<&'a [u8]> {
+        if self.desc_id == NO_DESC {
+            None
+        } else {
+            graph.descriptions.get(self.desc_id as usize).map(|v| v.as_slice())
+        }
+    }
+
+    /// Fills an existing polyline buffer (source, intermediates, target) without allocating.
+    pub fn fill_polyline(
+        &self,
+        pts: &mut Vec<(i32, i32, i16)>,
+        s_lon: i32,
+        s_lat: i32,
+        s_elev: i16,
+        t_elev: i16,
+    ) {
+        pts.clear();
+        pts.reserve(self.geometry.len() + 2);
+        pts.push((s_lon, s_lat, s_elev));
+
+        if !self.is_reverse {
+            let mut olon = s_lon;
+            let mut olat = s_lat;
+            let mut oelev = s_elev;
+            for gp in &self.geometry {
+                olon += gp.dlon;
+                olat += gp.dlat;
+                oelev = oelev.wrapping_add(gp.delev as i16);
+                pts.push((olon, olat, oelev));
+            }
+        } else {
+            let mut olon = self.target_lon;
+            let mut olat = self.target_lat;
+            let mut oelev = t_elev;
+            let start_rev = pts.len();
+            for gp in &self.geometry {
+                olon += gp.dlon;
+                olat += gp.dlat;
+                oelev = oelev.wrapping_add(gp.delev as i16);
+                pts.push((olon, olat, oelev));
+            }
+            pts[start_rev..].reverse();
+        }
+
+        pts.push((self.target_lon, self.target_lat, t_elev));
+    }
+
     /// Expands the full polyline of coordinates (source, intermediates, target)
     /// in forward traversal order (source to target).
     pub fn polyline(
@@ -39,74 +92,8 @@ impl GraphEdge {
         t_elev: i16,
     ) -> Vec<(i32, i32, i16)> {
         let mut pts = Vec::with_capacity(self.geometry.len() + 2);
-        pts.push((s_lon, s_lat, s_elev));
-
-        if !self.is_reverse {
-            let mut olon = s_lon;
-            let mut olat = s_lat;
-            let mut oelev = s_elev;
-            for gp in &self.geometry {
-                olon += gp.dlon;
-                olat += gp.dlat;
-                oelev = oelev.wrapping_add(gp.delev as i16);
-                pts.push((olon, olat, oelev));
-            }
-        } else {
-            let mut olon = self.target_lon;
-            let mut olat = self.target_lat;
-            let mut oelev = t_elev;
-            let mut rev_pts = Vec::with_capacity(self.geometry.len());
-            for gp in &self.geometry {
-                olon += gp.dlon;
-                olat += gp.dlat;
-                oelev = oelev.wrapping_add(gp.delev as i16);
-                rev_pts.push((olon, olat, oelev));
-            }
-            rev_pts.reverse();
-            pts.extend(rev_pts);
-        }
-
-        pts.push((self.target_lon, self.target_lat, t_elev));
+        self.fill_polyline(&mut pts, s_lon, s_lat, s_elev, t_elev);
         pts
-    }
-
-    /// Expands the full polyline of coordinates into a reusable buffer.
-    pub fn polyline_into(
-        &self,
-        s_lon: i32,
-        s_lat: i32,
-        s_elev: i16,
-        t_elev: i16,
-        pts: &mut Vec<(i32, i32, i16)>,
-    ) {
-        pts.clear();
-        pts.push((s_lon, s_lat, s_elev));
-
-        if !self.is_reverse {
-            let mut olon = s_lon;
-            let mut olat = s_lat;
-            let mut oelev = s_elev;
-            for gp in &self.geometry {
-                olon += gp.dlon;
-                olat += gp.dlat;
-                oelev = oelev.wrapping_add(gp.delev as i16);
-                pts.push((olon, olat, oelev));
-            }
-        } else {
-            let mut olon = self.target_lon;
-            let mut olat = self.target_lat;
-            let mut oelev = t_elev;
-            let start_idx = pts.len();
-            for gp in &self.geometry {
-                olon += gp.dlon;
-                olat += gp.dlat;
-                oelev = oelev.wrapping_add(gp.delev as i16);
-                pts.push((olon, olat, oelev));
-            }
-            pts[start_idx..].reverse();
-        }
-
-        pts.push((self.target_lon, self.target_lat, t_elev));
     }
 
     /// Calculates the geodesic length in meters along this edge's full polyline.
@@ -131,6 +118,9 @@ impl GraphEdge {
 pub struct RoutingGraph {
     pub nodes: HashMap<u64, OsmNode>,
     pub edges: HashMap<u64, Vec<GraphEdge>>,
+    pub elevation_types: HashMap<(i32, i32), u8>,
+    pub descriptions: Vec<Vec<u8>>,
+    pub desc_to_id: HashMap<Vec<u8>, u32>,
 }
 
 impl RoutingGraph {
@@ -138,6 +128,9 @@ impl RoutingGraph {
         Self {
             nodes: HashMap::new(),
             edges: HashMap::new(),
+            elevation_types: HashMap::new(),
+            descriptions: Vec::new(),
+            desc_to_id: HashMap::new(),
         }
     }
 
@@ -145,6 +138,50 @@ impl RoutingGraph {
         Self {
             nodes: HashMap::with_capacity(node_cap),
             edges: HashMap::with_capacity(edge_cap),
+            elevation_types: HashMap::new(),
+            descriptions: Vec::new(),
+            desc_to_id: HashMap::new(),
+        }
+    }
+
+    pub fn get_or_intern_description(&mut self, desc: Option<&[u8]>) -> u32 {
+        match desc {
+            None => NO_DESC,
+            Some(d) => {
+                if let Some(&id) = self.desc_to_id.get(d) {
+                    id
+                } else {
+                    let id = self.descriptions.len() as u32;
+                    let v = d.to_vec();
+                    self.desc_to_id.insert(v.clone(), id);
+                    self.descriptions.push(v);
+                    id
+                }
+            }
+        }
+    }
+
+
+    fn insert_or_update_edge(&mut self, s_id: u64, edge: GraphEdge) {
+        let edge_list = self.edges.entry(s_id).or_default();
+        if let Some(existing) = edge_list.iter_mut().find(|e| {
+            e.target_id == edge.target_id
+                && e.is_reverse == edge.is_reverse
+                && (e.desc_id == edge.desc_id
+                    || e.desc_id == NO_DESC
+                    || edge.desc_id == NO_DESC)
+        }) {
+            if existing.geometry.is_empty() && !edge.geometry.is_empty() {
+                existing.geometry = edge.geometry;
+            }
+            if existing.desc_id == NO_DESC && edge.desc_id != NO_DESC {
+                existing.desc_id = edge.desc_id;
+            }
+            if existing.target_selev == i16::MIN && edge.target_selev != i16::MIN {
+                existing.target_selev = edge.target_selev;
+            }
+        } else {
+            edge_list.push(edge);
         }
     }
 
@@ -170,36 +207,33 @@ impl RoutingGraph {
 
             for link in node.links {
                 let t_id = make_node_id(link.target_lon, link.target_lat);
+                let t_selev = self.nodes.get(&t_id).map(|n| n.selev).unwrap_or(i16::MIN);
+
                 self.nodes.entry(t_id).or_insert_with(|| OsmNode::new(link.target_lon, link.target_lat));
 
-                let desc_fwd = link.way_tags.as_ref().map(|t| t.data.clone());
-                let desc_rev = desc_fwd.clone();
-
-                let dist_m = spatial::distance(s_lon, s_lat, link.target_lon, link.target_lat);
+                let desc_id = self.get_or_intern_description(link.way_tags.as_ref().map(|t| t.data.as_slice()));
 
                 let edge_fwd = GraphEdge {
-                    source_id: s_id,
                     target_id: t_id,
                     target_lon: link.target_lon,
                     target_lat: link.target_lat,
                     is_reverse: link.is_reverse,
-                    description: desc_fwd,
+                    target_selev: t_selev,
+                    desc_id,
                     geometry: link.geometry.clone(),
-                    distance_meters: dist_m,
                 };
-                self.edges.entry(s_id).or_default().push(edge_fwd);
+                self.insert_or_update_edge(s_id, edge_fwd);
 
                 let edge_rev = GraphEdge {
-                    source_id: t_id,
                     target_id: s_id,
                     target_lon: s_lon,
                     target_lat: s_lat,
                     is_reverse: !link.is_reverse,
-                    description: desc_rev,
+                    target_selev: s_elev,
+                    desc_id,
                     geometry: link.geometry,
-                    distance_meters: dist_m,
                 };
-                self.edges.entry(t_id).or_default().push(edge_rev);
+                self.insert_or_update_edge(t_id, edge_rev);
             }
         }
     }
@@ -216,13 +250,15 @@ impl RoutingGraph {
     }
 
     /// Snaps geographic coordinates `(lon_deg, lat_deg)` to the nearest road edge
-    /// within `max_distance_meters`.
+    /// within `max_distance_meters` that is accessible according to `evaluator`.
     pub fn snap_waypoint(
         &self,
         name: &str,
         lon_deg: f64,
         lat_deg: f64,
         max_distance_meters: f64,
+        evaluator: &mut ProfileEvaluator,
+        lookups: &LookupData,
     ) -> Option<MatchedWaypoint> {
         let wp_lon = spatial::lon_to_ilon(lon_deg);
         let wp_lat = spatial::lat_to_ilat(lat_deg);
@@ -240,27 +276,47 @@ impl RoutingGraph {
         let min_lat = wp_lat - max_dlat;
         let max_lat = wp_lat + max_dlat;
 
+        let mut way_lookup_buf = vec![0i32; lookups.way.names.len()];
+        let mut poly = Vec::with_capacity(32);
+
         for (s_id, edge_vec) in &self.edges {
+            let (s_ilon, s_ilat) = super::node::unpack_node_id(*s_id);
+
+            // Check if source node is reasonably near the bounding box
+            if s_ilon < min_lon - 50000 || s_ilon > max_lon + 50000 {
+                continue;
+            }
+            if s_ilat < min_lat - 50000 || s_ilat > max_lat + 50000 {
+                continue;
+            }
+
             let Some(source_node) = self.nodes.get(s_id) else {
                 continue;
             };
 
-            // Check if source node is reasonably near the bounding box
-            if source_node.ilon < min_lon - 50000 || source_node.ilon > max_lon + 50000 {
-                continue;
-            }
-            if source_node.ilat < min_lat - 50000 || source_node.ilat > max_lat + 50000 {
-                continue;
-            }
-
             for edge in edge_vec {
-                let t_elev = self
-                    .nodes
-                    .get(&edge.target_id)
-                    .map(|n| n.selev)
-                    .unwrap_or(source_node.selev);
+                let Some(desc_bytes) = edge.description(self) else {
+                    continue;
+                };
+                lookups
+                    .way
+                    .decode_into(&mut way_lookup_buf, edge.is_reverse, desc_bytes);
+                let way_cost = evaluator.evaluate_way(&way_lookup_buf);
+                if way_cost.costfactor >= 9999.0 {
+                    continue;
+                }
 
-                let poly = edge.polyline(
+                let t_elev = if edge.target_selev != i16::MIN {
+                    edge.target_selev
+                } else {
+                    self.nodes
+                        .get(&edge.target_id)
+                        .map(|n| n.selev)
+                        .unwrap_or(source_node.selev)
+                };
+
+                edge.fill_polyline(
+                    &mut poly,
                     source_node.ilon,
                     source_node.ilat,
                     source_node.selev,
@@ -311,6 +367,19 @@ impl RoutingGraph {
         }
     }
 
+    /// Resolves target node elevation for all edges.
+    pub fn resolve_edge_target_elevations(&mut self) {
+        for edges in self.edges.values_mut() {
+            for edge in edges.iter_mut() {
+                if edge.target_selev == i16::MIN {
+                    if let Some(target_node) = self.nodes.get(&edge.target_id) {
+                        edge.target_selev = target_node.selev;
+                    }
+                }
+            }
+        }
+    }
+
     /// Loads all microcaches in a bounding box of 1°x1° squares into the graph.
     pub fn load_bounding_box(
         &mut self,
@@ -328,6 +397,8 @@ impl RoutingGraph {
         let mut loaded = 0;
         for lon_deg in min_lon_deg..=max_lon_deg {
             for lat_deg in min_lat_deg..=max_lat_deg {
+                let elev_type = tile_mgr.get_elevation_type(lon_deg, lat_deg);
+                self.elevation_types.insert((lon_deg, lat_deg), elev_type);
                 if let Ok(caches) = tile_mgr.decode_all_in_square(lon_deg, lat_deg, None) {
                     for cache in caches {
                         self.add_micro_cache(cache);
@@ -336,7 +407,25 @@ impl RoutingGraph {
                 }
             }
         }
+        self.resolve_edge_target_elevations();
         Ok(loaded)
+    }
+
+    /// Returns the elevation type for given microdegree coordinates (1 = 1-arcsec, 3 = 3-arcsec).
+    pub fn get_elevation_type(&self, ilon: i32, ilat: i32) -> u8 {
+        let lon_deg = ilon / 1_000_000;
+        let lat_deg = ilat / 1_000_000;
+        self.elevation_types.get(&(lon_deg, lat_deg)).copied().unwrap_or(3)
+    }
+
+    /// Returns the filtered ascend threshold matching BRouter:
+    /// -5.0 m for 1-arcsec tiles (elevationType == 1), -10.0 m for 3-arcsec tiles.
+    pub fn elevation_filter(&self, ilon: i32, ilat: i32) -> f64 {
+        if self.get_elevation_type(ilon, ilat) == 1 {
+            -5.0
+        } else {
+            -10.0
+        }
     }
 }
 

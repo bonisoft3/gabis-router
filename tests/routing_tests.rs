@@ -58,7 +58,7 @@ fn test_elevation_hysteresis_and_cutoffs() {
     let elev_cfg = ElevationConfig::default();
     let kinematic_cfg = KinematicConfig::default();
 
-    let way_cost = WayCostResult {
+    let mut way_cost = WayCostResult {
         costfactor: 1.25,
         turncost: 90.0,
         uphillcostfactor: 1.25,
@@ -79,7 +79,9 @@ fn test_elevation_hysteresis_and_cutoffs() {
         downhillmaxslope: 15.0,
         uphillmaxslopecost: 0.0,
         downhillmaxslopecost: 0.0,
+        ..Default::default()
     };
+    way_cost.init_derived();
 
     // Sub-cutoff slope: 100m distance with 1.0m elevation rise = 1.0% slope (< 1.5% cutoff)
     // Should NOT incur any elevation penalty
@@ -246,10 +248,11 @@ fn test_clapham_hackney_fastbike() {
     let geojson = route.to_geojson("clapham_hackney_fastbike");
     let _ = fs::write("target/routes/clapham_hackney_fastbike.geojson", &geojson);
 
-    // Check parity within reasonable tolerance
+    // Enforce exact parity against upstream BRouter baseline
     let dist_diff = (route.total_distance_m - 13200.0).abs();
-    println!("Distance delta: {:.1} m ({:.2}%)", dist_diff, dist_diff / 13200.0 * 100.0);
-    assert!(dist_diff / 13200.0 < 0.10, "Distance divergence > 10%");
+    assert!(dist_diff <= 1.0, "Distance divergence > 1m: got {}", route.total_distance_m);
+    assert_eq!(route.total_cost, 21851, "Cost divergence from BRouter baseline");
+    assert_eq!(route.points.len(), 922, "Point count divergence from BRouter baseline");
 }
 
 #[test]
@@ -299,9 +302,11 @@ fn test_clapham_hackney_lowtraffic() {
     let geojson = route.to_geojson("clapham_hackney_fastbike-lowtraffic");
     let _ = fs::write("target/routes/clapham_hackney_fastbike-lowtraffic.geojson", &geojson);
 
+    // Enforce exact parity against upstream BRouter baseline
     let dist_diff = (route.total_distance_m - 14291.0).abs();
-    println!("Distance delta: {:.1} m ({:.2}%)", dist_diff, dist_diff / 14291.0 * 100.0);
-    assert!(dist_diff / 14291.0 < 0.10, "Distance divergence > 10%");
+    assert!(dist_diff <= 1.0, "Distance divergence > 1m: got {}", route.total_distance_m);
+    assert_eq!(route.total_cost, 24745, "Cost divergence from BRouter baseline");
+    assert_eq!(route.points.len(), 919, "Point count divergence from BRouter baseline");
 }
 
 #[test]
@@ -351,7 +356,41 @@ fn test_clapham_hackney_verylowtraffic() {
     let geojson = route.to_geojson("clapham_hackney_fastbike-verylowtraffic");
     let _ = fs::write("target/routes/clapham_hackney_fastbike-verylowtraffic.geojson", &geojson);
 
+    // Enforce exact parity against upstream BRouter baseline
     let dist_diff = (route.total_distance_m - 14254.0).abs();
-    println!("Distance delta: {:.1} m ({:.2}%)", dist_diff, dist_diff / 14254.0 * 100.0);
-    assert!(dist_diff / 14254.0 < 0.10, "Distance divergence > 10%");
+    assert!(dist_diff <= 1.0, "Distance divergence > 1m: got {}", route.total_distance_m);
+    assert_eq!(route.total_cost, 25141, "Cost divergence from BRouter baseline");
+    assert_eq!(route.points.len(), 881, "Point count divergence from BRouter baseline");
 }
+
+#[test]
+fn test_profile_configs_initialization() {
+    let profile_content = r#"
+---context:global
+assign totalMass = 85.0
+assign maxSpeed = 36.0
+assign S_C_x = 0.21
+assign C_r = 0.008
+assign bikerPower = 150.0
+assign validForFoot = 0
+assign elevationpenaltybuffer = 4.0
+assign elevationmaxbuffer = 8.0
+assign elevationbufferreduce = 0.0001
+"#;
+    let lookups = LookupData::load_from_file("profiles/lookups.dat").expect("Failed to load lookups.dat");
+    let profile = Profile::parse("test_profile", profile_content, &lookups).expect("Profile parse failed");
+
+    let k_cfg = KinematicConfig::from_profile(&profile);
+    assert!((k_cfg.total_mass - 85.0).abs() < 1e-5);
+    assert!((k_cfg.max_speed - 10.0).abs() < 1e-5);
+    assert!((k_cfg.s_c_x - 0.21).abs() < 1e-5);
+    assert!((k_cfg.c_r - 0.008).abs() < 1e-5);
+    assert!((k_cfg.biker_power - 150.0).abs() < 1e-5);
+    assert!(!k_cfg.is_foot_mode);
+
+    let e_cfg = ElevationConfig::from_profile(&profile);
+    assert_eq!(e_cfg.penalty_buffer, 4_000_000);
+    assert_eq!(e_cfg.max_buffer, 8_000_000);
+    assert_eq!(e_cfg.buffer_reduce, 1);
+}
+

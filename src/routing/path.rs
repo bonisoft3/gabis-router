@@ -29,14 +29,24 @@ impl Default for ElevationConfig {
     }
 }
 
+impl ElevationConfig {
+    pub fn from_profile(profile: &crate::dsl::parser::Profile) -> Self {
+        Self {
+            penalty_buffer: (profile.get_global_var("elevationpenaltybuffer", 5.0) * 1_000_000.0) as i32,
+            max_buffer: (profile.get_global_var("elevationmaxbuffer", 10.0) * 1_000_000.0) as i32,
+            buffer_reduce: (profile.get_global_var("elevationbufferreduce", 0.0) * 10_000.0) as i32,
+        }
+    }
+}
+
 /// Dynamic path state carried across road segments along a search path.
 #[derive(Debug, Clone, Default)]
 pub struct PathState {
     pub ehbd: i32,              // downhill elevation hysteresis buffer in micrometers
     pub ehbu: i32,              // uphill elevation hysteresis buffer in micrometers
     pub elevation_buffer: f32,  // buffer for continuous incline estimation
-    pub total_time_s: f64,      // cumulative travel time in seconds
-    pub total_energy_j: f64,    // cumulative energy in Joules
+    pub total_time_s: f32,      // cumulative travel time in seconds
+    pub total_energy_j: f32,    // cumulative energy in Joules
 }
 
 /// Turn crossing cost configuration for junctions with `estimated_crossing_class`.
@@ -90,8 +100,8 @@ pub struct SectionCost {
     pub turn_cost: f64,
     pub elevation_cost: f64,
     pub effective_costfactor: f32,
-    pub time_seconds: f64,
-    pub energy_joules: f64,
+    pub time_seconds: f32,
+    pub energy_joules: f32,
 }
 
 pub struct StdPathCalculator;
@@ -132,40 +142,21 @@ impl StdPathCalculator {
         is_detail: bool,
     ) -> SectionCost {
         let turncost_base = way_cost.turncost;
-        let uphillcutoff = (way_cost.uphillcutoff * 10000.0) as i32;
-        let downhillcutoff = (way_cost.downhillcutoff * 10000.0) as i32;
-        let uphillmaxslope = (way_cost.uphillmaxslope * 10000.0) as i32;
-        let downhillmaxslope = (way_cost.downhillmaxslope * 10000.0) as i32;
+        let uphillcutoff = way_cost.uphillcutoff_i;
+        let downhillcutoff = way_cost.downhillcutoff_i;
+        let uphillmaxslope = way_cost.uphillmaxslope_i;
+        let downhillmaxslope = way_cost.downhillmaxslope_i;
 
         let cfup = way_cost.uphillcostfactor;
         let cfdown = way_cost.downhillcostfactor;
         let cf = way_cost.costfactor;
 
-        let downhillcostdiv = if way_cost.downhillcost > 0.0 {
-            (1_000_000.0 / way_cost.downhillcost) as i32
-        } else {
-            0
-        };
+        let downhillcostdiv = way_cost.downhillcostdiv;
+        let downhillmaxslopecostdiv = way_cost.downhillmaxslopecostdiv;
+        let uphillcostdiv = way_cost.uphillcostdiv;
+        let uphillmaxslopecostdiv = way_cost.uphillmaxslopecostdiv;
 
-        let downhillmaxslopecostdiv = if way_cost.downhillmaxslopecost > 0.0 {
-            (1_000_000.0 / way_cost.downhillmaxslopecost) as i32
-        } else {
-            downhillcostdiv
-        };
-
-        let uphillcostdiv = if way_cost.uphillcost > 0.0 {
-            (1_000_000.0 / way_cost.uphillcost) as i32
-        } else {
-            0
-        };
-
-        let uphillmaxslopecostdiv = if way_cost.uphillmaxslopecost > 0.0 {
-            (1_000_000.0 / way_cost.uphillmaxslopecost) as i32
-        } else {
-            uphillcostdiv
-        };
-
-        let dist_int = (dist.round() as i32).max(1);
+        let dist_int = dist as i32;
 
         // 1. Turn penalty with crossing cost
         let turn_cost =
@@ -238,24 +229,31 @@ impl StdPathCalculator {
         // 3. Slope-dependent effective costfactor
         let costfactor =
             cfup * upweight + cf * (1.0 - upweight - downweight) + cfdown * downweight;
-        section_cost += dist_int as f64 * costfactor as f64 + 0.5;
+        section_cost += (dist_int as f32 * costfactor + 0.5f32) as f64;
 
         let section_cost_int = (section_cost.max(0.0)) as u32;
 
         // 4. Kinematics (travel time & energy) - only computed in detail mode matching BRouter
         let (dt, energy) = if is_detail {
-            let incline = Self::calc_incline(&mut state.elevation_buffer, delta_h, dist);
+            let seg_d = dist_int as f64;
+            let incline = Self::calc_incline(&mut state.elevation_buffer, delta_h, seg_d);
             let (speed, energy) = kinematic_cfg.compute_speed_and_energy(
-                dist,
+                seg_d,
                 incline,
                 way_cost.maxspeed as f64 / 3.6,
             );
-            let dt = dist / speed;
+            let dt = (seg_d / speed) as f32;
             state.total_time_s += dt;
-            state.total_energy_j += energy;
-            (dt, energy)
+            let energy_f = if energy > 0.0 {
+                let prev_energy = state.total_energy_j;
+                state.total_energy_j = (state.total_energy_j as f64 + energy) as f32;
+                state.total_energy_j - prev_energy
+            } else {
+                0.0f32
+            };
+            (dt, energy_f)
         } else {
-            (0.0, 0.0)
+            (0.0f32, 0.0f32)
         };
 
         SectionCost {
@@ -268,4 +266,55 @@ impl StdPathCalculator {
             energy_joules: energy,
         }
     }
+
+    /// Computes uphill and downhill cost divisors from way cost parameters.
+    #[inline]
+    pub fn cost_divisors(way_cost: &WayCostResult) -> (i32, i32) {
+        (way_cost.downhillcostdiv, way_cost.uphillcostdiv)
+    }
+
+    /// Calculates the elevation buffer correction term matching BRouter's `StdPath.elevationCorrection`.
+    #[inline]
+    pub fn elevation_correction(ehbd: i32, ehbu: i32, downhillcostdiv: i32, uphillcostdiv: i32) -> u32 {
+        let down = if downhillcostdiv > 0 {
+            (ehbd / downhillcostdiv).max(0) as u32
+        } else {
+            0
+        };
+        let up = if uphillcostdiv > 0 {
+            (ehbu / uphillcostdiv).max(0) as u32
+        } else {
+            0
+        };
+        down + up
+    }
+
+    /// Evaluates if candidate path is definitely worse than an existing path matching BRouter's `StdPath.definitlyWorseThan`.
+    #[inline]
+    pub fn definitly_worse_than(
+        cand_cost: u32,
+        cand_ehbd: i32,
+        cand_ehbu: i32,
+        exist_cost: u32,
+        exist_ehbd: i32,
+        exist_ehbu: i32,
+        downhillcostdiv: i32,
+        uphillcostdiv: i32,
+    ) -> bool {
+        let mut c = exist_cost;
+        if downhillcostdiv > 0 {
+            let delta = exist_ehbd / downhillcostdiv - cand_ehbd / downhillcostdiv;
+            if delta > 0 {
+                c = c.saturating_add(delta as u32);
+            }
+        }
+        if uphillcostdiv > 0 {
+            let delta = exist_ehbu / uphillcostdiv - cand_ehbu / uphillcostdiv;
+            if delta > 0 {
+                c = c.saturating_add(delta as u32);
+            }
+        }
+        cand_cost > c || (cand_cost == c && cand_ehbd <= exist_ehbd && cand_ehbu <= exist_ehbu)
+    }
 }
+

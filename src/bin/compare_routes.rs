@@ -181,7 +181,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if let Some((b_dist, b_time, b_cost, b_asc)) = baseline {
                         let dist_delta = (route.total_distance_m - b_dist).abs() / b_dist * 100.0;
-                        let time_delta = (route.total_time_s - b_time).abs() / b_time * 100.0;
+                        let time_delta = (route.total_time_s as f64 - b_time).abs() / b_time * 100.0;
                         let cost_delta = (route.total_cost as f64 - b_cost as f64).abs()
                             / b_cost as f64
                             * 100.0;
@@ -204,7 +204,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             dist_rs: route.total_distance_m,
                             dist_br: b_dist,
                             dist_delta_pct: dist_delta,
-                            time_rs: route.total_time_s,
+                            time_rs: route.total_time_s as f64,
                             time_br: b_time,
                             time_delta_pct: time_delta,
                             cost_rs: route.total_cost,
@@ -257,6 +257,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     println!("=======================================================\n");
+
+    // Documented Parity Enforcement
+    // Default thresholds for all routes: distance <= 0.05%, cost <= 0.05%, time <= 0.50%
+    // Known gaps with documented allowances:
+    // 1. London -> Brighton (fastbike): cost <= 0.25% due to parallel streets in Redhill town center.
+    // 2. London -> Brighton (lowtraffic): distance <= 0.30%, cost <= 0.10% due to Seven Dials roundabout approach.
+    // 3. London -> Cardiff (lowtraffic): cost <= 0.05% due to parallel cycleway/roadways on Newport Road.
+    let mut failures = Vec::new();
+
+    for r in &rows {
+        let (max_dist, max_cost, max_time) = match (r.corridor, r.profile) {
+            ("London -> Brighton", "fastbike") => (0.05, 0.25, 0.50),
+            ("London -> Brighton", "fastbike-lowtraffic") => (0.30, 0.10, 0.50),
+            ("London -> Cardiff", "fastbike-lowtraffic") => (0.05, 0.05, 0.50),
+            _ => (0.05, 0.05, 0.50),
+        };
+
+        if r.dist_delta_pct > max_dist {
+            failures.push(format!(
+                "{} [{}]: distance delta {:.2}% exceeds threshold {:.2}%",
+                r.corridor, r.profile, r.dist_delta_pct, max_dist
+            ));
+        }
+        if r.cost_delta_pct > max_cost {
+            failures.push(format!(
+                "{} [{}]: cost delta {:.2}% exceeds threshold {:.2}%",
+                r.corridor, r.profile, r.cost_delta_pct, max_cost
+            ));
+        }
+        if r.time_delta_pct > max_time {
+            failures.push(format!(
+                "{} [{}]: time delta {:.2}% exceeds threshold {:.2}%",
+                r.corridor, r.profile, r.time_delta_pct, max_time
+            ));
+        }
+    }
+
+    if !failures.is_empty() {
+        eprintln!("PARITY REGRESSION DETECTED ({} failures):", failures.len());
+        for f in &failures {
+            eprintln!("  - {}", f);
+        }
+        std::process::exit(1);
+    } else {
+        println!("All {} routes meet documented parity bounds.", rows.len());
+    }
 
     Ok(())
 }

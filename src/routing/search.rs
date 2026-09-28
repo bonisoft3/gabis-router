@@ -13,7 +13,7 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 
-use crate::dsl::evaluator::{ProfileEvaluator, WayCostResult};
+use crate::dsl::evaluator::ProfileEvaluator;
 use crate::dsl::lookups::LookupData;
 use crate::dsl::parser::Profile;
 use crate::graph::matcher::MatchedWaypoint;
@@ -32,8 +32,8 @@ pub struct RoutePoint {
     pub lat: f64,
     pub elevation_m: f64,
     pub distance_from_start_m: f64,
-    pub time_from_start_s: f64,
-    pub energy_j: f64,
+    pub time_from_start_s: f32,
+    pub energy_j: f32,
     pub cost: u32,
 }
 
@@ -41,8 +41,8 @@ pub struct RoutePoint {
 #[derive(Debug, Clone)]
 pub struct RouteResult {
     pub total_distance_m: f64,
-    pub total_time_s: f64,
-    pub total_energy_j: f64,
+    pub total_time_s: f32,
+    pub total_energy_j: f32,
     pub total_cost: u32,
     pub filtered_ascend_m: f64,
     pub plain_ascend_m: f64,
@@ -57,7 +57,7 @@ impl RouteResult {
             if i > 0 {
                 coords.push_str(",\n          ");
             }
-            coords.push_str(&format!("[{:.6}, {:.6}, {:.1}]", pt.lon, pt.lat, pt.elevation_m));
+            coords.push_str(&format!("[{:.6}, {:.6}, {}]", pt.lon, pt.lat, pt.elevation_m));
         }
 
         format!(
@@ -96,6 +96,46 @@ impl RouteResult {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct CandidateState {
+    cost: u32,
+    ehbd: i32,
+    ehbu: i32,
+}
+
+#[derive(Default)]
+struct EdgeState {
+    candidates: Vec<CandidateState>,
+    is_closed: bool,
+}
+
+#[derive(Default)]
+struct FastHasher(u64);
+
+impl std::hash::Hasher for FastHasher {
+    #[inline(always)]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    #[inline(always)]
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 = self.0.rotate_left(5) ^ (byte as u64);
+            self.0 = self.0.wrapping_mul(0x517cc1b727220a95);
+        }
+    }
+
+    #[inline(always)]
+    fn write_u64(&mut self, i: u64) {
+        self.0 = self.0.rotate_left(5) ^ i;
+        self.0 = self.0.wrapping_mul(0x517cc1b727220a95);
+    }
+}
+
+type FastBuildHasher = std::hash::BuildHasherDefault<FastHasher>;
+type FastHashMap<K, V> = HashMap<K, V, FastBuildHasher>;
+
 #[derive(Clone)]
 struct SearchNode {
     node_id: u64,
@@ -112,6 +152,8 @@ struct SearchNode {
     priority_classifier: i32,
     last_classifier: u8,
     _last_initial_cost: f32,
+    down_div: i32,
+    up_div: i32,
     in_destination: bool,
     can_leave_destination: bool,
     history_idx: usize,
@@ -137,20 +179,20 @@ impl PartialOrd for SearchNode {
     }
 }
 
-#[allow(dead_code)]
+#[derive(Clone)]
 struct HistoryStep {
     node_id: u64,
     from_node_id: u64,
-    ilon: i32,
-    ilat: i32,
-    selev: i16,
-    sub_points: Vec<(i32, i32, i16)>,
-    dist: f64,
-    time: f64,
-    energy: f64,
     cost: u32,
+    edge_idx: u16,
+    maxspeed: f32,
     prev_idx: Option<usize>,
-    way_cost: Option<WayCostResult>,
+    sliced_points: Option<Vec<(i32, i32, i16)>>,
+}
+
+struct SearchTrack {
+    pub steps: Vec<HistoryStep>,
+    pub total_cost: u32,
 }
 
 /// A* router engine implementing 2-pass guided search.
@@ -165,6 +207,20 @@ impl Default for AStarRouter {
             kinematic_cfg: KinematicConfig::default(),
             elev_cfg: ElevationConfig::default(),
         }
+    }
+}
+
+#[inline(always)]
+fn get_way_cost<'a>(
+    cached_way_costs: &'a [crate::dsl::evaluator::WayCostResult],
+    desc_id: u32,
+    is_reverse: bool,
+) -> Option<&'a crate::dsl::evaluator::WayCostResult> {
+    if desc_id == crate::graph::routing_graph::NO_DESC {
+        None
+    } else {
+        let idx = ((desc_id as usize) << 1) | (is_reverse as usize);
+        cached_way_costs.get(idx)
     }
 }
 
@@ -185,67 +241,100 @@ impl AStarRouter {
         target_lat: f64,
     ) -> Result<RouteResult, String> {
         // 1. Snap start and target waypoints
+        let mut evaluator = ProfileEvaluator::new(profile, &lookups.way, &lookups.node);
         let start_mwp = graph
-            .snap_waypoint("start", start_lon, start_lat, 500.0)
+            .snap_waypoint("start", start_lon, start_lat, 500.0, &mut evaluator, lookups)
             .ok_or_else(|| "Start position could not be mapped to graph".to_string())?;
 
         let target_mwp = graph
-            .snap_waypoint("target", target_lon, target_lat, 500.0)
+            .snap_waypoint("target", target_lon, target_lat, 500.0, &mut evaluator, lookups)
             .ok_or_else(|| "Target position could not be mapped to graph".to_string())?;
+
+        let kinematic_cfg = KinematicConfig::from_profile(profile);
+        let elev_cfg = ElevationConfig::from_profile(profile);
 
         let pass1_coeff = profile.get_global_var("pass1coefficient", 1.5) as f64;
         let pass2_coeff = profile.get_global_var("pass2coefficient", 0.0) as f64;
 
+        // Pre-evaluate way costs for all unique tag descriptions in the graph
+        let mut cached_way_costs = Vec::with_capacity(graph.descriptions.len() * 2);
+        let mut way_buf = vec![0i32; lookups.way.names.len()];
+        for desc_bytes in &graph.descriptions {
+            lookups.way.decode_into(&mut way_buf, false, desc_bytes);
+            cached_way_costs.push(evaluator.evaluate_way(&way_buf));
+
+            lookups.way.decode_into(&mut way_buf, true, desc_bytes);
+            cached_way_costs.push(evaluator.evaluate_way(&way_buf));
+        }
+
         let t0 = std::time::Instant::now();
         // 2. Run Pass 0 (fast initial search with pass1coefficient)
-        let (pass0_res, pass0_links) = self.search_pass(
+        let (pass0_track, pass0_links) = self.search_pass(
             graph,
             lookups,
             profile,
+            &cached_way_costs,
             &start_mwp,
             &target_mwp,
             pass1_coeff,
             None,
             None,
+            &kinematic_cfg,
+            &elev_cfg,
         )?;
         let t0_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
-        if pass2_coeff < 0.0 {
-            return Ok(pass0_res);
-        }
-
-        let t1 = std::time::Instant::now();
-        // 3. Run Pass 1 (guided Dijkstra with pass2coefficient bounded by Pass 0)
-        let mut pass0_link_map: HashMap<(u64, u64), u32> = HashMap::with_capacity(pass0_links.len());
-        for (from, to, cost) in pass0_links {
-            pass0_link_map.insert((from, to), cost);
-        }
-
-        let cost_cutting_threshold = Some(pass0_res.total_cost + 5000);
-        let pass1_res = self.search_pass(
-            graph,
-            lookups,
-            profile,
-            &start_mwp,
-            &target_mwp,
-            pass2_coeff,
-            cost_cutting_threshold,
-            Some((&pass0_link_map, pass0_res.total_cost)),
-        );
-        let t1_ms = t1.elapsed().as_secs_f64() * 1000.0;
-
-        println!("    [DEBUG PASS TIMING] Pass 0: {:.1} ms | Pass 1: {:.1} ms", t0_ms, t1_ms);
-
-        match pass1_res {
-            Ok((res, _)) => {
-                if res.total_cost <= pass0_res.total_cost {
-                    Ok(res)
-                } else {
-                    Ok(pass0_res)
-                }
+        let (winning_track, t1_ms) = if pass2_coeff >= 0.0 {
+            let t1 = std::time::Instant::now();
+            let mut pass0_link_map: HashMap<(u64, u64), u32> =
+                HashMap::with_capacity(pass0_links.len());
+            for (from, to, cost) in pass0_links {
+                pass0_link_map.insert((from, to), cost);
             }
-            Err(_) => Ok(pass0_res),
-        }
+
+            let cost_cutting_threshold = Some(pass0_track.total_cost + 5000);
+            let pass1_res = self.search_pass(
+                graph,
+                lookups,
+                profile,
+                &cached_way_costs,
+                &start_mwp,
+                &target_mwp,
+                pass2_coeff,
+                cost_cutting_threshold,
+                Some((&pass0_link_map, pass0_track.total_cost)),
+                &kinematic_cfg,
+                &elev_cfg,
+            );
+            let t1_ms = t1.elapsed().as_secs_f64() * 1000.0;
+
+            let track = match pass1_res {
+                Ok((pass1_track, _)) => {
+                    if pass1_track.total_cost <= pass0_track.total_cost {
+                        pass1_track
+                    } else {
+                        pass0_track
+                    }
+                }
+                Err(_) => pass0_track,
+            };
+            (track, t1_ms)
+        } else {
+            (pass0_track, 0.0)
+        };
+
+        println!(
+            "    [DEBUG PASS TIMING] Pass 0: {:.1} ms | Pass 1: {:.1} ms",
+            t0_ms, t1_ms
+        );
+
+        // 3. Run Pass 2 (re-tracking): walk the winning path, decode geometry, evaluate kinematics
+        self.retrack_path(
+            graph,
+            &winning_track.steps,
+            winning_track.total_cost,
+            &kinematic_cfg,
+        )
     }
 
     fn search_pass(
@@ -253,12 +342,15 @@ impl AStarRouter {
         graph: &RoutingGraph,
         lookups: &LookupData,
         profile: &Profile,
+        cached_way_costs: &[crate::dsl::evaluator::WayCostResult],
         start_mwp: &MatchedWaypoint,
         target_mwp: &MatchedWaypoint,
         air_distance_factor: f64,
         mut max_cost_limit: Option<u32>,
         cost_cutting: Option<(&HashMap<(u64, u64), u32>, u32)>,
-    ) -> Result<(RouteResult, Vec<(u64, u64, u32)>), String> {
+        kinematic_cfg: &KinematicConfig,
+        elev_cfg: &ElevationConfig,
+    ) -> Result<(SearchTrack, Vec<(u64, u64, u32)>), String> {
         let mut evaluator = ProfileEvaluator::new(profile, &lookups.way, &lookups.node);
         let crossing_cfg = CrossingConfig::from_profile(profile);
         let crossing_tag_idx = lookups.node.get_name_idx("estimated_crossing_class");
@@ -270,8 +362,10 @@ impl AStarRouter {
         let is_bike_mode = !is_car_mode;
 
         let mut open_set = BinaryHeap::new();
-        let mut best_cost: HashMap<(u64, u64), u32> = HashMap::new();
+        let mut edge_states: FastHashMap<(u64, u64), EdgeState> =
+            FastHashMap::with_capacity_and_hasher(65536, FastBuildHasher::default());
         let mut history: Vec<HistoryStep> = Vec::with_capacity(16384);
+        let mut poly_buf = Vec::with_capacity(64);
 
         let start_id1 = crate::graph::node::make_node_id(start_mwp.node1_lon, start_mwp.node1_lat);
         let start_id2 = crate::graph::node::make_node_id(start_mwp.node2_lon, start_mwp.node2_lat);
@@ -288,11 +382,9 @@ impl AStarRouter {
 
         if same_segment {
             if let Some(edges) = graph.edges.get(&start_id1) {
-                for edge in edges {
+                for (edge_idx, edge) in edges.iter().enumerate() {
                     if edge.target_id == start_id2 {
-                        let Some(desc_bytes) = &edge.description else { continue; };
-                        let lookup_data = lookups.way.decode(edge.is_reverse, desc_bytes);
-                        let way_cost = evaluator.evaluate_way(&lookup_data);
+                        let Some(way_cost) = get_way_cost(cached_way_costs, edge.desc_id, edge.is_reverse) else { continue; };
                         if way_cost.costfactor >= 9999.0 { continue; }
 
                         let s_elev = graph.nodes.get(&start_id1).map(|n| n.selev).unwrap_or(i16::MIN);
@@ -307,12 +399,12 @@ impl AStarRouter {
                         ) {
                             if sliced.len() >= 2 {
                                 let mut path_state = PathState::default();
-                                let (cost, dist, time, energy, _, _) = process_polyline(
+                                let (cost, _, _, _, _, _) = process_polyline(
                                     &sliced,
                                     &mut path_state,
-                                    &way_cost,
-                                    &self.elev_cfg,
-                                    &self.kinematic_cfg,
+                                    way_cost,
+                                    elev_cfg,
+                                    kinematic_cfg,
                                     &crossing_cfg,
                                     None,
                                     0,
@@ -327,16 +419,32 @@ impl AStarRouter {
                                     history.push(HistoryStep {
                                         node_id: 0,
                                         from_node_id: start_id1,
+                                        cost,
+                                        edge_idx: edge_idx as u16,
+                                        maxspeed: way_cost.maxspeed,
+                                        prev_idx: None,
+                                        sliced_points: Some(sliced.clone()),
+                                    });
+                                    open_set.push(SearchNode {
+                                        node_id: 0,
+                                        from_node_id: start_id1,
                                         ilon: target_mwp.crosspoint_lon,
                                         ilat: target_mwp.crosspoint_lat,
-                                        selev: sliced.last().map(|p| p.2).unwrap_or(i16::MIN),
-                                        sub_points: sliced,
-                                        dist,
-                                        time,
-                                        energy,
+                                        selev: 0,
                                         cost,
-                                        prev_idx: None,
-                                        way_cost: Some(way_cost.clone()),
+                                        air_dist: 0,
+                                        priority: cost,
+                                        path_state,
+                                        prev_lon: sliced[0].0,
+                                        prev_lat: sliced[0].1,
+                                        priority_classifier: 0,
+                                        last_classifier: 0,
+                                        _last_initial_cost: 0.0,
+                                        down_div: 0,
+                                        up_div: 0,
+                                        in_destination: false,
+                                        can_leave_destination: false,
+                                        history_idx: h_idx,
                                     });
                                     best_target_history = Some(h_idx);
                                 }
@@ -362,16 +470,11 @@ impl AStarRouter {
                 history.push(HistoryStep {
                     node_id: start_id1,
                     from_node_id: 0,
-                    ilon: node.ilon,
-                    ilat: node.ilat,
-                    selev: node.selev,
-                    sub_points: vec![(node.ilon, node.ilat, node.selev)],
-                    dist: 0.0,
-                    time: 0.0,
-                    energy: 0.0,
                     cost: 0,
+                    edge_idx: 0,
+                    maxspeed: 0.0,
                     prev_idx: None,
-                    way_cost: None,
+                    sliced_points: Some(vec![(node.ilon, node.ilat, node.selev)]),
                 });
 
                 open_set.push(SearchNode {
@@ -389,21 +492,29 @@ impl AStarRouter {
                     priority_classifier: 0,
                     last_classifier: 0,
                     _last_initial_cost: 0.0,
+                    down_div: 0,
+                    up_div: 0,
                     in_destination: false,
                     can_leave_destination: false,
                     history_idx: h_idx,
                 });
 
-                best_cost.insert((0, start_id1), 0);
+                edge_states
+                    .entry((0, start_id1))
+                    .or_default()
+                    .candidates
+                    .push(CandidateState {
+                        cost: 0,
+                        ehbd: 0,
+                        ehbu: 0,
+                    });
             }
         } else {
             // Direction A: from start_crosspoint towards start_id2
             if let Some(edges) = graph.edges.get(&start_id1) {
-                for edge in edges {
+                for (edge_idx, edge) in edges.iter().enumerate() {
                     if edge.target_id == start_id2 {
-                        let Some(desc_bytes) = &edge.description else { continue; };
-                        let lookup_data = lookups.way.decode(edge.is_reverse, desc_bytes);
-                        let way_cost = evaluator.evaluate_way(&lookup_data);
+                        let Some(way_cost) = get_way_cost(cached_way_costs, edge.desc_id, edge.is_reverse) else { continue; };
                         if way_cost.costfactor >= 9999.0 { continue; }
 
                         let s_node = graph.nodes.get(&start_id1);
@@ -418,12 +529,12 @@ impl AStarRouter {
                         );
                         if sliced.len() >= 2 {
                             let mut path_state = PathState::default();
-                            let (cost, dist, time, energy, _, _) = process_polyline(
+                            let (cost, _, _, _, penultimate_lon, penultimate_lat) = process_polyline(
                                 &sliced,
                                 &mut path_state,
-                                &way_cost,
-                                &self.elev_cfg,
-                                &self.kinematic_cfg,
+                                way_cost,
+                                elev_cfg,
+                                kinematic_cfg,
                                 &crossing_cfg,
                                 None,
                                 0,
@@ -436,8 +547,12 @@ impl AStarRouter {
                             let mut total_cost = cost;
                             if let Some(target_node) = t_node {
                                 if let Some(ref node_desc) = target_node.node_description {
-                                    let node_lookup = lookups.node.decode(way_cost.nodeaccessgranted, node_desc);
-                                    let node_res = evaluator.evaluate_node(&node_lookup);
+                                    if let Some(desc_bytes) = edge.description(graph) {
+                                        lookups.way.decode_into(&mut way_lookup_buf, edge.is_reverse, desc_bytes);
+                                        evaluator.evaluate_way(&way_lookup_buf);
+                                    }
+                                    lookups.node.decode_into(&mut node_lookup_buf, way_cost.nodeaccessgranted, node_desc);
+                                    let node_res = evaluator.evaluate_node(&node_lookup_buf);
                                     if node_res.initialcost >= 1_000_000.0 {
                                         continue;
                                     }
@@ -453,22 +568,27 @@ impl AStarRouter {
                             );
                             let priority = total_cost + (air_dist * air_distance_factor) as u32;
 
-                            let prev_pt = sliced[sliced.len() - 2];
+                            let (down_div, up_div) = StdPathCalculator::cost_divisors(way_cost);
                             let h_idx = history.len();
                             history.push(HistoryStep {
                                 node_id: start_id2,
                                 from_node_id: start_id1,
-                                ilon: start_mwp.node2_lon,
-                                ilat: start_mwp.node2_lat,
-                                selev: t_elev,
-                                sub_points: sliced,
-                                dist,
-                                time,
-                                energy,
                                 cost: total_cost,
+                                edge_idx: edge_idx as u16,
+                                maxspeed: way_cost.maxspeed,
                                 prev_idx: None,
-                                way_cost: Some(way_cost.clone()),
+                                sliced_points: Some(sliced),
                             });
+
+                            edge_states
+                                .entry((start_id1, start_id2))
+                                .or_default()
+                                .candidates
+                                .push(CandidateState {
+                                    cost: total_cost,
+                                    ehbd: path_state.ehbd,
+                                    ehbu: path_state.ehbu,
+                                });
 
                             let in_destination = (way_cost.classifiermask & 64) != 0;
                             open_set.push(SearchNode {
@@ -481,17 +601,17 @@ impl AStarRouter {
                                 air_dist: air_dist as u32,
                                 priority,
                                 path_state,
-                                prev_lon: prev_pt.0,
-                                prev_lat: prev_pt.1,
+                                prev_lon: penultimate_lon,
+                                prev_lat: penultimate_lat,
                                 priority_classifier: way_cost.priorityclassifier,
                                 last_classifier: way_cost.initialclassifier,
                                 _last_initial_cost: way_cost.initialcost,
+                                down_div,
+                                up_div,
                                 in_destination,
                                 can_leave_destination: in_destination,
                                 history_idx: h_idx,
                             });
-
-                            best_cost.insert((start_id1, start_id2), total_cost);
                         }
                     }
                 }
@@ -499,11 +619,9 @@ impl AStarRouter {
 
             // Direction B: from start_crosspoint towards start_id1
             if let Some(edges) = graph.edges.get(&start_id2) {
-                for edge in edges {
+                for (edge_idx, edge) in edges.iter().enumerate() {
                     if edge.target_id == start_id1 {
-                        let Some(desc_bytes) = &edge.description else { continue; };
-                        let lookup_data = lookups.way.decode(edge.is_reverse, desc_bytes);
-                        let way_cost = evaluator.evaluate_way(&lookup_data);
+                        let Some(way_cost) = get_way_cost(cached_way_costs, edge.desc_id, edge.is_reverse) else { continue; };
                         if way_cost.costfactor >= 9999.0 { continue; }
 
                         let s_node = graph.nodes.get(&start_id2);
@@ -518,12 +636,12 @@ impl AStarRouter {
                         );
                         if sliced.len() >= 2 {
                             let mut path_state = PathState::default();
-                            let (cost, dist, time, energy, _, _) = process_polyline(
+                            let (cost, _, _, _, penultimate_lon, penultimate_lat) = process_polyline(
                                 &sliced,
                                 &mut path_state,
-                                &way_cost,
-                                &self.elev_cfg,
-                                &self.kinematic_cfg,
+                                way_cost,
+                                elev_cfg,
+                                kinematic_cfg,
                                 &crossing_cfg,
                                 None,
                                 0,
@@ -536,8 +654,12 @@ impl AStarRouter {
                             let mut total_cost = cost;
                             if let Some(target_node) = t_node {
                                 if let Some(ref node_desc) = target_node.node_description {
-                                    let node_lookup = lookups.node.decode(way_cost.nodeaccessgranted, node_desc);
-                                    let node_res = evaluator.evaluate_node(&node_lookup);
+                                    if let Some(desc_bytes) = edge.description(graph) {
+                                        lookups.way.decode_into(&mut way_lookup_buf, edge.is_reverse, desc_bytes);
+                                        evaluator.evaluate_way(&way_lookup_buf);
+                                    }
+                                    lookups.node.decode_into(&mut node_lookup_buf, way_cost.nodeaccessgranted, node_desc);
+                                    let node_res = evaluator.evaluate_node(&node_lookup_buf);
                                     if node_res.initialcost >= 1_000_000.0 {
                                         continue;
                                     }
@@ -553,22 +675,27 @@ impl AStarRouter {
                             );
                             let priority = total_cost + (air_dist * air_distance_factor) as u32;
 
-                            let prev_pt = sliced[sliced.len() - 2];
+                            let (down_div, up_div) = StdPathCalculator::cost_divisors(way_cost);
                             let h_idx = history.len();
                             history.push(HistoryStep {
                                 node_id: start_id1,
                                 from_node_id: start_id2,
-                                ilon: start_mwp.node1_lon,
-                                ilat: start_mwp.node1_lat,
-                                selev: t_elev,
-                                sub_points: sliced,
-                                dist,
-                                time,
-                                energy,
                                 cost: total_cost,
+                                edge_idx: edge_idx as u16,
+                                maxspeed: way_cost.maxspeed,
                                 prev_idx: None,
-                                way_cost: Some(way_cost.clone()),
+                                sliced_points: Some(sliced),
                             });
+
+                            edge_states
+                                .entry((start_id2, start_id1))
+                                .or_default()
+                                .candidates
+                                .push(CandidateState {
+                                    cost: total_cost,
+                                    ehbd: path_state.ehbd,
+                                    ehbu: path_state.ehbu,
+                                });
 
                             let in_destination = (way_cost.classifiermask & 64) != 0;
                             open_set.push(SearchNode {
@@ -581,17 +708,17 @@ impl AStarRouter {
                                 air_dist: air_dist as u32,
                                 priority,
                                 path_state,
-                                prev_lon: prev_pt.0,
-                                prev_lat: prev_pt.1,
+                                prev_lon: penultimate_lon,
+                                prev_lat: penultimate_lat,
                                 priority_classifier: way_cost.priorityclassifier,
                                 last_classifier: way_cost.initialclassifier,
                                 _last_initial_cost: way_cost.initialcost,
+                                down_div,
+                                up_div,
                                 in_destination,
                                 can_leave_destination: in_destination,
                                 history_idx: h_idx,
                             });
-
-                            best_cost.insert((start_id2, start_id1), total_cost);
                         }
                     }
                 }
@@ -614,16 +741,11 @@ impl AStarRouter {
                     history.push(HistoryStep {
                         node_id: s_id,
                         from_node_id: 0,
-                        ilon: node.ilon,
-                        ilat: node.ilat,
-                        selev: node.selev,
-                        sub_points: vec![(node.ilon, node.ilat, node.selev)],
-                        dist: 0.0,
-                        time: 0.0,
-                        energy: 0.0,
                         cost: 0,
+                        edge_idx: 0,
+                        maxspeed: 0.0,
                         prev_idx: None,
-                        way_cost: None,
+                        sliced_points: Some(vec![(node.ilon, node.ilat, node.selev)]),
                     });
 
                     open_set.push(SearchNode {
@@ -641,12 +763,22 @@ impl AStarRouter {
                         priority_classifier: 0,
                         last_classifier: 0,
                         _last_initial_cost: 0.0,
+                        down_div: 0,
+                        up_div: 0,
                         in_destination: false,
                         can_leave_destination: false,
                         history_idx: h_idx,
                     });
 
-                    best_cost.insert((0, s_id), 0);
+                    edge_states
+                        .entry((0, s_id))
+                        .or_default()
+                        .candidates
+                        .push(CandidateState {
+                            cost: 0,
+                            ehbd: 0,
+                            ehbu: 0,
+                        });
                 }
             }
         }
@@ -660,6 +792,11 @@ impl AStarRouter {
 
         while let Some(curr) = open_set.pop() {
             nodes_popped += 1;
+            if curr.node_id == 0 {
+                final_cost = curr.cost;
+                best_target_history = Some(curr.history_idx);
+                break;
+            }
             if curr.priority >= final_cost {
                 break;
             }
@@ -673,23 +810,70 @@ impl AStarRouter {
             }
 
             let curr_edge_key = (curr.from_node_id, curr.node_id);
-            if let Some(&recorded_cost) = best_cost.get(&curr_edge_key) {
-                if curr.cost > recorded_cost {
+            if let Some(edge_entry) = edge_states.get_mut(&curr_edge_key) {
+                if edge_entry.is_closed {
                     continue;
+                }
+                let mut dominated = false;
+                for cand in &edge_entry.candidates {
+                    if cand.cost < curr.cost
+                        && StdPathCalculator::definitly_worse_than(
+                            curr.cost,
+                            curr.path_state.ehbd,
+                            curr.path_state.ehbu,
+                            cand.cost,
+                            cand.ehbd,
+                            cand.ehbu,
+                            curr.down_div,
+                            curr.up_div,
+                        )
+                    {
+                        dominated = true;
+                        break;
+                    }
+                }
+                if dominated {
+                    continue;
+                }
+                edge_entry.is_closed = true;
+            }
+
+            // Pop cost-cutting with elevation correction
+            if let Some((links, pass0_total)) = cost_cutting {
+                if let Some(&p0_link_cost) = links.get(&curr_edge_key) {
+                    let elev_corr = StdPathCalculator::elevation_correction(
+                        curr.path_state.ehbd,
+                        curr.path_state.ehbu,
+                        curr.down_div,
+                        curr.up_div,
+                    );
+                    let remaining_p0 = pass0_total.saturating_sub(p0_link_cost);
+                    let cost_estimate = curr.cost + elev_corr + remaining_p0;
+                    if let Some(ref mut max_cost) = max_cost_limit {
+                        if cost_estimate < *max_cost {
+                            *max_cost = cost_estimate;
+                        }
+                    }
                 }
             }
 
             // Standalone target node check
-            if target_id1 == target_id2 && curr.node_id == target_id1 {
-                if curr.cost < final_cost {
-                    final_cost = curr.cost;
-                    best_target_history = Some(curr.history_idx);
-                    break;
-                }
+            if target_id1 == target_id2 && curr.node_id == target_id1 && curr.cost < final_cost {
+                final_cost = curr.cost;
+                best_target_history = Some(curr.history_idx);
+                break;
             }
 
             let Some(edges) = graph.edges.get(&curr.node_id) else {
                 continue;
+            };
+
+            let curr_node_opt = if (crossing_cfg.consider_crossing && curr.priority_classifier >= crossing_cfg.crossing_prio_h)
+                || (consider_tr && curr.from_node_id != 0)
+            {
+                graph.nodes.get(&curr.node_id)
+            } else {
+                None
             };
 
             // Check if curr node has estimated_crossing_class
@@ -697,7 +881,7 @@ impl AStarRouter {
                 && curr.priority_classifier >= crossing_cfg.crossing_prio_h
             {
                 if let Some(c_idx) = crossing_tag_idx {
-                    if let Some(curr_node) = graph.nodes.get(&curr.node_id) {
+                    if let Some(curr_node) = curr_node_opt {
                         if let Some(ref desc) = curr_node.node_description {
                             lookups.node.decode_into(&mut node_lookup_buf, false, desc);
                             let v_idx = node_lookup_buf[c_idx];
@@ -723,20 +907,24 @@ impl AStarRouter {
                 None
             };
 
-            for edge in edges {
+            let curr_trs: &[DecodedTurnRestriction] = if consider_tr && curr.from_node_id != 0 {
+                curr_node_opt.map(|n| n.turn_restrictions.as_slice()).unwrap_or(&[])
+            } else {
+                &[]
+            };
+
+            for (edge_idx, edge) in edges.iter().enumerate() {
                 edges_evaluated += 1;
-                let Some(desc_bytes) = &edge.description else {
-                    continue;
-                };
 
                 // Prevent immediate backtrack / U-turn
                 if curr.from_node_id != 0 && edge.target_id == curr.from_node_id {
                     continue;
                 }
 
-                // Decode and evaluate way tags using reusable buffer (zero-alloc)
-                lookups.way.decode_into(&mut way_lookup_buf, edge.is_reverse, desc_bytes);
-                let way_cost = evaluator.evaluate_way(&way_lookup_buf);
+
+                let Some(way_cost) = get_way_cost(cached_way_costs, edge.desc_id, edge.is_reverse) else {
+                    continue;
+                };
 
                 if way_cost.costfactor >= 9999.0 {
                     continue; // forbidden way
@@ -777,34 +965,34 @@ impl AStarRouter {
                     }
                 }
 
-                let t_elev = graph
-                    .nodes
-                    .get(&edge.target_id)
-                    .map(|n| n.selev)
-                    .unwrap_or(curr.selev);
+                let t_elev = if edge.target_selev != i16::MIN {
+                    edge.target_selev
+                } else {
+                    graph
+                        .nodes
+                        .get(&edge.target_id)
+                        .map(|n| n.selev)
+                        .unwrap_or(curr.selev)
+                };
 
-                let poly = edge.polyline(curr.ilon, curr.ilat, curr.selev, t_elev);
-                if poly.len() < 2 {
+                edge.fill_polyline(&mut poly_buf, curr.ilon, curr.ilat, curr.selev, t_elev);
+                if poly_buf.len() < 2 {
                     continue;
                 }
 
                 // Turn restriction check
-                if consider_tr && curr.from_node_id != 0 {
-                    if let Some(curr_node) = graph.nodes.get(&curr.node_id) {
-                        if !curr_node.turn_restrictions.is_empty() {
-                            if DecodedTurnRestriction::is_turn_forbidden(
-                                &curr_node.turn_restrictions,
-                                curr.prev_lon,
-                                curr.prev_lat,
-                                poly[1].0,
-                                poly[1].1,
-                                is_bike_mode,
-                                is_car_mode,
-                            ) {
-                                continue; // forbidden turn
-                            }
-                        }
-                    }
+                if !curr_trs.is_empty()
+                    && DecodedTurnRestriction::is_turn_forbidden(
+                        curr_trs,
+                        curr.prev_lon,
+                        curr.prev_lat,
+                        poly_buf[1].0,
+                        poly_buf[1].1,
+                        is_bike_mode,
+                        is_car_mode,
+                    )
+                {
+                    continue; // forbidden turn
                 }
 
                 let is_target_link = (curr.node_id == target_id1 && edge.target_id == target_id2)
@@ -812,18 +1000,18 @@ impl AStarRouter {
 
                 if is_target_link {
                     let sliced = slice_to_crosspoint(
-                        &poly,
+                        &poly_buf,
                         target_mwp.crosspoint_lon,
                         target_mwp.crosspoint_lat,
                     );
                     if sliced.len() >= 2 {
                         let mut path_state = curr.path_state.clone();
-                        let (mut edge_cost, edge_dist, edge_time, edge_energy, _, _) = process_polyline(
+                        let (mut edge_cost, _, _, _, penultimate_lon, penultimate_lat) = process_polyline(
                             &sliced,
                             &mut path_state,
-                            &way_cost,
-                            &self.elev_cfg,
-                            &self.kinematic_cfg,
+                            way_cost,
+                            elev_cfg,
+                            kinematic_cfg,
                             &crossing_cfg,
                             crossing_class,
                             curr.priority_classifier,
@@ -841,16 +1029,32 @@ impl AStarRouter {
                             history.push(HistoryStep {
                                 node_id: 0,
                                 from_node_id: curr.node_id,
+                                cost: target_cost,
+                                edge_idx: edge_idx as u16,
+                                maxspeed: way_cost.maxspeed,
+                                prev_idx: Some(curr.history_idx),
+                                sliced_points: Some(sliced),
+                            });
+                            open_set.push(SearchNode {
+                                node_id: 0,
+                                from_node_id: curr.node_id,
                                 ilon: target_mwp.crosspoint_lon,
                                 ilat: target_mwp.crosspoint_lat,
-                                selev: sliced.last().map(|p| p.2).unwrap_or(i16::MIN),
-                                sub_points: sliced,
-                                dist: edge_dist,
-                                time: edge_time,
-                                energy: edge_energy,
+                                selev: 0,
                                 cost: target_cost,
-                                prev_idx: Some(curr.history_idx),
-                                way_cost: Some(way_cost.clone()),
+                                air_dist: 0,
+                                priority: target_cost,
+                                path_state,
+                                prev_lon: penultimate_lon,
+                                prev_lat: penultimate_lat,
+                                priority_classifier: curr.priority_classifier,
+                                last_classifier: 0,
+                                _last_initial_cost: 0.0,
+                                down_div: 0,
+                                up_div: 0,
+                                in_destination: false,
+                                can_leave_destination: false,
+                                history_idx: h_idx,
                             });
                             best_target_history = Some(h_idx);
                         }
@@ -859,12 +1063,12 @@ impl AStarRouter {
                 }
 
                 let mut path_state = curr.path_state.clone();
-                let (mut edge_cost, edge_dist, edge_time, edge_energy, _, _) = process_polyline(
-                    &poly,
+                let (mut edge_cost, _, _, _, penultimate_lon, penultimate_lat) = process_polyline(
+                    &poly_buf,
                     &mut path_state,
-                    &way_cost,
-                    &self.elev_cfg,
-                    &self.kinematic_cfg,
+                    way_cost,
+                    elev_cfg,
+                    kinematic_cfg,
                     &crossing_cfg,
                     crossing_class,
                     curr.priority_classifier,
@@ -878,6 +1082,10 @@ impl AStarRouter {
                 // Check node costs for target node
                 if let Some(target_node) = graph.nodes.get(&edge.target_id) {
                     if let Some(ref node_desc) = target_node.node_description {
+                        if let Some(desc_bytes) = edge.description(graph) {
+                            lookups.way.decode_into(&mut way_lookup_buf, edge.is_reverse, desc_bytes);
+                            evaluator.evaluate_way(&way_lookup_buf);
+                        }
                         lookups.node.decode_into(&mut node_lookup_buf, way_cost.nodeaccessgranted, node_desc);
                         let node_res = evaluator.evaluate_node(&node_lookup_buf);
                         if node_res.initialcost >= 1_000_000.0 {
@@ -888,11 +1096,18 @@ impl AStarRouter {
                 }
 
                 let new_cost = curr.cost + edge_cost;
+                let (down_div, up_div) = StdPathCalculator::cost_divisors(way_cost);
 
                 if let Some((links, pass0_total)) = cost_cutting {
                     if let Some(&p0_link_cost) = links.get(&(curr.node_id, edge.target_id)) {
+                        let elev_corr = StdPathCalculator::elevation_correction(
+                            path_state.ehbd,
+                            path_state.ehbu,
+                            down_div,
+                            up_div,
+                        );
                         let remaining_p0 = pass0_total.saturating_sub(p0_link_cost);
-                        let cost_estimate = new_cost + remaining_p0;
+                        let cost_estimate = new_cost + elev_corr + remaining_p0;
                         if let Some(ref mut max_cost) = max_cost_limit {
                             if cost_estimate < *max_cost {
                                 *max_cost = cost_estimate;
@@ -911,53 +1126,86 @@ impl AStarRouter {
                 }
 
                 let edge_key = (curr.node_id, edge.target_id);
-                let is_better = match best_cost.get(&edge_key) {
-                    Some(&c) => new_cost < c,
-                    None => true,
-                };
-
-                if is_better {
-                    best_cost.insert(edge_key, new_cost);
-
-                    let priority = new_cost + (air_dist as f64 * air_distance_factor) as u32;
-
-                    let prev_pt = poly[poly.len() - 2];
-                    let h_idx = history.len();
-                    history.push(HistoryStep {
-                        node_id: edge.target_id,
-                        from_node_id: curr.node_id,
-                        ilon: edge.target_lon,
-                        ilat: edge.target_lat,
-                        selev: t_elev,
-                        sub_points: poly,
-                        dist: edge_dist,
-                        time: edge_time,
-                        energy: edge_energy,
-                        cost: new_cost,
-                        prev_idx: Some(curr.history_idx),
-                        way_cost: Some(way_cost.clone()),
-                    });
-
-                    open_set.push(SearchNode {
-                        node_id: edge.target_id,
-                        from_node_id: curr.node_id,
-                        ilon: edge.target_lon,
-                        ilat: edge.target_lat,
-                        selev: t_elev,
-                        cost: new_cost,
-                        air_dist,
-                        priority,
-                        path_state,
-                        prev_lon: prev_pt.0,
-                        prev_lat: prev_pt.1,
-                        priority_classifier: way_cost.priorityclassifier,
-                        last_classifier: new_classifier,
-                        _last_initial_cost: new_initial_cost,
-                        in_destination: new_destination,
-                        can_leave_destination: can_leave,
-                        history_idx: h_idx,
-                    });
+                let edge_entry = edge_states.entry(edge_key).or_default();
+                if edge_entry.is_closed {
+                    continue;
                 }
+
+                // Dominance check against existing candidate paths on this edge
+                let mut dominated = false;
+                for cand in &edge_entry.candidates {
+                    if StdPathCalculator::definitly_worse_than(
+                        new_cost,
+                        path_state.ehbd,
+                        path_state.ehbu,
+                        cand.cost,
+                        cand.ehbd,
+                        cand.ehbu,
+                        down_div,
+                        up_div,
+                    ) {
+                        dominated = true;
+                        break;
+                    }
+                }
+
+                if dominated {
+                    continue;
+                }
+
+                edge_entry.candidates.retain(|cand| {
+                    !StdPathCalculator::definitly_worse_than(
+                        cand.cost,
+                        cand.ehbd,
+                        cand.ehbu,
+                        new_cost,
+                        path_state.ehbd,
+                        path_state.ehbu,
+                        down_div,
+                        up_div,
+                    )
+                });
+
+                edge_entry.candidates.push(CandidateState {
+                    cost: new_cost,
+                    ehbd: path_state.ehbd,
+                    ehbu: path_state.ehbu,
+                });
+
+                let priority = new_cost + (air_dist as f64 * air_distance_factor) as u32;
+
+                let h_idx = history.len();
+                history.push(HistoryStep {
+                    node_id: edge.target_id,
+                    from_node_id: curr.node_id,
+                    cost: new_cost,
+                    edge_idx: edge_idx as u16,
+                    maxspeed: way_cost.maxspeed,
+                    prev_idx: Some(curr.history_idx),
+                    sliced_points: None,
+                });
+
+                open_set.push(SearchNode {
+                    node_id: edge.target_id,
+                    from_node_id: curr.node_id,
+                    ilon: edge.target_lon,
+                    ilat: edge.target_lat,
+                    selev: t_elev,
+                    cost: new_cost,
+                    air_dist,
+                    priority,
+                    path_state,
+                    prev_lon: penultimate_lon,
+                    prev_lat: penultimate_lat,
+                    priority_classifier: way_cost.priorityclassifier,
+                    last_classifier: new_classifier,
+                    _last_initial_cost: new_initial_cost,
+                    down_div,
+                    up_div,
+                    in_destination: new_destination,
+                    can_leave_destination: can_leave,
+                    history_idx: h_idx,
+                });
             }
         }
 
@@ -969,15 +1217,38 @@ impl AStarRouter {
         let mut steps = Vec::new();
         let mut curr_idx = Some(target_h_idx);
         while let Some(idx) = curr_idx {
-            steps.push(&history[idx]);
+            steps.push(history[idx].clone());
             curr_idx = history[idx].prev_idx;
         }
         steps.reverse();
 
+        println!("        [STATS] popped: {}, edges: {}", nodes_popped, edges_evaluated);
+
+        let route_links: Vec<(u64, u64, u32)> = steps
+            .iter()
+            .map(|s| (s.from_node_id, s.node_id, s.cost))
+            .collect();
+
+        Ok((
+            SearchTrack {
+                steps,
+                total_cost: final_cost,
+            },
+            route_links,
+        ))
+    }
+
+    fn retrack_path(
+        &self,
+        graph: &RoutingGraph,
+        steps: &[HistoryStep],
+        final_cost: u32,
+        kinematic_cfg: &KinematicConfig,
+    ) -> Result<RouteResult, String> {
         let mut route_points: Vec<RoutePoint> = Vec::new();
         let mut cum_dist = 0.0;
-        let mut cum_time = 0.0;
-        let mut cum_energy = 0.0;
+        let mut cum_time = 0.0f32;
+        let mut cum_energy = 0.0f32;
 
         let mut ele_start = 0.0;
         let mut ele_end = 0.0;
@@ -989,7 +1260,37 @@ impl AStarRouter {
         let mut detail_state = PathState::default();
 
         for (s_i, step) in steps.iter().enumerate() {
-            for (p_i, pt) in step.sub_points.iter().enumerate() {
+            let poly = if let Some(ref sliced) = step.sliced_points {
+                sliced.clone()
+            } else {
+                let from_node = graph.nodes.get(&step.from_node_id).ok_or_else(|| {
+                    format!("From node {} not found in graph during retrack", step.from_node_id)
+                })?;
+                let to_node = graph.nodes.get(&step.node_id).ok_or_else(|| {
+                    format!("Target node {} not found in graph during retrack", step.node_id)
+                })?;
+                let edges = graph.edges.get(&step.from_node_id).ok_or_else(|| {
+                    format!("Outgoing edges for node {} not found during retrack", step.from_node_id)
+                })?;
+                let edge = if (step.edge_idx as usize) < edges.len()
+                    && edges[step.edge_idx as usize].target_id == step.node_id
+                {
+                    &edges[step.edge_idx as usize]
+                } else {
+                    edges
+                        .iter()
+                        .find(|e| e.target_id == step.node_id)
+                        .ok_or_else(|| {
+                            format!(
+                                "Edge from {} to {} not found during retrack",
+                                step.from_node_id, step.node_id
+                            )
+                        })?
+                };
+                edge.polyline(from_node.ilon, from_node.ilat, from_node.selev, to_node.selev)
+            };
+
+            for (p_i, pt) in poly.iter().enumerate() {
                 if p_i == 0 && s_i > 0 {
                     continue; // skip duplicate edge junction
                 }
@@ -1002,38 +1303,39 @@ impl AStarRouter {
                 ele_end = elev;
 
                 if let Some(last_pos) = last_pt_pos {
-                    let seg_d = (distance(
+                    let seg_d = distance(
                         last_pos.0,
                         last_pos.1,
                         pt.0,
                         pt.1,
-                    ).round() as f64).max(1.0);
+                    ).round().max(1.0);
                     cum_dist += seg_d;
 
-                    // Filtered ascend calculation matching BRouter (1-arcsec SRTM filter: -5.0m)
+                    // Filtered ascend calculation matching BRouter (-5.0m for 1-arcsec, -10.0m for 3-arcsec)
                     let dh = if pt.2 == i16::MIN || last_selev == i16::MIN {
                         0.0
                     } else {
                         elev - selev_to_elevation(last_selev)
                     };
                     ehb += dh;
+                    let filter = graph.elevation_filter(pt.0, pt.1);
                     if ehb > 0.0 {
                         filtered_ascend += ehb;
                         ehb = 0.0;
-                    } else if ehb < -5.0 {
-                        ehb = -5.0;
+                    } else if ehb < filter {
+                        ehb = filter;
                     }
 
-                    if let Some(ref wc) = step.way_cost {
-                        let incline = StdPathCalculator::calc_incline(&mut detail_state.elevation_buffer, dh, seg_d);
-                        let (speed, energy) = self.kinematic_cfg.compute_speed_and_energy(
-                            seg_d,
-                            incline,
-                            wc.maxspeed as f64 / 3.6,
-                        );
-                        let dt = seg_d / speed;
-                        cum_time += dt;
-                        cum_energy += energy;
+                    let incline = StdPathCalculator::calc_incline(&mut detail_state.elevation_buffer, dh, seg_d);
+                    let (speed, energy) = kinematic_cfg.compute_speed_and_energy(
+                        seg_d,
+                        incline,
+                        step.maxspeed as f64 / 3.6,
+                    );
+                    let dt = (seg_d / speed) as f32;
+                    cum_time += dt;
+                    if energy > 0.0 {
+                        cum_energy = (cum_energy as f64 + energy) as f32;
                     }
                 }
                 last_pt_pos = Some((pt.0, pt.1));
@@ -1052,25 +1354,16 @@ impl AStarRouter {
         }
 
         let plain_ascend = ele_end - ele_start;
-        println!("        [STATS] popped: {}, edges: {}", nodes_popped, edges_evaluated);
 
-        let route_links: Vec<(u64, u64, u32)> = steps
-            .iter()
-            .map(|s| (s.from_node_id, s.node_id, s.cost))
-            .collect();
-
-        Ok((
-            RouteResult {
-                total_distance_m: cum_dist,
-                total_time_s: cum_time,
-                total_energy_j: cum_energy,
-                total_cost: final_cost,
-                filtered_ascend_m: filtered_ascend,
-                plain_ascend_m: plain_ascend,
-                points: route_points,
-            },
-            route_links,
-        ))
+        Ok(RouteResult {
+            total_distance_m: cum_dist,
+            total_time_s: cum_time,
+            total_energy_j: cum_energy,
+            total_cost: final_cost,
+            filtered_ascend_m: filtered_ascend,
+            plain_ascend_m: plain_ascend,
+            points: route_points,
+        })
     }
 }
 
@@ -1237,11 +1530,11 @@ fn process_polyline(
     prev_lat: i32,
     is_start: bool,
     is_detail: bool,
-) -> (u32, f64, f64, f64, i32, i32) {
+) -> (u32, f64, f32, f32, i32, i32) {
     let mut edge_cost = 0u32;
     let mut edge_dist = 0.0f64;
-    let mut edge_time = 0.0f64;
-    let mut edge_energy = 0.0f64;
+    let mut edge_time = 0.0f32;
+    let mut edge_energy = 0.0f32;
 
     let mut p_lon_prev = prev_lon;
     let mut p_lat_prev = prev_lat;
@@ -1250,7 +1543,7 @@ fn process_polyline(
         let p1 = &poly[i];
         let p2 = &poly[i + 1];
 
-        let seg_dist = distance(p1.0, p1.1, p2.0, p2.1);
+        let seg_dist = distance(p1.0, p1.1, p2.0, p2.1).round().max(1.0);
         if seg_dist <= 0.0 {
             continue;
         }
@@ -1273,7 +1566,7 @@ fn process_polyline(
                     && way_cost.priorityclassifier <= crossing_cfg.crossing_prio_l
                 {
                     if let Some(cls) = crossing_class {
-                        if cls >= 1 && cls <= 6 {
+                        if (1..=6).contains(&cls) {
                             let idx = (cls - 1) as usize;
                             if angle < 0.0 {
                                 crossing_cfg.cost_to_left[idx]
