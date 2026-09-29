@@ -8,8 +8,20 @@
 //! Path state tracker with 3-state elevation hysteresis buffers, slope cutoffs,
 //! turn angle penalties, and kinematic travel time integration.
 
-use crate::dsl::evaluator::WayCostResult;
 use super::cost::KinematicConfig;
+use super::state::CandidateState;
+use crate::dsl::evaluator::WayCostResult;
+use crate::types::{Cost, Distance, Joules, Seconds};
+
+/// Geometric and behavioral inputs for evaluating a path section.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SectionInput {
+    pub dist: Distance,
+    pub delta_h: f64,
+    pub cos_angle: f64,
+    pub crossing_penalty: i32,
+    pub is_detail: bool,
+}
 
 /// Elevation hysteresis parameters configured globally or by profile.
 #[derive(Debug, Clone)]
@@ -32,7 +44,8 @@ impl Default for ElevationConfig {
 impl ElevationConfig {
     pub fn from_profile(profile: &crate::dsl::parser::Profile) -> Self {
         Self {
-            penalty_buffer: (profile.get_global_var("elevationpenaltybuffer", 5.0) * 1_000_000.0) as i32,
+            penalty_buffer: (profile.get_global_var("elevationpenaltybuffer", 5.0) * 1_000_000.0)
+                as i32,
             max_buffer: (profile.get_global_var("elevationmaxbuffer", 10.0) * 1_000_000.0) as i32,
             buffer_reduce: (profile.get_global_var("elevationbufferreduce", 0.0) * 10_000.0) as i32,
         }
@@ -40,13 +53,13 @@ impl ElevationConfig {
 }
 
 /// Dynamic path state carried across road segments along a search path.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct PathState {
-    pub ehbd: i32,              // downhill elevation hysteresis buffer in micrometers
-    pub ehbu: i32,              // uphill elevation hysteresis buffer in micrometers
-    pub elevation_buffer: f32,  // buffer for continuous incline estimation
-    pub total_time_s: f32,      // cumulative travel time in seconds
-    pub total_energy_j: f32,    // cumulative energy in Joules
+    pub ehbd: i32,             // downhill elevation hysteresis buffer in micrometers
+    pub ehbu: i32,             // uphill elevation hysteresis buffer in micrometers
+    pub elevation_buffer: f32, // buffer for continuous incline estimation
+    pub total_time_s: Seconds, // cumulative travel time in seconds
+    pub total_energy_j: Joules, // cumulative energy in Joules
 }
 
 /// Turn crossing cost configuration for junctions with `estimated_crossing_class`.
@@ -96,12 +109,12 @@ impl CrossingConfig {
 #[derive(Debug, Clone)]
 pub struct SectionCost {
     pub section_cost: f64,
-    pub section_cost_int: u32,
+    pub section_cost_int: Cost,
     pub turn_cost: f64,
     pub elevation_cost: f64,
     pub effective_costfactor: f32,
-    pub time_seconds: f32,
-    pub energy_joules: f32,
+    pub time_seconds: Seconds,
+    pub energy_joules: Joules,
 }
 
 pub struct StdPathCalculator;
@@ -135,12 +148,14 @@ impl StdPathCalculator {
         way_cost: &WayCostResult,
         elev_cfg: &ElevationConfig,
         kinematic_cfg: &KinematicConfig,
-        dist: f64,
-        delta_h: f64,
-        cos_angle: f64,
-        crossing_penalty: i32,
-        is_detail: bool,
+        input: &SectionInput,
     ) -> SectionCost {
+        let dist = input.dist;
+        let delta_h = input.delta_h;
+        let cos_angle = input.cos_angle;
+        let crossing_penalty = input.crossing_penalty;
+        let is_detail = input.is_detail;
+
         let turncost_base = way_cost.turncost;
         let uphillcutoff = way_cost.uphillcutoff_i;
         let downhillcutoff = way_cost.downhillcutoff_i;
@@ -159,13 +174,12 @@ impl StdPathCalculator {
         let dist_int = dist as i32;
 
         // 1. Turn penalty with crossing cost
-        let turn_cost =
-            ((1.0 - cos_angle) * turncost_base as f64 + 0.2) as i32 + crossing_penalty;
+        let turn_cost = ((1.0 - cos_angle) * turncost_base as f64 + 0.2) as i32 + crossing_penalty;
         let mut section_cost = turn_cost as f64;
 
         // 2. Elevation penalty with hysteresis buffer
         let delta_h_micros = (1_000_000.0 * delta_h) as i32;
-        state.ehbd += -delta_h_micros - dist_int * downhillcutoff;
+        state.ehbd += delta_h_micros.saturating_neg() - dist_int * downhillcutoff;
         state.ehbu += delta_h_micros - dist_int * uphillcutoff;
 
         let mut downweight = 0.0f32;
@@ -213,12 +227,11 @@ impl StdPathCalculator {
             state.ehbu -= reduce;
 
             if uphillcostdiv > 0 {
-                elev_cost +=
-                    reduce.min(dist_int * uphillmaxslope) as f64 / uphillcostdiv as f64;
+                elev_cost += reduce.min(dist_int * uphillmaxslope) as f64 / uphillcostdiv as f64;
             }
             if uphillmaxslopecostdiv > 0 {
-                elev_cost += 0.max(reduce - dist_int * uphillmaxslope) as f64
-                    / uphillmaxslopecostdiv as f64;
+                elev_cost +=
+                    0.max(reduce - dist_int * uphillmaxslope) as f64 / uphillmaxslopecostdiv as f64;
             }
         } else if state.ehbu < 0 {
             state.ehbu = 0;
@@ -227,8 +240,7 @@ impl StdPathCalculator {
         section_cost += elev_cost;
 
         // 3. Slope-dependent effective costfactor
-        let costfactor =
-            cfup * upweight + cf * (1.0 - upweight - downweight) + cfdown * downweight;
+        let costfactor = cfup * upweight + cf * (1.0 - upweight - downweight) + cfdown * downweight;
         section_cost += (dist_int as f32 * costfactor + 0.5f32) as f64;
 
         let section_cost_int = (section_cost.max(0.0)) as u32;
@@ -275,7 +287,12 @@ impl StdPathCalculator {
 
     /// Calculates the elevation buffer correction term matching BRouter's `StdPath.elevationCorrection`.
     #[inline]
-    pub fn elevation_correction(ehbd: i32, ehbu: i32, downhillcostdiv: i32, uphillcostdiv: i32) -> u32 {
+    pub fn elevation_correction(
+        ehbd: i32,
+        ehbu: i32,
+        downhillcostdiv: i32,
+        uphillcostdiv: i32,
+    ) -> u32 {
         let down = if downhillcostdiv > 0 {
             (ehbd / downhillcostdiv).max(0) as u32
         } else {
@@ -289,32 +306,30 @@ impl StdPathCalculator {
         down + up
     }
 
-    /// Evaluates if candidate path is definitely worse than an existing path matching BRouter's `StdPath.definitlyWorseThan`.
+    /// Evaluates if a candidate path is definitely worse than an existing path.
+    ///
+    /// Matches `StdPath.definitlyWorseThan` in Java BRouter.
+    /// Uses Pareto dominance over cumulative cost and elevation hysteresis buffers `ehbd` and `ehbu`.
+    /// When `cand_cost > exist_cost + delta_elevation_cost`, the candidate path cannot overtake
+    /// the existing path even under optimal downhill or uphill buffer exploitation.
     #[inline]
-    pub fn definitly_worse_than(
-        cand_cost: u32,
-        cand_ehbd: i32,
-        cand_ehbu: i32,
-        exist_cost: u32,
-        exist_ehbd: i32,
-        exist_ehbu: i32,
+    pub fn definitely_worse_than(
+        cand: CandidateState,
+        exist: CandidateState,
         downhillcostdiv: i32,
         uphillcostdiv: i32,
     ) -> bool {
-        let mut c = exist_cost;
-        if downhillcostdiv > 0 {
-            let delta = exist_ehbd / downhillcostdiv - cand_ehbd / downhillcostdiv;
-            if delta > 0 {
-                c = c.saturating_add(delta as u32);
-            }
-        }
-        if uphillcostdiv > 0 {
-            let delta = exist_ehbu / uphillcostdiv - cand_ehbu / uphillcostdiv;
-            if delta > 0 {
-                c = c.saturating_add(delta as u32);
-            }
-        }
-        cand_cost > c || (cand_cost == c && cand_ehbd <= exist_ehbd && cand_ehbu <= exist_ehbu)
+        cand.is_definitely_worse_than(&exist, downhillcostdiv, uphillcostdiv)
+    }
+
+    /// Compatibility forwarder matching Java BRouter spelling `StdPath.definitlyWorseThan`.
+    #[inline]
+    pub fn definitly_worse_than(
+        cand: CandidateState,
+        exist: CandidateState,
+        downhillcostdiv: i32,
+        uphillcostdiv: i32,
+    ) -> bool {
+        cand.is_definitely_worse_than(&exist, downhillcostdiv, uphillcostdiv)
     }
 }
-

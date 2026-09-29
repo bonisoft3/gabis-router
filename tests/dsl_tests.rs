@@ -35,7 +35,10 @@ fn test_parse_lookups_dat() {
 
     let highway_idx = lookups.way.get_name_idx("highway").unwrap();
     assert!(lookups.way.get_value_idx(highway_idx, "primary").is_some());
-    assert!(lookups.way.get_value_idx(highway_idx, "residential").is_some());
+    assert!(lookups
+        .way
+        .get_value_idx(highway_idx, "residential")
+        .is_some());
     assert!(lookups.way.get_value_idx(highway_idx, "cycleway").is_some());
     assert!(lookups.way.get_value_idx(highway_idx, "track").is_some());
 
@@ -48,7 +51,8 @@ fn test_parse_lookups_dat() {
 
 #[test]
 fn test_parse_all_brouter_profiles() {
-    let lookups = LookupData::load_from_file("profiles/lookups.dat").expect("Failed to parse lookups.dat");
+    let lookups =
+        LookupData::load_from_file("profiles/lookups.dat").expect("Failed to parse lookups.dat");
     let profiles_dir = Path::new("profiles");
 
     let mut profile_paths = Vec::new();
@@ -129,8 +133,10 @@ fn test_parse_all_brouter_profiles() {
 
 #[test]
 fn test_evaluate_profile_way_tags() {
-    let lookups = LookupData::load_from_file("profiles/lookups.dat").expect("Failed to parse lookups.dat");
-    let profile = Profile::load_from_file("profiles/fastbike.brf", &lookups).expect("Failed to load fastbike");
+    let lookups =
+        LookupData::load_from_file("profiles/lookups.dat").expect("Failed to parse lookups.dat");
+    let profile = Profile::load_from_file("profiles/fastbike.brf", &lookups)
+        .expect("Failed to load fastbike");
 
     let mut evaluator = ProfileEvaluator::new(&profile, &lookups.way, &lookups.node);
 

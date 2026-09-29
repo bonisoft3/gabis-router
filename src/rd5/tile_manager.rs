@@ -13,6 +13,8 @@ use std::fs::File;
 use std::io::{self, Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
+
 use super::codec::tag_coder::TagValueValidator;
 use super::micro_cache::DecodedMicroCache;
 use super::osm_file::OsmFile;
@@ -115,24 +117,31 @@ impl TileManager {
 
         let divisor = osmf.divisor;
         let ncaches = (divisor * divisor) as usize;
-        let mut results = Vec::with_capacity(ncaches);
+        let mut raw_cells = Vec::with_capacity(ncaches);
 
         for sub_idx in 0..ncaches {
             let bytes = osmf.read_cell_bytes(&mut file, sub_idx)?;
-            if bytes.is_empty() {
-                continue;
-            }
-            let rel_lat = (sub_idx as i32) / divisor;
-            let rel_lon = (sub_idx as i32) % divisor;
-            let lon_idx = divisor * lon_degree + rel_lon;
-            let lat_idx = divisor * lat_degree + rel_lat;
-
-            let mc = DecodedMicroCache::decode(bytes, lon_idx, lat_idx, divisor, way_validator)?;
-            if !mc.nodes.is_empty() {
-                results.push(mc);
+            if !bytes.is_empty() {
+                let rel_lat = (sub_idx as i32) / divisor;
+                let rel_lon = (sub_idx as i32) % divisor;
+                let lon_idx = divisor * lon_degree + rel_lon;
+                let lat_idx = divisor * lat_degree + rel_lat;
+                raw_cells.push((bytes, lon_idx, lat_idx));
             }
         }
 
-        Ok(results)
+        let results: io::Result<Vec<DecodedMicroCache>> = raw_cells
+            .into_par_iter()
+            .map(|(bytes, lon_idx, lat_idx)| {
+                DecodedMicroCache::decode(bytes, lon_idx, lat_idx, divisor, way_validator)
+            })
+            .filter_map(|res| match res {
+                Ok(mc) if !mc.nodes.is_empty() => Some(Ok(mc)),
+                Ok(_) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect();
+
+        results
     }
 }

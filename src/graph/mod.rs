@@ -8,14 +8,14 @@
 //! Graph topology, spatial geodesics, intermediate link geometry decoding,
 //! and spatial waypoint matching.
 
-pub mod spatial;
-pub mod node;
-pub mod link;
+pub mod fast_map;
 pub mod matcher;
+pub mod node;
 pub mod routing_graph;
+pub mod spatial;
 
-pub use spatial::*;
-pub use node::*;
-pub use link::*;
+pub use fast_map::*;
 pub use matcher::*;
+pub use node::*;
 pub use routing_graph::*;
+pub use spatial::*;

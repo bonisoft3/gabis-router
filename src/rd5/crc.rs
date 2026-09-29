@@ -4,7 +4,11 @@
 //!
 //! # Summary
 //! Exact CRC-32 implementation used by BRouter to verify RD5 headers and microcache integrity.
-//! Note: BRouter does not invert the final 32-bit CRC (no final XOR with 0xFFFFFFFF).
+//!
+//! Matches Java class `btools.util.Crc32`:
+//! Standard IEEE 802.3 CRC-32 polynomial `0xEDB88320` with initial state `0xFFFFFFFF`.
+//! Unlike standard IEEE 802.3, BRouter does not invert the final 32-bit CRC state
+//! (no final XOR with `0xFFFFFFFF`). Returns raw signed 32-bit integer matching Java `int`.
 
 static CRC_TABLE: [u32; 256] = [
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,

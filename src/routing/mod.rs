@@ -6,10 +6,16 @@
 //! Core routing engine, kinematic physics modeling, path state tracking,
 //! elevation hysteresis buffers, and 2-pass guided A* search.
 
+pub use crate::types::{Cost, Distance, Joules, Seconds};
+
 pub mod cost;
 pub mod path;
 pub mod search;
+pub mod slicing;
+pub mod state;
 
 pub use cost::*;
 pub use path::*;
 pub use search::*;
+pub use slicing::*;
+pub use state::*;

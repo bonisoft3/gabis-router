@@ -41,12 +41,12 @@ impl PhysicalFile {
         let mut file_index = [0u64; 25];
         let mut lookup_version = -1i16;
 
-        for i in 0..25 {
+        for (i, entry) in file_index.iter_mut().enumerate() {
             let lv = dis.read_long() as u64;
             if i == 0 {
                 lookup_version = (lv >> 48) as i16;
             }
-            file_index[i] = lv & 0x0000_ffff_ffff_ffff;
+            *entry = lv & 0x0000_ffff_ffff_ffff;
         }
 
         let file_len = file.metadata()?.len();
@@ -90,6 +90,10 @@ impl PhysicalFile {
         let creation_time = dis.read_long();
         let crc_data = dis.read_int();
 
+        // In BRouter RD5 format, bit 1 of the top index CRC is flipped (`^ 2`)
+        // to flag a 32x32 microcache cell divisor instead of the standard 80x80 divisor.
+        // Matches Java class `btools.mapaccess.PhysicalFile`:
+        //   divisor = crcData == fileIndexCrc ? 80 : ((crcData ^ 2) == fileIndexCrc ? 32 : throw...)
         let divisor = if crc_data == file_index_crc {
             80
         } else if (crc_data ^ 2) == file_index_crc {
@@ -102,8 +106,8 @@ impl PhysicalFile {
         };
 
         let mut file_header_crcs = [0i32; 25];
-        for i in 0..25 {
-            file_header_crcs[i] = dis.read_int();
+        for crc_entry in &mut file_header_crcs {
+            *crc_entry = dis.read_int();
         }
 
         let elevation_type = if dis.has_more_data() {

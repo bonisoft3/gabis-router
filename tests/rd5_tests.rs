@@ -50,7 +50,10 @@ fn test_real_rd5_loading_and_decoding() {
     let lat_mod5 = lat_degree % 5;
     let tile_index = (lon_mod5 * 5 + lat_mod5) as usize;
 
-    println!("Testing 1°×1° square sub-index parsing for tile {} (lonDegree={}, latDegree={})...", tile_index, lon_degree, lat_degree);
+    println!(
+        "Testing 1°×1° square sub-index parsing for tile {} (lonDegree={}, latDegree={})...",
+        tile_index, lon_degree, lat_degree
+    );
     let osmf = OsmFile::new(&mut pf, lon_degree, lat_degree).expect("Failed to load OsmFile");
     assert!(osmf.has_data, "Expected square (180, 141) to have data");
 
@@ -77,8 +80,14 @@ fn test_real_rd5_loading_and_decoding() {
         total_nodes as f64 / elapsed.as_secs_f64()
     );
 
-    assert!(total_nodes > 0, "Expected non-zero nodes in populated square");
-    assert!(total_links > 0, "Expected non-zero links in populated square");
+    assert!(
+        total_nodes > 0,
+        "Expected non-zero nodes in populated square"
+    );
+    assert!(
+        total_links > 0,
+        "Expected non-zero links in populated square"
+    );
 }
 
 #[test]
@@ -97,6 +106,9 @@ fn test_w5_n50_tile_header_and_data() {
             data_squares += 1;
         }
     }
-    println!("W5_N50.rd5: divisor={}, data_squares={}/25", pf.divisor, data_squares);
+    println!(
+        "W5_N50.rd5: divisor={}, data_squares={}/25",
+        pf.divisor, data_squares
+    );
     assert!(data_squares > 0);
 }

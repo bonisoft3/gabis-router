@@ -59,6 +59,10 @@ fn get_morton_tables() -> &'static MortonTables {
     })
 }
 
+/// Bit-deinterleaves a Morton quadtree index into delta longitude and delta latitude.
+///
+/// Matches Java class `btools.codec.MicroCache2`:
+/// Even bits map to `dlon`, odd bits map to `dlat`.
 fn deinterleave(mut id32: usize) -> (i32, i32) {
     let mut dlon = 0i32;
     let mut dlat = 0i32;
@@ -76,6 +80,11 @@ fn deinterleave(mut id32: usize) -> (i32, i32) {
     (dlon, dlat)
 }
 
+/// Expands a 29-bit Morton quadtree node ID into absolute integer microdegrees `(ilon, ilat)`.
+///
+/// Matches `MicroCache2.expandCoords`:
+/// Uses three 10-bit lookups from precomputed `MORTON_TABLES` to reconstruct coordinates
+/// within the microcache cell without bit loops.
 fn expand_coords(lon_idx: i32, lat_idx: i32, cellsize: i32, id32: i32) -> (i32, i32) {
     let tables = get_morton_tables();
     let idx = id32 as usize;
@@ -89,23 +98,21 @@ fn expand_coords(lon_idx: i32, lat_idx: i32, cellsize: i32, id32: i32) -> (i32, 
     (lon_idx * cellsize + dlon, lat_idx * cellsize + dlat)
 }
 
+use crate::types::Point2D;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodedTurnRestriction {
     pub exceptions: i16,
     pub is_positive: bool,
-    pub from_lon: i32,
-    pub from_lat: i32,
-    pub to_lon: i32,
-    pub to_lat: i32,
+    pub from: Point2D,
+    pub to: Point2D,
 }
 
 impl DecodedTurnRestriction {
     pub fn is_turn_forbidden(
         restrictions: &[DecodedTurnRestriction],
-        from_lon: i32,
-        from_lat: i32,
-        to_lon: i32,
-        to_lat: i32,
+        from: Point2D,
+        to: Point2D,
         bike_mode: bool,
         car_mode: bool,
     ) -> bool {
@@ -117,11 +124,11 @@ impl DecodedTurnRestriction {
             if ((tr.exceptions & 1) != 0 && bike_mode) || ((tr.exceptions & 2) != 0 && car_mode) {
                 continue;
             }
-            if tr.from_lon == from_lon && tr.from_lat == from_lat {
+            if tr.from == from {
                 if tr.is_positive {
                     has_any_positive = true;
                 }
-                if tr.to_lon == to_lon && tr.to_lat == to_lat {
+                if tr.to == to {
                     if tr.is_positive {
                         has_positive = true;
                     } else {
@@ -141,13 +148,14 @@ pub struct DecodedGeometryPoint {
     pub delev: i32,
 }
 
+/// Directed road link decoded from a MicroCache cell.
+///
+/// Corresponds to Java class `btools.mapaccess.OsmLink`.
 #[derive(Debug, Clone)]
 pub struct DecodedLink {
     pub target_lon: i32,
     pub target_lat: i32,
     pub is_reverse: bool,
-    pub is_internal: bool,
-    pub target_node_idx: Option<usize>,
     pub way_tags: Option<TagValueWrapper>,
     pub geometry: Vec<DecodedGeometryPoint>,
 }
@@ -249,10 +257,8 @@ impl DecodedMicroCache {
                     nodes[n].turn_restrictions.push(DecodedTurnRestriction {
                         exceptions: tr_exceptions,
                         is_positive,
-                        from_lon,
-                        from_lat,
-                        to_lon,
-                        to_lat,
+                        from: Point2D::new(from_lon, from_lat),
+                        to: Point2D::new(to_lon, to_lat),
                     });
                     tr_exceptions = 0;
                 } else {
@@ -277,21 +283,18 @@ impl DecodedMicroCache {
                 let mut dlat_remaining: i32;
                 let target_lon: i32;
                 let target_lat: i32;
-                let target_node_idx: Option<usize>;
 
                 if is_internal {
                     dlon_remaining = nodes[node_idx].ilon - ilon;
                     dlat_remaining = nodes[node_idx].ilat - ilat;
                     target_lon = nodes[node_idx].ilon;
                     target_lat = nodes[node_idx].ilat;
-                    target_node_idx = Some(node_idx);
                 } else {
                     is_reverse = bc.decode_bit();
                     dlon_remaining = ext_lon_diff.decode_signed_value(&mut bc);
                     dlat_remaining = ext_lat_diff.decode_signed_value(&mut bc);
                     target_lon = ilon + dlon_remaining;
                     target_lat = ilat + dlat_remaining;
-                    target_node_idx = None;
                 }
 
                 let way_tags = way_tag_coder.decode_tag_value_set(&mut bc);
@@ -318,8 +321,6 @@ impl DecodedMicroCache {
                         target_lon,
                         target_lat,
                         is_reverse,
-                        is_internal,
-                        target_node_idx,
                         way_tags,
                         geometry,
                     });
@@ -327,7 +328,10 @@ impl DecodedMicroCache {
             }
         }
 
-        // Integrity check of cell footer CRC
+        // Integrity check of cell footer CRC.
+        // In BRouter RD5 format, the microcache cell footer stores `crc ^ 2`.
+        // Matches Java class `btools.codec.MicroCache2`:
+        //   if ((crcData ^ 2) != crcFooter) throw new IOException("MicroCache cell checksum error");
         let read_bytes = ((bc.bit_coder.get_reading_bit_position() + 7) >> 3) as usize;
         if read_bytes != asize - 4 {
             let crc_data = crc::crc(&bc.bit_coder.ab[..asize - 4]);

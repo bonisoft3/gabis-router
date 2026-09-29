@@ -17,10 +17,11 @@ pub struct TagValueWrapper {
 }
 
 /// Optional validator for filtering tags and checking access rights during decode.
-pub trait TagValueValidator {
+///
+/// Corresponds to Java class `btools.codec.TagValueValidator`.
+pub trait TagValueValidator: Sync {
     fn is_lookup_idx_used(&self, idx: i32) -> bool;
     fn access_type(&self, data: &[u8]) -> i32;
-    fn check_start_way(&self, data: &[u8]) -> bool;
 }
 
 /// Node in the Huffman prefix tree.
@@ -33,16 +34,16 @@ pub enum HuffmanNode {
 }
 
 /// TagValueCoder decodes tag descriptions using a Huffman prefix tree.
+///
+/// Corresponds to Java class `btools.codec.TagValueCoder`.
+/// MicroCache cells encode a prefix tree header defining a dictionary of tag bitmasks.
 pub struct TagValueCoder {
     pub tree: HuffmanNode,
 }
 
 impl TagValueCoder {
     /// Decodes the Huffman dictionary from the bitstream.
-    pub fn new(
-        bc: &mut StatCoderContext,
-        validator: Option<&dyn TagValueValidator>,
-    ) -> Self {
+    pub fn new(bc: &mut StatCoderContext, validator: Option<&dyn TagValueValidator>) -> Self {
         let tree = Self::decode_tree(&mut bc.bit_coder, validator);
         Self { tree }
     }

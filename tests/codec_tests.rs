@@ -119,5 +119,8 @@ fn test_sorted_array_encode_decode() {
     let mut decoded = vec![0i32; size];
     ctx.decode_sorted_array(&mut decoded, 0, size, 27, 0);
 
-    assert_eq!(decoded, values, "Decoded sorted array did not match original");
+    assert_eq!(
+        decoded, values,
+        "Decoded sorted array did not match original"
+    );
 }

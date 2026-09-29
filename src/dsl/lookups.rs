@@ -15,19 +15,14 @@ use std::path::Path;
 
 use crate::rd5::codec::bit_coder::BitReader;
 
+/// An enumerated tag value and its aliases from `lookups.dat`.
+///
+/// Corresponds to Java class `btools.expressions.BExpressionLookupValue`.
+/// Tags in `lookups.dat` can define aliases (for example, `primary_link` as an alias of `primary`).
 #[derive(Debug, Clone)]
 pub struct LookupValue {
     pub value: String,
     pub aliases: Vec<String>,
-}
-
-impl LookupValue {
-    pub fn matches(&self, s: &str) -> bool {
-        if self.value == s {
-            return true;
-        }
-        self.aliases.iter().any(|a| a == s)
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -161,14 +156,12 @@ impl ContextLookups {
         }
     }
 
-    /// Decodes a binary tag bitmask into a freshly allocated dense integer lookup vector.
-    pub fn decode(&self, is_reverse: bool, bitmap: &[u8]) -> Vec<i32> {
-        let mut ld = vec![0i32; self.names.len()];
-        self.decode_into(&mut ld, is_reverse, bitmap);
-        ld
-    }
-
     /// Extracts the numerical float value for `v:<tag>` (e.g. `v:maxspeed`).
+    ///
+    /// Matches `BExpressionMetaData.getLookupValue`:
+    /// - Value 0 represents an unset tag, returning `NaN`.
+    /// - Values below 900 are looked up as literal strings in the dictionary and parsed.
+    /// - Values 900 and above are encoded fixed-point numbers: `(val - 1000) / 100.0`.
     pub fn get_lookup_value(&self, name_idx: usize, val: i32) -> f32 {
         if val == 0 {
             return f32::NAN;

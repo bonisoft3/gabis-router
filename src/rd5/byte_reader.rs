@@ -19,11 +19,6 @@ impl<'a> ByteDataReader<'a> {
         Self { ab, offset }
     }
 
-    pub fn reset(&mut self, ab: &'a [u8]) {
-        self.ab = ab;
-        self.offset = 0;
-    }
-
     pub fn read_int(&mut self) -> i32 {
         let b0 = self.ab[self.offset] as u32;
         let b1 = self.ab[self.offset + 1] as u32;
@@ -42,25 +37,15 @@ impl<'a> ByteDataReader<'a> {
         val as i64
     }
 
-    pub fn read_boolean(&mut self) -> bool {
-        let b = self.ab[self.offset];
-        self.offset += 1;
-        b != 0
-    }
-
     pub fn read_byte(&mut self) -> i8 {
         let b = self.ab[self.offset] as i8;
         self.offset += 1;
         b
     }
 
-    pub fn read_short(&mut self) -> i16 {
-        let b0 = self.ab[self.offset] as u16;
-        let b1 = self.ab[self.offset + 1] as u16;
-        self.offset += 2;
-        ((b0 << 8) | b1) as i16
-    }
-
+    /// Reads an unsigned variable-length integer encoded in LEB128 format (7 bits per byte).
+    ///
+    /// Matches `ByteDataReader.readVarLengthUnsigned` in Java BRouter.
     pub fn read_var_length_unsigned(&mut self) -> i32 {
         let mut b = self.ab[self.offset] as i8;
         self.offset += 1;
@@ -96,6 +81,10 @@ impl<'a> ByteDataReader<'a> {
         v
     }
 
+    /// Reads a signed variable-length integer using least-significant-bit sign encoding:
+    /// even values are positive (`v >> 1`), odd values are negative (`-(v >> 1)`).
+    ///
+    /// Matches `ByteDataReader.readVarLengthSigned` in Java BRouter.
     pub fn read_var_length_signed(&mut self) -> i32 {
         let v = self.read_var_length_unsigned();
         if (v & 1) == 0 {

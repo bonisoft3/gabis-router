@@ -82,31 +82,43 @@ impl BinaryOp {
     }
 }
 
+/// Profile expression AST node.
+///
+/// Corresponds to Java class `btools.expressions.BExpression`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BExpr {
+    /// Literal float constant.
     Number(f32),
+    /// Local or inherited variable reference by index in the context array.
     Variable(usize),
+    /// Foreign context variable reference (for example, `way:highway` accessed inside `node` context).
     ForeignVariable {
         context: String,
         var_name: String,
         var_idx: usize,
     },
+    /// Numerical tag extraction via `v:<tag>` (e.g. `v:maxspeed`).
     VariableGet(usize),
+    /// Tag match test against a set of allowed enumerated value indices.
     Lookup {
         name_idx: usize,
         allowed_values: Vec<i32>,
     },
+    /// Logical negation (`not <expr>`).
     Not(Box<BExpr>),
+    /// Binary arithmetic, logical, or comparison operator.
     Binary {
         op: BinaryOp,
         left: Box<BExpr>,
         right: Box<BExpr>,
     },
+    /// Ternary conditional (`switch <cond> <then> <else>` or `if <cond> then <then> else <else>`).
     Switch {
         cond: Box<BExpr>,
         then_expr: Box<BExpr>,
         else_expr: Box<BExpr>,
     },
+    /// Assignment of evaluated expression result to local variable index.
     Assign {
         var_idx: usize,
         expr: Box<BExpr>,

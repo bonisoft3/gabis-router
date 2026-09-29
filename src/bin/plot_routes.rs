@@ -26,7 +26,11 @@ struct Cli {
     output: PathBuf,
 
     /// Title displayed on the map page
-    #[arg(short, long, default_value = "Bike Route Comparison (rsrouter vs brouter.de)")]
+    #[arg(
+        short,
+        long,
+        default_value = "Bike Route Comparison (rsrouter vs brouter.de)"
+    )]
     title: String,
 }
 
@@ -65,7 +69,10 @@ fn detect_corridor(file_stem: &str) -> &'static str {
 
 fn detect_profile(file_stem: &str, raw_name: &str) -> &'static str {
     let s = format!("{} {}", file_stem, raw_name).to_lowercase();
-    if s.contains("verylowtraffic") || s.contains("very-low-traffic") || s.contains("very_low_traffic") {
+    if s.contains("verylowtraffic")
+        || s.contains("very-low-traffic")
+        || s.contains("very_low_traffic")
+    {
         "Fastbike-verylowtraffic"
     } else if s.contains("lowtraffic") || s.contains("low-traffic") || s.contains("low_traffic") {
         "Fastbike-lowtraffic"
@@ -73,8 +80,6 @@ fn detect_profile(file_stem: &str, raw_name: &str) -> &'static str {
         "Gravel"
     } else if s.contains("trekking") {
         "Trekking"
-    } else if s.contains("fastbike") {
-        "Fastbike"
     } else {
         "Fastbike"
     }
@@ -93,15 +98,17 @@ fn detect_engine_and_style(path: &Path) -> (&'static str, &'static str) {
 
 fn pick_color(profile: &str) -> String {
     let color = match profile {
-        "Fastbike" => "#dc2626",                    // Red
-        "Fastbike-lowtraffic" => "#2563eb",         // Blue
-        "Fastbike-verylowtraffic" => "#7c3aed",     // Purple
-        "Gravel" => "#ea580c",                      // Orange
+        "Fastbike" => "#dc2626",                // Red
+        "Fastbike-lowtraffic" => "#2563eb",     // Blue
+        "Fastbike-verylowtraffic" => "#7c3aed", // Purple
+        "Gravel" => "#ea580c",                  // Orange
         _ => {
             let palette = [
                 "#9333ea", "#0891b2", "#db2777", "#d97706", "#4f46e5", "#059669",
             ];
-            let hash = profile.bytes().fold(0usize, |acc, b| acc.wrapping_add(b as usize));
+            let hash = profile
+                .bytes()
+                .fold(0usize, |acc, b| acc.wrapping_add(b as usize));
             palette[hash % palette.len()]
         }
     };
@@ -129,7 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(entries) = fs::read_dir("fixtures/brouter_de") {
             for entry in entries.flatten() {
                 let p = entry.path();
-                if p.extension().map_or(false, |ext| ext == "json") {
+                if p.extension().is_some_and(|ext| ext == "json") {
                     discovered.push(p);
                 }
             }
@@ -137,7 +144,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(entries) = fs::read_dir("target/routes") {
             for entry in entries.flatten() {
                 let p = entry.path();
-                if p.extension().map_or(false, |ext| ext == "geojson" || ext == "json") {
+                if p.extension()
+                    .is_some_and(|ext| ext == "geojson" || ext == "json")
+                {
                     discovered.push(p);
                 }
             }
@@ -153,7 +162,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut seen_keys = HashSet::new();
 
     for route_path in &routes_to_plot {
-        let canonical = route_path.canonicalize().unwrap_or_else(|_| route_path.clone());
+        let canonical = route_path
+            .canonicalize()
+            .unwrap_or_else(|_| route_path.clone());
         if !seen_paths.insert(canonical) {
             continue;
         }
@@ -192,7 +203,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(0.0);
 
         let ascend_m: f64 = props
-            .and_then(|p| p.get("filtered ascend").or_else(|| p.get("filtered-ascend")).or_else(|| p.get("plain-ascend")))
+            .and_then(|p| {
+                p.get("filtered ascend")
+                    .or_else(|| p.get("filtered-ascend"))
+                    .or_else(|| p.get("plain-ascend"))
+            })
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse().ok())
             .unwrap_or(0.0);
@@ -247,8 +262,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }
 
-    let unique_corridors: HashSet<_> =
-        parsed_inputs.iter().map(|p| p.corridor).collect();
+    let unique_corridors: HashSet<_> = parsed_inputs.iter().map(|p| p.corridor).collect();
     let has_multiple_corridors = unique_corridors.len() > 1;
 
     let mut route_infos = Vec::new();
@@ -321,7 +335,16 @@ fn current_timestamps() -> (String, String) {
     let days_in_months = [
         31,
         if leap { 29 } else { 28 },
-        31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
     ];
     let mut month = 1;
     for &dim in &days_in_months {
@@ -347,7 +370,8 @@ fn current_timestamps() -> (String, String) {
 fn generate_html(title: &str, routes: &[RouteInfo], ts_display: &str, ts_iso: &str) -> String {
     let routes_json = serde_json::to_string(routes).unwrap_or_else(|_| "[]".to_string());
 
-    format!(r##"<!DOCTYPE html>
+    format!(
+        r##"<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -415,6 +439,7 @@ fn generate_html(title: &str, routes: &[RouteInfo], ts_display: &str, ts_iso: &s
           <button class="filter-btn active" id="engine-all-btn">All</button>
           <button class="filter-btn" id="engine-rsrouter-btn"><span class="legend-badge solid" style="background:#38bdf8;"></span>rsrouter (Solid)</button>
           <button class="filter-btn" id="engine-brouter-btn"><span class="legend-badge dashed" style="border-color:#ffffff;"></span>brouter.de (Dashed)</button>
+          <button class="filter-btn" id="engine-bikerouter-btn"><span class="legend-badge dotted" style="border-color:#38bdf8;"></span>bikerouter.de (Dotted)</button>
         </div>
       </div>
       <div class="filter-group" id="corridor-group" style="display: none;">
@@ -852,5 +877,8 @@ fn generate_html(title: &str, routes: &[RouteInfo], ts_display: &str, ts_iso: &s
   </script>
 </body>
 </html>
-"##, title = title, routes_json = routes_json)
+"##,
+        title = title,
+        routes_json = routes_json
+    )
 }

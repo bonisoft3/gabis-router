@@ -189,8 +189,7 @@ impl Profile {
         }
 
         // 1. Compile and evaluate global section
-        let (global_block, global_values) =
-            compile_global_block(&global_tokens, &lookups.way)?;
+        let (global_block, global_values) = compile_global_block(&global_tokens, &lookups.way)?;
 
         // 2. Compile way section with global variables inherited as read-only
         let way_block = compile_context_block(
@@ -460,8 +459,8 @@ fn parse_expression(
             let inner = parse_expression(tokens, cursor, lookups, var_map)?;
             BExpr::Not(Box::new(inner))
         }
-        "or" | "and" | "xor" | "add" | "sub" | "multiply" | "divide" | "max" | "min"
-        | "equal" | "greater" | "lesser" => {
+        "or" | "and" | "xor" | "add" | "sub" | "multiply" | "divide" | "max" | "min" | "equal"
+        | "greater" | "lesser" => {
             let bin_op = match token.as_str() {
                 "or" => BinaryOp::Or,
                 "and" => BinaryOp::And,

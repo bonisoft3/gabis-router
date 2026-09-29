@@ -70,11 +70,7 @@ impl WayCostResult {
         };
 
         let up_cost = self.uphillcost as i32;
-        self.uphillcostdiv = if up_cost > 0 {
-            1_000_000 / up_cost
-        } else {
-            0
-        };
+        self.uphillcostdiv = if up_cost > 0 { 1_000_000 / up_cost } else { 0 };
 
         let up_max_cost = self.uphillmaxslopecost as i32;
         self.uphillmaxslopecostdiv = if up_max_cost > 0 {
@@ -106,18 +102,12 @@ impl<'a> ProfileEvaluator<'a> {
         node_lookups: &'a ContextLookups,
     ) -> Self {
         let mut way_vars = vec![0.0f32; profile.way_block.num_vars];
-        for i in 0..profile.way_block.min_write_idx {
-            if i < profile.global_values.len() {
-                way_vars[i] = profile.global_values[i];
-            }
-        }
+        let copy_way_len = profile.way_block.min_write_idx.min(profile.global_values.len());
+        way_vars[..copy_way_len].copy_from_slice(&profile.global_values[..copy_way_len]);
 
         let mut node_vars = vec![0.0f32; profile.node_block.num_vars];
-        for i in 0..profile.node_block.min_write_idx {
-            if i < profile.global_values.len() {
-                node_vars[i] = profile.global_values[i];
-            }
-        }
+        let copy_node_len = profile.node_block.min_write_idx.min(profile.global_values.len());
+        node_vars[..copy_node_len].copy_from_slice(&profile.global_values[..copy_node_len]);
 
         Self {
             profile,
@@ -136,9 +126,25 @@ impl<'a> ProfileEvaluator<'a> {
         }
 
         for stmt in &self.profile.way_block.statements {
-            Self::eval_expr(stmt, lookup_data, &mut self.way_vars, self.way_lookups, None);
+            Self::eval_expr(
+                stmt,
+                lookup_data,
+                &mut self.way_vars,
+                self.way_lookups,
+                None,
+            );
         }
 
+        // Extract evaluated built-in variables.
+        // Indices 0..19 map 1:1 to `WAY_BUILTIN_VARIABLES` in `parser.rs`,
+        // matching the variable layout in Java class `btools.expressions.BExpressionContextWay`:
+        //  0: costfactor            1: turncost               2: uphillcostfactor
+        //  3: downhillcostfactor    4: initialcost            5: nodeaccessgranted
+        //  6: initialclassifier     7: trafficsourcedensity   8: istrafficbackbone
+        //  9: priorityclassifier   10: classifiermask        11: maxspeed
+        // 12: uphillcost           13: downhillcost          14: uphillcutoff
+        // 15: downhillcutoff       16: uphillmaxslope        17: downhillmaxslope
+        // 18: uphillmaxslopecost   19: downhillmaxslopecost
         let get_var = |idx: usize| -> f32 {
             self.profile
                 .way_block

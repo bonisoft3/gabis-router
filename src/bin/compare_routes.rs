@@ -8,11 +8,13 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
+use rayon::prelude::*;
 use rsrouter::dsl::lookups::LookupData;
 use rsrouter::dsl::parser::Profile;
 use rsrouter::graph::routing_graph::RoutingGraph;
 use rsrouter::rd5::tile_manager::TileManager;
 use rsrouter::routing::search::AStarRouter;
+use rsrouter::types::{Cost, Distance, Seconds};
 
 struct Corridor {
     name: &'static str,
@@ -24,25 +26,18 @@ struct Corridor {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 struct ParityRow {
     corridor: &'static str,
     profile: &'static str,
-    dist_rs: f64,
-    dist_br: f64,
     dist_delta_pct: f64,
-    time_rs: f64,
-    time_br: f64,
     time_delta_pct: f64,
-    cost_rs: u32,
-    cost_br: u32,
     cost_delta_pct: f64,
-    ascend_rs: f64,
-    ascend_br: f64,
+    ascend_rs: Distance,
+    ascend_br: Distance,
     search_ms: f64,
 }
 
-fn parse_fixture_stats(fixture_path: &Path) -> Option<(f64, f64, u32, f64)> {
+fn parse_fixture_stats(fixture_path: &Path) -> Option<(Distance, Seconds, Cost, Distance)> {
     if !fixture_path.exists() {
         return None;
     }
@@ -50,10 +45,10 @@ fn parse_fixture_stats(fixture_path: &Path) -> Option<(f64, f64, u32, f64)> {
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
     let props = json.get("features")?.get(0)?.get("properties")?;
 
-    let dist: f64 = props.get("track-length")?.as_str()?.parse().ok()?;
-    let time: f64 = props.get("total-time")?.as_str()?.parse().ok()?;
-    let cost: u32 = props.get("cost")?.as_str()?.parse().ok()?;
-    let ascend: f64 = props
+    let dist: Distance = props.get("track-length")?.as_str()?.parse().ok()?;
+    let time: Seconds = props.get("total-time")?.as_str()?.parse().ok()?;
+    let cost: Cost = props.get("cost")?.as_str()?.parse().ok()?;
+    let ascend: Distance = props
         .get("filtered ascend")
         .or_else(|| props.get("filtered-ascend"))
         .or_else(|| props.get("plain-ascend"))?
@@ -103,14 +98,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ];
 
-    let profiles = [
-        "fastbike",
-        "fastbike-lowtraffic",
-        "fastbike-verylowtraffic",
-    ];
+    let profiles = ["fastbike", "fastbike-lowtraffic", "fastbike-verylowtraffic"];
 
     let router = AStarRouter::new();
     let _ = fs::create_dir_all("target/routes");
+
+    let min_lon = corridors
+        .iter()
+        .map(|c| c.start_lon.min(c.end_lon))
+        .fold(f64::INFINITY, f64::min);
+    let max_lon = corridors
+        .iter()
+        .map(|c| c.start_lon.max(c.end_lon))
+        .fold(f64::NEG_INFINITY, f64::max);
+    let min_lat = corridors
+        .iter()
+        .map(|c| c.start_lat.min(c.end_lat))
+        .fold(f64::INFINITY, f64::min);
+    let max_lat = corridors
+        .iter()
+        .map(|c| c.start_lat.max(c.end_lat))
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    println!("\n=======================================================");
+    println!("Preloading unified regional graph for benchmark corridors...");
+    println!(
+        "Bounding box: lon [{:.4}, {:.4}], lat [{:.4}, {:.4}]",
+        min_lon, max_lon, min_lat, max_lat
+    );
+
+    let t_load = Instant::now();
+    let mut tile_mgr = TileManager::new("data/segments4");
+    let mut graph = RoutingGraph::with_capacities(4_500_000, 11_000_000);
+    let loaded_cells = graph.load_bounding_box(&mut tile_mgr, min_lon, min_lat, max_lon, max_lat)?;
+    let graph_load_ms = t_load.elapsed().as_secs_f64() * 1000.0;
+
+    println!(
+        "Unified regional graph ready in {:.2} ms ({} cells, {} nodes, {} edges)",
+        graph_load_ms,
+        loaded_cells,
+        graph.node_count(),
+        graph.edge_count()
+    );
 
     let mut rows: Vec<ParityRow> = Vec::new();
 
@@ -118,117 +147,91 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\n=======================================================");
         println!("Processing corridor: {} ({})", corr.title, corr.name);
 
-        let t_load = Instant::now();
-        let mut tile_mgr = TileManager::new("data/segments4");
-        let mut graph = RoutingGraph::with_capacities(200_000, 500_000);
+        let corridor_rows: Vec<ParityRow> = profiles
+            .par_iter()
+            .filter_map(|prof_name| {
+                let prof_path = format!("profiles/{}.brf", prof_name);
+                let profile = match Profile::load_from_file(&prof_path, &lookups) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        eprintln!("Failed to parse profile {}: {}", prof_name, e);
+                        return None;
+                    }
+                };
 
-        let min_lon = corr.start_lon.min(corr.end_lon);
-        let max_lon = corr.start_lon.max(corr.end_lon);
-        let min_lat = corr.start_lat.min(corr.end_lat);
-        let max_lat = corr.start_lat.max(corr.end_lat);
+                let fixture_name = match *prof_name {
+                    "fastbike-lowtraffic" => "lowtraffic",
+                    "fastbike-verylowtraffic" => "verylowtraffic",
+                    other => other,
+                };
+                let fixture_path = format!("fixtures/brouter_de/{}_{}.json", corr.name, fixture_name);
+                let baseline = parse_fixture_stats(Path::new(&fixture_path));
 
-        let loaded_cells = graph.load_bounding_box(
-            &mut tile_mgr,
-            min_lon,
-            min_lat,
-            max_lon,
-            max_lat,
-        )?;
+                let t_route = Instant::now();
+                let result = router.find_route(
+                    &graph,
+                    &lookups,
+                    &profile,
+                    (corr.start_lon, corr.start_lat),
+                    (corr.end_lon, corr.end_lat),
+                );
+                let elapsed_ms = t_route.elapsed().as_secs_f64() * 1000.0;
 
-        println!(
-            "Graph ready in {:.2} ms ({} cells, {} nodes, {} edges)",
-            t_load.elapsed().as_secs_f64() * 1000.0,
-            loaded_cells,
-            graph.node_count(),
-            graph.edge_count()
-        );
+                match result {
+                    Ok(route) => {
+                        let out_path = format!("target/routes/{}_{}.geojson", corr.name, prof_name);
+                        let geojson = route.to_geojson(prof_name);
+                        let _ = fs::write(&out_path, geojson);
 
-        for prof_name in &profiles {
-            let prof_path = format!("profiles/{}.brf", prof_name);
-            let profile = match Profile::load_from_file(&prof_path, &lookups) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("Failed to parse profile {}: {}", prof_name, e);
-                    continue;
-                }
-            };
+                        if let Some((b_dist, b_time, b_cost, b_asc)) = baseline {
+                            let dist_delta = (route.total_distance_m - b_dist).abs() / b_dist * 100.0;
+                            let time_delta =
+                                (route.total_time_s as f64 - b_time as f64).abs() / b_time as f64 * 100.0;
+                            let cost_delta =
+                                (route.total_cost as f64 - b_cost as f64).abs() / b_cost as f64 * 100.0;
 
-            let fixture_name = match *prof_name {
-                "fastbike-lowtraffic" => "lowtraffic",
-                "fastbike-verylowtraffic" => "verylowtraffic",
-                other => other,
-            };
-            let fixture_path = format!("fixtures/brouter_de/{}_{}.json", corr.name, fixture_name);
-            let baseline = parse_fixture_stats(Path::new(&fixture_path));
+                            println!(
+                                "  [{:23}] Dist: {:>6.1} km ({:+5.2}%) | Time: {:>4.0} min ({:+5.2}%) | Cost: {:>5} ({:+5.2}%) | {:>6.1} ms",
+                                prof_name,
+                                route.total_distance_m / 1000.0,
+                                dist_delta,
+                                route.total_time_s / 60.0,
+                                time_delta,
+                                route.total_cost,
+                                cost_delta,
+                                elapsed_ms
+                            );
 
-            let t_route = Instant::now();
-            let result = router.find_route(
-                &graph,
-                &lookups,
-                &profile,
-                corr.start_lon,
-                corr.start_lat,
-                corr.end_lon,
-                corr.end_lat,
-            );
-            let elapsed_ms = t_route.elapsed().as_secs_f64() * 1000.0;
-
-            match result {
-                Ok(route) => {
-                    let out_path = format!("target/routes/{}_{}.geojson", corr.name, prof_name);
-                    let geojson = route.to_geojson(prof_name);
-                    let _ = fs::write(&out_path, geojson);
-
-                    if let Some((b_dist, b_time, b_cost, b_asc)) = baseline {
-                        let dist_delta = (route.total_distance_m - b_dist).abs() / b_dist * 100.0;
-                        let time_delta = (route.total_time_s as f64 - b_time).abs() / b_time * 100.0;
-                        let cost_delta = (route.total_cost as f64 - b_cost as f64).abs()
-                            / b_cost as f64
-                            * 100.0;
-
-                        println!(
-                            "  [{:23}] Dist: {:>6.1} km ({:+5.2}%) | Time: {:>4.0} min ({:+5.2}%) | Cost: {:>5} ({:+5.2}%) | {:>6.1} ms",
-                            prof_name,
-                            route.total_distance_m / 1000.0,
-                            dist_delta,
-                            route.total_time_s / 60.0,
-                            time_delta,
-                            route.total_cost,
-                            cost_delta,
-                            elapsed_ms
-                        );
-
-                        rows.push(ParityRow {
-                            corridor: corr.title,
-                            profile: prof_name,
-                            dist_rs: route.total_distance_m,
-                            dist_br: b_dist,
-                            dist_delta_pct: dist_delta,
-                            time_rs: route.total_time_s as f64,
-                            time_br: b_time,
-                            time_delta_pct: time_delta,
-                            cost_rs: route.total_cost,
-                            cost_br: b_cost,
-                            cost_delta_pct: cost_delta,
-                            ascend_rs: route.filtered_ascend_m,
-                            ascend_br: b_asc,
-                            search_ms: elapsed_ms,
-                        });
-                    } else {
-                        println!(
-                            "  [{:23}] Dist: {:>6.1} km | Cost: {:>5} | {:>6.1} ms (no baseline)",
-                            prof_name,
-                            route.total_distance_m / 1000.0,
-                            route.total_cost,
-                            elapsed_ms
-                        );
+                            Some(ParityRow {
+                                corridor: corr.title,
+                                profile: prof_name,
+                                dist_delta_pct: dist_delta,
+                                time_delta_pct: time_delta,
+                                cost_delta_pct: cost_delta,
+                                ascend_rs: route.filtered_ascend_m,
+                                ascend_br: b_asc,
+                                search_ms: elapsed_ms,
+                            })
+                        } else {
+                            println!(
+                                "  [{:23}] Dist: {:>6.1} km | Cost: {:>5} | {:>6.1} ms (no baseline)",
+                                prof_name,
+                                route.total_distance_m / 1000.0,
+                                route.total_cost,
+                                elapsed_ms
+                            );
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("  [{}] Routing error: {}", prof_name, e);
+                        None
                     }
                 }
-                Err(e) => {
-                    eprintln!("  [{}] Routing error: {}", prof_name, e);
-                }
-            }
-        }
+            })
+            .collect();
+
+        rows.extend(corridor_rows);
     }
 
     println!("\n=======================================================");
@@ -256,6 +259,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             r.search_ms
         );
     }
+    println!("=======================================================");
+    println!("One-time unified regional graph load: {:.2} ms (0 ms per route)", graph_load_ms);
     println!("=======================================================\n");
 
     // Documented Parity Enforcement

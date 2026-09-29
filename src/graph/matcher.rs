@@ -8,83 +8,71 @@
 //! Projects input geographic waypoints onto nearest graph edges and computes
 //! exact crosspoints, nearest node endpoints, and orthogonal projection distances.
 
+use crate::types::{Distance, Point2D};
+
 use super::spatial;
 
 /// A matched waypoint snapped to the nearest road segment in the graph.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchedWaypoint {
     pub name: String,
-    pub waypoint_lon: i32,
-    pub waypoint_lat: i32,
-    pub crosspoint_lon: i32,
-    pub crosspoint_lat: i32,
-    pub node1_lon: i32,
-    pub node1_lat: i32,
-    pub node2_lon: i32,
-    pub node2_lat: i32,
-    pub radius: f64,
+    pub waypoint: Point2D,
+    pub crosspoint: Point2D,
+    pub node1: Point2D,
+    pub node2: Point2D,
+    pub radius: Distance,
 }
 
 impl MatchedWaypoint {
-    pub fn new(name: &str, waypoint_lon: i32, waypoint_lat: i32, max_radius: f64) -> Self {
+    pub fn new(name: &str, waypoint: Point2D, max_radius: Distance) -> Self {
         Self {
             name: name.to_string(),
-            waypoint_lon,
-            waypoint_lat,
-            crosspoint_lon: waypoint_lon,
-            crosspoint_lat: waypoint_lat,
-            node1_lon: waypoint_lon,
-            node1_lat: waypoint_lat,
-            node2_lon: waypoint_lon,
-            node2_lat: waypoint_lat,
+            waypoint,
+            crosspoint: waypoint,
+            node1: waypoint,
+            node2: waypoint,
             radius: max_radius,
         }
     }
 }
 
 /// Snaps waypoints to road segment polylines.
-pub struct WaypointMatcher {
-    pub max_distance: f64,
-}
+///
+/// Corresponds to Java class `btools.mapaccess.WaypointMatcherImpl`.
+pub struct WaypointMatcher;
 
 impl WaypointMatcher {
-    pub fn new(max_distance: f64) -> Self {
-        Self { max_distance }
-    }
-
-    /// Evaluates a single polyline segment `(lon1, lat1)` -> `(lon2, lat2)`
-    /// belonging to edge `(edge_start_lon, edge_start_lat)` -> `(edge_end_lon, edge_end_lat)`.
+    /// Evaluates a single polyline segment `seg_start` -> `seg_end`
+    /// belonging to edge `edge_start` -> `edge_end`.
     ///
-    /// Updates `mwp` if this segment is closer than previous candidates.
+    /// Matches `WaypointMatcherImpl.checkSegment`:
+    /// Computes the orthogonal projection of the waypoint onto the segment vector in meter units,
+    /// checks segment endpoints if the projection lies outside `[0, 1]`, and updates `mwp`
+    /// if the perpendicular distance is smaller than current `mwp.radius`.
     pub fn check_segment(
         mwp: &mut MatchedWaypoint,
-        lon1: i32,
-        lat1: i32,
-        lon2: i32,
-        lat2: i32,
-        edge_start_lon: i32,
-        edge_start_lat: i32,
-        edge_end_lon: i32,
-        edge_end_lat: i32,
+        seg_start: spatial::Point2D,
+        seg_end: spatial::Point2D,
+        edge_start: spatial::Point2D,
+        edge_end: spatial::Point2D,
     ) {
-        let scales = spatial::get_lon_lat_to_meter_scales((lat1 + lat2) >> 1);
+        let scales = spatial::get_lon_lat_to_meter_scales((seg_start.lat + seg_end.lat) >> 1);
         let dlon2m = scales[0];
         let dlat2m = scales[1];
 
-        let dx = (lon2 - lon1) as f64 * dlon2m;
-        let dy = (lat2 - lat1) as f64 * dlat2m;
+        let dx = (seg_end.lon - seg_start.lon) as f64 * dlon2m;
+        let dy = (seg_end.lat - seg_start.lat) as f64 * dlat2m;
         let d = (dy * dy + dx * dx).sqrt();
 
         if d == 0.0 {
             return;
         }
 
-        let wp_lon = mwp.waypoint_lon;
-        let wp_lat = mwp.waypoint_lat;
-        let x1 = (lon1 - wp_lon) as f64 * dlon2m;
-        let y1 = (lat1 - wp_lat) as f64 * dlat2m;
-        let x2 = (lon2 - wp_lon) as f64 * dlon2m;
-        let y2 = (lat2 - wp_lat) as f64 * dlat2m;
+        let wp = mwp.waypoint;
+        let x1 = (seg_start.lon - wp.lon) as f64 * dlon2m;
+        let y1 = (seg_start.lat - wp.lat) as f64 * dlat2m;
+        let x2 = (seg_end.lon - wp.lon) as f64 * dlon2m;
+        let y2 = (seg_end.lat - wp.lat) as f64 * dlat2m;
         let r12 = x1 * x1 + y1 * y1;
         let r22 = x2 * x2 + y2 * y2;
 
@@ -111,23 +99,21 @@ impl WaypointMatcher {
             }
 
             mwp.radius = radius;
-            mwp.node1_lon = edge_start_lon;
-            mwp.node1_lat = edge_start_lat;
-            mwp.node2_lon = edge_end_lon;
-            mwp.node2_lat = edge_end_lat;
+            mwp.node1 = edge_start;
+            mwp.node2 = edge_end;
 
             if s2 < 0.0 {
                 let wayfraction = -s2 / (d * d);
                 let xm = x2 - wayfraction * dx;
                 let ym = y2 - wayfraction * dy;
-                mwp.crosspoint_lon = (xm / dlon2m + wp_lon as f64) as i32;
-                mwp.crosspoint_lat = (ym / dlat2m + wp_lat as f64) as i32;
+                mwp.crosspoint = Point2D::new(
+                    (xm / dlon2m + wp.lon as f64) as i32,
+                    (ym / dlat2m + wp.lat as f64) as i32,
+                );
             } else if s1 > s2 {
-                mwp.crosspoint_lon = lon2;
-                mwp.crosspoint_lat = lat2;
+                mwp.crosspoint = seg_end;
             } else {
-                mwp.crosspoint_lon = lon1;
-                mwp.crosspoint_lat = lat1;
+                mwp.crosspoint = seg_start;
             }
         }
     }

@@ -15,11 +15,11 @@ pub const GRAVITY: f64 = 9.81;
 /// Configuration parameters for bicycle or pedestrian kinematics.
 #[derive(Debug, Clone)]
 pub struct KinematicConfig {
-    pub total_mass: f64,     // Total mass (biker + bike + cargo), kg
-    pub max_speed: f64,      // Maximum speed limit before braking, m/s
-    pub s_c_x: f64,          // Aerodynamic drag coefficient S * C_x
-    pub c_r: f64,            // Rolling resistance coefficient
-    pub biker_power: f64,    // Sustained biker mechanical power, W
+    pub total_mass: f64,  // Total mass (biker + bike + cargo), kg
+    pub max_speed: f64,   // Maximum speed limit before braking, m/s
+    pub s_c_x: f64,       // Aerodynamic drag coefficient S * C_x
+    pub c_r: f64,         // Rolling resistance coefficient
+    pub biker_power: f64, // Sustained biker mechanical power, W
     pub is_foot_mode: bool,
 }
 
@@ -30,7 +30,7 @@ impl Default for KinematicConfig {
             max_speed: 45.0 / 3.6, // 12.5 m/s (~45 km/h)
             s_c_x: 0.5 * 0.45,     // 0.225
             c_r: 0.01,
-            biker_power: 100.0,    // 100 W default
+            biker_power: 100.0, // 100 W default
             is_foot_mode: false,
         }
     }
@@ -49,8 +49,15 @@ impl KinematicConfig {
             is_foot_mode: valid_for_foot,
         }
     }
-    /// Solves the cubic power-velocity equation: `a * v^3 + c * v = d`
-    /// using the Newton-Raphson method matching BRouter's `solveCubic`.
+    /// Solves the cubic aerodynamic and rolling resistance power equation:
+    ///   `a * v^3 + c * v = d`
+    /// where:
+    /// - `a = S * C_x`: effective frontal area and air drag coefficient
+    /// - `c = m * g * (C_r + incline)`: combined rolling and gravitational resistance
+    /// - `d = P`: biker mechanical power in Watts
+    ///
+    /// Matches `KinematicModel.solveCubic` in Java BRouter. Uses Newton-Raphson
+    /// iteration with initial interval doubling to find the steady-state velocity `v` (m/s).
     pub fn solve_cubic(a: f64, c: f64, d: f64) -> f64 {
         let mut v = 8.0;
         let mut finding_start_value = true;

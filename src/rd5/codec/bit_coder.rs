@@ -54,24 +54,24 @@ fn get_tables() -> &'static Tables {
             vc_length[i] = bc.get_writing_bit_position() - b0;
         }
 
-        for b in 0..256 {
+        for (b, slot) in reverse_byte.iter_mut().enumerate() {
             let mut r = 0u8;
             for i in 0..8 {
                 if (b & (1 << i)) != 0 {
                     r |= 1 << (7 - i);
                 }
             }
-            reverse_byte[b] = r;
+            *slot = r;
         }
 
-        for i in 0..1024 {
+        for (i, slot) in noisy_bits.iter_mut().enumerate() {
             let mut p = i;
             let mut nb = 0;
             while p > 2 {
                 nb += 1;
                 p >>= 1;
             }
-            noisy_bits[i] = nb;
+            *slot = nb;
         }
 
         Tables {

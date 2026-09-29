@@ -27,11 +27,7 @@ pub struct OsmFile {
 }
 
 impl OsmFile {
-    pub fn new(
-        pf: &mut PhysicalFile,
-        lon_degree: i32,
-        lat_degree: i32,
-    ) -> io::Result<Self> {
+    pub fn new(pf: &mut PhysicalFile, lon_degree: i32, lat_degree: i32) -> io::Result<Self> {
         let lon_mod5 = lon_degree % 5;
         let lat_mod5 = lat_degree % 5;
         let tile_index = (lon_mod5 * 5 + lat_mod5) as usize;
@@ -91,14 +87,10 @@ impl OsmFile {
         })
     }
 
-    pub fn get_sub_idx(&self, ilon: i32, ilat: i32) -> usize {
-        let lon_idx = ilon / self.cellsize;
-        let lat_idx = ilat / self.cellsize;
-        let rel_lat = lat_idx - self.divisor * self.lat_degree;
-        let rel_lon = lon_idx - self.divisor * self.lon_degree;
-        (rel_lat * self.divisor + rel_lon) as usize
-    }
-
+    /// Returns `(start_offset, end_offset)` in the physical file for the cell at `sub_idx`.
+    ///
+    /// Matches `OsmFile.getCellOffsets`:
+    /// The sub-index stores cumulative byte offsets for each microcache cell.
     pub fn get_cell_offsets(&self, sub_idx: usize) -> (u64, u64) {
         assert!(sub_idx < self.pos_idx.len(), "sub_idx out of bounds");
         let start_pos = if sub_idx == 0 {

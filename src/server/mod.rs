@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -24,6 +24,13 @@ use crate::graph::routing_graph::RoutingGraph;
 use crate::rd5::tile_manager::TileManager;
 use crate::routing::search::AStarRouter;
 
+/// Query parameters accepted by the BRouter HTTP API (`/brouter`).
+///
+/// Matches the query schema of `btools.server.BRouter`:
+/// - `lonlats`: pipe-separated list of coordinate pairs, e.g. `lon1,lat1|lon2,lat2`.
+/// - `profile`: profile name without extension, e.g. `fastbike` (defaults to `fastbike`).
+/// - `alternativeidx`: index for alternative routes (default 0 for primary route; higher indices reserved for alternative routing).
+/// - `format`: output format (defaults to GeoJSON FeatureCollection).
 #[derive(Debug, Deserialize)]
 pub struct BRouterQueryParams {
     pub lonlats: Option<String>,
@@ -37,12 +44,17 @@ pub struct ServerState {
     pub profiles_dir: PathBuf,
     pub lookups: Arc<LookupData>,
     pub cached_profiles: RwLock<HashMap<String, Arc<Profile>>>,
-    pub graph_cache: Mutex<Option<(String, Arc<RoutingGraph>)>>,
+    pub graph_cache: RwLock<HashMap<String, Arc<RoutingGraph>>>,
+    pub preloaded_graph: Option<Arc<RoutingGraph>>,
+    pub preloaded_bbox: Option<[f64; 4]>,
     pub router: AStarRouter,
 }
 
 impl ServerState {
-    pub fn new(segments_dir: PathBuf, profiles_dir: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(
+        segments_dir: PathBuf,
+        profiles_dir: PathBuf,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let lookups_path = profiles_dir.join("lookups.dat");
         let lookups = Arc::new(LookupData::load_from_file(&lookups_path)?);
 
@@ -51,9 +63,29 @@ impl ServerState {
             profiles_dir,
             lookups,
             cached_profiles: RwLock::new(HashMap::new()),
-            graph_cache: Mutex::new(None),
+            graph_cache: RwLock::new(HashMap::new()),
+            preloaded_graph: None,
+            preloaded_bbox: None,
             router: AStarRouter::new(),
         })
+    }
+
+    /// Creates a ServerState preloaded with a unified regional graph for the specified bounding box.
+    pub fn with_preloaded_bbox(
+        segments_dir: PathBuf,
+        profiles_dir: PathBuf,
+        min_lon: f64,
+        min_lat: f64,
+        max_lon: f64,
+        max_lat: f64,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut state = Self::new(segments_dir, profiles_dir)?;
+        let mut tile_mgr = TileManager::new(&state.segments_dir);
+        let mut graph = RoutingGraph::with_capacities(4_500_000, 11_000_000);
+        graph.load_bounding_box(&mut tile_mgr, min_lon, min_lat, max_lon, max_lat)?;
+        state.preloaded_graph = Some(Arc::new(graph));
+        state.preloaded_bbox = Some([min_lon, min_lat, max_lon, max_lat]);
+        Ok(state)
     }
 
     pub fn get_profile(&self, name: &str) -> Result<Arc<Profile>, String> {
@@ -76,6 +108,49 @@ impl ServerState {
         let mut cache = self.cached_profiles.write().unwrap();
         cache.insert(name.to_string(), Arc::clone(&arc_prof));
         Ok(arc_prof)
+    }
+
+    /// Retrieves a cached routing graph for the given bounding box or loads and caches it.
+    pub fn get_or_load_graph(
+        &self,
+        min_lon: f64,
+        min_lat: f64,
+        max_lon: f64,
+        max_lat: f64,
+    ) -> Result<Arc<RoutingGraph>, String> {
+        // If query falls within preloaded bounding box, use preloaded graph instantly
+        if let (Some(ref preloaded), Some(bbox)) = (&self.preloaded_graph, self.preloaded_bbox) {
+            if min_lon >= bbox[0] && min_lat >= bbox[1] && max_lon <= bbox[2] && max_lat <= bbox[3] {
+                return Ok(Arc::clone(preloaded));
+            }
+        }
+        let min_lon_deg = (min_lon + 180.0).floor() as i32;
+        let max_lon_deg = (max_lon + 180.0).floor() as i32;
+        let min_lat_deg = (min_lat + 90.0).floor() as i32;
+        let max_lat_deg = (max_lat + 90.0).floor() as i32;
+        let key = format!("{}_{}_{}_{}", min_lon_deg, min_lat_deg, max_lon_deg, max_lat_deg);
+
+        {
+            let cache = self.graph_cache.read().unwrap();
+            if let Some(graph) = cache.get(&key) {
+                return Ok(Arc::clone(graph));
+            }
+        }
+
+        let mut write_lock = self.graph_cache.write().unwrap();
+        if let Some(graph) = write_lock.get(&key) {
+            return Ok(Arc::clone(graph));
+        }
+
+        let mut tile_mgr = TileManager::new(&self.segments_dir);
+        let mut graph = RoutingGraph::with_capacities(100_000, 250_000);
+        graph
+            .load_bounding_box(&mut tile_mgr, min_lon, min_lat, max_lon, max_lat)
+            .map_err(|e| format!("Failed to load graph data: {}", e))?;
+
+        let arc_graph = Arc::new(graph);
+        write_lock.insert(key, Arc::clone(&arc_graph));
+        Ok(arc_graph)
     }
 }
 
@@ -154,24 +229,17 @@ async fn handle_brouter(
     let min_lat = (start.1.min(end.1) - margin_lat).clamp(-90.0, 90.0);
     let max_lat = (start.1.max(end.1) + margin_lat).clamp(-90.0, 90.0);
 
-    let mut tile_mgr = TileManager::new(&state.segments_dir);
-    let mut graph = RoutingGraph::with_capacities(100_000, 250_000);
-    if let Err(e) = graph.load_bounding_box(&mut tile_mgr, min_lon, min_lat, max_lon, max_lat) {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load graph data: {}", e),
-        )
-            .into_response();
-    }
+    let graph = match state.get_or_load_graph(min_lon, min_lat, max_lon, max_lat) {
+        Ok(g) => g,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
 
     match state.router.find_route(
         &graph,
         &state.lookups,
         &profile,
-        start.0,
-        start.1,
-        end.0,
-        end.1,
+        start,
+        end,
     ) {
         Ok(route) => {
             let geojson = route.to_geojson(profile_name);
