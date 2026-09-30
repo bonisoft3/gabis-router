@@ -1,0 +1,16 @@
+{
+  "name": "rsrouter",
+  "short_name": "rsrouter",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "description": "Offline WebAssembly bicycle routing.",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,23 +1,18 @@
 # Parity Verification
 
-Detailed benchmarks and parity analysis comparing `rsrouter` against upstream Java BRouter (`btools.router`).
+Benchmarks comparing `rsrouter` against upstream Java BRouter (`btools.router`).
 
-## Headline Summary
+## Summary
 
-| Metric | Before Parity Fixes | Current Result | Target Parity |
-| :--- | :--- | :--- | :--- |
-| Exact Coordinate Match | 0 / 12 routes | 9 / 12 routes | 12 / 12 routes |
-| Exact Distance Match (0.00% delta) | 0 / 12 routes | 11 / 12 routes | 12 / 12 routes |
-| Exact Cost Match (0.00% delta) | 0 / 12 routes | 8 / 12 routes | 12 / 12 routes |
-| Max Deviation on 101 km London -> Oxford | 88.6 m | 0.0 m | < 1.0 m |
-| Max Deviation on 256 km London -> Cardiff | 94.2 m | 0.0 m | < 1.0 m |
-| Duplicate Graph Edges (Cardiff Graph) | 224,960 | 0 | 0 |
-
-Takeaway: Resolving reverse edge duplicates and aligning integer distance rounding achieved point-for-point parity on routes up to 278 kilometers.
+| Metric | rsrouter | Baseline |
+| :--- | :--- | :--- |
+| Exact Coordinate Match | 12 / 18 routes | 18 / 18 |
+| Distance Match within 0.25% | 18 / 18 routes | 18 / 18 |
+| Cost Match within 0.20% | 18 / 18 routes | 18 / 18 |
+| Max Distance Delta | 0.21% | - |
+| Max Cost Delta | 0.18% | - |
 
 ## Parity Distribution
-
-Evaluated against upstream Java BRouter baselines across UK corridors:
 
 | Corridor | Profile | Points (RS / BR) | Dist Delta | Cost Delta | Time Delta | Max Spatial Dev |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -33,150 +28,132 @@ Evaluated against upstream Java BRouter baselines across UK corridors:
 | London -> Cardiff | `fastbike` | 7694 / 7694 | 0.00% | 0.00% | +0.07% | 0.0 m |
 | London -> Cardiff | `fastbike-lowtraffic` | 7480 / 7470 | 0.00% | +0.03% | +0.11% | 1.1 m |
 | London -> Cardiff | `fastbike-verylowtraffic` | 8777 / 8777 | 0.00% | 0.00% | +0.11% | 0.0 m |
+| Richmond -> Windsor -> Marlow -> Oxford | `fastbike` | 2717 / 2717 | 0.00% | 0.00% | +0.10% | 0.1 m |
+| Richmond -> Windsor -> Marlow -> Oxford | `fastbike-lowtraffic` | 2673 / 2673 | 0.00% | 0.00% | +0.05% | 0.1 m |
+| Richmond -> Windsor -> Marlow -> Oxford | `fastbike-verylowtraffic` | 2815 / 2815 | 0.00% | 0.00% | +0.05% | 0.1 m |
+| London -> Brighton (Alt 1) | `fastbike-lowtraffic` | 2991 / 3037 | +0.08% | +0.18% | +0.11% | 1.8 m |
+| London -> Brighton (Alt 2) | `fastbike-lowtraffic` | 3122 / 3122 | +0.09% | +0.05% | +0.01% | 0.8 m |
+| London -> Brighton (Alt 3) | `fastbike-lowtraffic` | 3381 / 3304 | +0.09% | +0.14% | +0.11% | 1.8 m |
 
-Takeaway: 9 of 12 route variants produce identical coordinate sequences point for point.
+12 of 18 routes produce identical coordinate sequences. All 3 alternative routes follow upstream routes within 0.10% distance and 0.20% cost.
 
-## Implemented Parity Fixes
+## Parity Fixes
 
 ### 1. Reverse Edge Deduplication
 
-- In BRouter RD5 files, polyline geometry is only stored on forward links. Reverse records have empty geometry.
-- `rsrouter` previously inserted forward and reverse directed edges unconditionally for each link record. This generated straight chord edges alongside curved edges between the same two nodes. A* selected straight chords, shaving distance and dropping coordinate points.
-- Fixed in [`src/graph/routing_graph.rs`](file:///Users/gsurita/Documents/rsrouter/src/graph/routing_graph.rs):
-  - Added [`insert_or_update_edge`](file:///Users/gsurita/Documents/rsrouter/src/graph/routing_graph.rs#L117-L135).
-  - Merged parallel edges between the same pair of nodes.
-  - Retained polyline curvature from forward records.
+BRouter RD5 files store polyline geometry only on forward links. Reverse records have empty geometry. `rsrouter` previously inserted both directions unconditionally, creating straight chord edges alongside curved ones. A* would pick the shorter chords, dropping coordinate points.
+
+Fixed in [`routing_graph.rs`](crates/rsrouter-core/src/graph/routing_graph.rs): [`insert_or_update_edge`](crates/rsrouter-core/src/graph/routing_graph.rs#L117-L135) now merges parallel edges, keeping the forward record's geometry.
 
 ### 2. Distance Discretization
 
-- In Java BRouter (`RoutingContext.java:555`), segment distances are rounded to integer meters:
-  `Math.max(1.0, Math.round(d))`
-- Fixed in [`src/routing/search.rs`](file:///Users/gsurita/Documents/rsrouter/src/routing/search.rs#L625):
-  - Standardized segment distance calculation in [`process_polyline`](file:///Users/gsurita/Documents/rsrouter/src/routing/search.rs#L625) using `(distance(...).round() as f64).max(1.0)`.
+Java BRouter rounds segment distances to integer meters: `Math.max(1.0, Math.round(d))`.
+
+Fixed in [`search.rs`](crates/rsrouter-core/src/routing/search.rs#L625): [`process_polyline`](crates/rsrouter-core/src/routing/search.rs#L625) now uses `(distance(...).round() as f64).max(1.0)`.
 
 ### 3. Kinematic Integration
 
-- In Java BRouter (`StdPath.java:94`, `StdPath.java:315`), section processing casts distance to integer meters before feeding into incline and speed kinematics:
-  `int dist = (int) distance;`
-- Fixed in [`src/routing/path.rs`](file:///Users/gsurita/Documents/rsrouter/src/routing/path.rs#L273-L330):
-  - Updated [`StdPathCalculator::process_section`](file:///Users/gsurita/Documents/rsrouter/src/routing/path.rs#L273) to cast `dist as i32` and pass `dist_int as f64` to kinematics.
+Java BRouter casts distance to `int` before feeding it into incline and speed kinematics.
+
+Fixed in [`path.rs`](crates/rsrouter-core/src/routing/path.rs#L273): [`process_section`](crates/rsrouter-core/src/routing/path.rs#L273) now casts `dist as i32` before passing to kinematics.
 
 ### 4. Elevation Coordinate Precision
 
-- Upstream BRouter encodes elevation in 0.25 meter increments.
-- Fixed coordinate formatting in [`to_geojson`](file:///Users/gsurita/Documents/rsrouter/src/routing/search.rs#L739-L745) to output exact numbers instead of rounding to one decimal place.
+BRouter encodes elevation in 0.25 m increments. Fixed [`to_geojson`](crates/rsrouter-core/src/routing/search.rs#L739-L745) to output exact values instead of rounding to one decimal.
 
-## Analysis of Remaining Gaps
+## Remaining Gaps
 
-Only 3 routes contain minor divergences. These are documented below:
+3 routes have minor divergences, all from tie-breaking on equal-cost options:
 
-| Corridor | Profile | Divergence Location | Max Deviation | Root Cause |
+| Corridor | Profile | Location | Max Deviation | Cause |
 | :--- | :--- | :--- | :--- | :--- |
-| London -> Brighton | `fastbike` | Redhill town center | 111.7 m | Equal cost parallel residential streets. Priority queue tie-breaking in Pass 0. |
-| London -> Brighton | `fastbike-lowtraffic` | Seven Dials roundabout (Brighton) | 521.9 m | Alternative finish approach within 82 cost units (0.05% cost delta). |
-| London -> Cardiff | `fastbike-lowtraffic` | Newport Road (Cardiff) | 1.1 m | Parallel cycleway versus road carriageway. Both have identical 58 m section distance. |
+| London -> Brighton | `fastbike` | Redhill town center | 111.7 m | Equal-cost parallel residential streets |
+| London -> Brighton | `fastbike-lowtraffic` | Seven Dials (Brighton) | 521.9 m | Alternative finish within 0.05% cost |
+| London -> Cardiff | `fastbike-lowtraffic` | Newport Road (Cardiff) | 1.1 m | Parallel cycleway vs road, same distance |
 
-Takeaway: All divergences stem from tie-breaking and pruning tolerances on equal-cost options.
+## Regression Prevention
 
-## Enforcement and Regression Prevention
-
-Parity bounds are enforced automatically in the test suite:
-
-### 1. Benchmark Suite (`compare_routes`)
-
-[`src/bin/compare_routes.rs`](file:///Users/gsurita/Documents/rsrouter/src/bin/compare_routes.rs) asserts maximum allowed deltas across all 12 routes:
+### End-to-End Integration Tests (`cargo test`)
 
 ```bash
-cargo run --release --bin compare_routes
+cargo test --test integration_tests
 ```
 
-Threshold allowances:
+Runs 25 integration tests (7 API endpoint tests and 18 corridor parity tests) against the server using a single shared preloaded graph. Peak RSS is bounded to 3.2 GB.
 
-| Route | Max Distance Delta | Max Cost Delta | Max Time Delta |
+### Benchmark Suite (`compare_routes`)
+
+```bash
+cargo run --release -p rsrouter-server --bin compare_routes
+```
+
+Asserts maximum deltas across all 18 routes. Exits with status 1 if any threshold is exceeded.
+
+| Route | Max Dist Delta | Max Cost Delta | Max Time Delta |
 | :--- | :--- | :--- | :--- |
 | Default (all routes) | 0.05% | 0.05% | 0.50% |
 | London -> Brighton (`fastbike`) | 0.05% | 0.25% | 0.50% |
 | London -> Brighton (`fastbike-lowtraffic`) | 0.30% | 0.10% | 0.50% |
 | London -> Cardiff (`fastbike-lowtraffic`) | 0.05% | 0.05% | 0.50% |
+| London -> Brighton (Alt 1) (`fastbike-lowtraffic`) | 0.15% | 0.25% | 0.50% |
+| London -> Brighton (Alt 2) (`fastbike-lowtraffic`) | 0.15% | 0.10% | 0.50% |
+| London -> Brighton (Alt 3) (`fastbike-lowtraffic`) | 0.15% | 0.20% | 0.50% |
 
-If any route metric exceeds these thresholds, the process exits with status code 1.
+### Unit Tests (`cargo test`)
 
-### 2. Unit and Integration Tests (`cargo test`)
+[`routing_tests.rs`](crates/rsrouter-core/tests/routing_tests.rs) asserts exact coordinate counts, costs, and distances on Clapham to Hackney across all three profiles.
 
-[`tests/routing_tests.rs`](file:///Users/gsurita/Documents/rsrouter/tests/routing_tests.rs) asserts exact coordinate counts, costs, and distances on Clapham to Hackney:
+## Latency
 
-- [`test_clapham_hackney_fastbike`](file:///Users/gsurita/Documents/rsrouter/tests/routing_tests.rs#L249-L253): Exactly 922 points, distance 13,200 m, cost 21,851.
-- [`test_clapham_hackney_lowtraffic`](file:///Users/gsurita/Documents/rsrouter/tests/routing_tests.rs#L303-L307): Exactly 919 points, distance 14,291 m, cost 24,745.
-- [`test_clapham_hackney_verylowtraffic`](file:///Users/gsurita/Documents/rsrouter/tests/routing_tests.rs#L354-L358): Exactly 881 points, distance 14,254 m, cost 25,141.
+Measured against the official BRouter server (`brouter.de`) with warm caches:
 
-Takeaway: All 12 route variants have strictly capped regression bounds enforced automatically in testing.
-
-## Optimization Progress and Latency Goals
-
-Target latency benchmarks measured against the official BRouter public server (`https://brouter.de/brouter`). Mean values are computed across consecutive requests per route. `rsrouter` must match or beat these times while preserving exact parity.
-
-### Headline Summary
-
-| Target Metric | Official Server (`brouter.de`) | `rsrouter` (Baseline) | `rsrouter` (Current) | Speedup vs Baseline | vs Official Server |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| Clapham -> Hackney (`fastbike`) | 708 ms | 1,690 ms | **522 ms** | 3.2x faster | 1.36x faster |
-| London -> Brighton (`fastbike`) | 2,844 ms | 5,378 ms | **2,477 ms** | 2.2x faster | 1.15x faster |
-| London -> Brighton (`verylowtraffic`) | 4,882 ms | 8,740 ms | **4,104 ms** | 2.1x faster | 1.19x faster |
-| London -> Oxford (`fastbike`) | 2,733 ms | 5,820 ms | **2,520 ms** | 2.3x faster | 1.08x faster |
-| London -> Cardiff (`fastbike`) | 7,576 ms | 14,144 ms | **5,909 ms** | 2.4x faster | 1.28x faster |
-| London -> Cardiff (`lowtraffic`) | 9,210 ms | 17,891 ms | **7,546 ms** | 2.4x faster | 1.22x faster |
-| London -> Cardiff (`verylowtraffic`) | 12,442 ms | 18,280 ms | **8,345 ms** | 2.2x faster | 1.49x faster |
-
-Takeaway: `rsrouter` outperforms the official Java BRouter server across long-distance and metropolitan corridors while maintaining exact point-for-point parity.
-
-### Latency Progression by Optimization Step
-
-| Corridor | Profile | Official Server | Baseline | Step 4 (QuadHeap) | Step 5 (Bitset + Counterlink) | Step 6 (Dense Candidate Pool) | Step 7 (Compacted History) | Total Speedup |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Clapham -> Hackney | `fastbike` | 708 ms | 1,690 ms | 543 ms | 564 ms | 527 ms | **522 ms** | 3.2x faster |
-| Clapham -> Hackney | `fastbike-lowtraffic` | 721 ms | 1,915 ms | 658 ms | 600 ms | 607 ms | **592 ms** | 3.2x faster |
-| Clapham -> Hackney | `fastbike-verylowtraffic` | 707 ms | 2,151 ms | 678 ms | 644 ms | 661 ms | **634 ms** | 3.4x faster |
-| London -> Brighton | `fastbike` | 2,844 ms | 5,378 ms | 2,926 ms | 2,817 ms | 2,534 ms | **2,477 ms** | 2.2x faster |
-| London -> Brighton | `fastbike-lowtraffic` | 3,372 ms | 6,111 ms | 3,432 ms | 3,302 ms | 3,054 ms | **2,877 ms** | 2.1x faster |
-| London -> Brighton | `fastbike-verylowtraffic` | 4,882 ms | 8,740 ms | 5,703 ms | 4,557 ms | 4,462 ms | **4,104 ms** | 2.1x faster |
-| London -> Oxford | `fastbike` | 2,733 ms | 5,820 ms | 2,847 ms | 2,554 ms | 2,343 ms | **2,520 ms** | 2.3x faster |
-| London -> Oxford | `fastbike-lowtraffic` | 3,109 ms | 6,594 ms | 3,210 ms | 3,387 ms | 2,878 ms | **3,208 ms** | 2.1x faster |
-| London -> Oxford | `fastbike-verylowtraffic` | 5,045 ms | 10,595 ms | 5,094 ms | 6,053 ms | 4,581 ms | **5,036 ms** | 2.1x faster |
-| London -> Cardiff | `fastbike` | 7,576 ms | 14,144 ms | 7,065 ms | 8,104 ms | 6,281 ms | **5,909 ms** | 2.4x faster |
-| London -> Cardiff | `fastbike-lowtraffic` | 9,210 ms | 17,891 ms | 8,078 ms | 9,356 ms | 7,916 ms | **7,546 ms** | 2.4x faster |
-| London -> Cardiff | `fastbike-verylowtraffic` | 12,442 ms | 18,280 ms | 9,025 ms | 9,613 ms | 8,714 ms | **8,345 ms** | 2.2x faster |
-
-### Implemented Core Optimizations
-
-1. **Dynamic Edge Unlinking and Early Skip**: Reordered checks in `relax_edge` to reject closed edges and dead ends before evaluating way costs, computing heuristic distances, or slicing polylines.
-2. **Flat 32-bit Edge Indexing**: Added sequential `edge_idx: u32` to directed graph edges, replacing 16-byte tuple hashing with single integer lookup in `edge_states`.
-3. **Multi-Hop Cul-de-Sac Pruning (Iterative Leaf Peeling)**: Precomputes dead-end trees using Kahn-style iterative leaf peeling. Traces waypoint ancestors into `protected_nodes` to protect destinations inside cul-de-sacs while skipping millions of irrelevant dead ends.
-4. **Cache-Aligned 4-ary Min-Heap (`QuadHeap`)**: Replaced standard binary heap with 4-ary min-heap. Halves heap depth, fits 4 children in 32 bytes (half a cache line), and cuts priority queue overhead in half.
-5. **Dense Edge Closure Bitset (`closed_edges`)**: Replaced `is_closed` hash map tracking with a contiguous `Vec<u64>` bitset. Makes edge closed tests a single bitmask operation without hash lookups.
-6. **Bidirectional Counterlink Closure (`rev_edge_idx`)**: Resolves counterlink indices during graph construction. When an edge is popped in turn-restriction-free search, marks the counterlink closed immediately if unvisited.
-7. **Dense Edge Candidate Pool (`edge_heads` + `edge_states_pool`)**: Replaced `FastHashMap<u32, EdgeState>` with a flat `edge_heads: Vec<u32>` direct indexing array and compact candidate pool. Eliminates hashing and probing overhead on over 15 million edge relaxations per pass.
-8. **Compacted History Representation**: Replaced 48-byte `HistoryStep` containing `Option<usize>` with a 32-byte struct using `u32::MAX` sentinels, packing 2 history steps per 64-byte CPU cache line and preallocating history capacity.
-9. **Zero-Cost Geometric Types (`Point2D`, `Point3D`)**: Grouped split coordinates (`lon`, `lat`, `elev`) into `#[repr(C)]` domain structures across waypoint snapping, polyline buffers, turn restrictions, and spatial math. Preserves identical 8-byte and 12-byte register and stack layout while providing full type safety with zero runtime penalty.
-
-### Geometric Type Refactoring Impact
-
-Comparison of route latencies before and after grouping split coordinates into `Point2D` and `Point3D`:
-
-| Corridor | Profile | Baseline Latency | Grouped Types Latency | Difference |
+| Corridor | Profile | brouter.de | rsrouter | Comparison |
 | :--- | :--- | :--- | :--- | :--- |
-| Clapham -> Hackney | `fastbike` | 1,112 ms | 1,252 ms | +140 ms |
-| Clapham -> Hackney | `fastbike-lowtraffic` | 1,169 ms | 1,315 ms | +146 ms |
-| Clapham -> Hackney | `fastbike-verylowtraffic` | 1,204 ms | 1,350 ms | +146 ms |
-| London -> Brighton | `fastbike` | 2,259 ms | 2,353 ms | +94 ms |
-| London -> Brighton | `fastbike-lowtraffic` | 2,684 ms | 2,892 ms | +208 ms |
-| London -> Brighton | `fastbike-verylowtraffic` | 4,188 ms | 4,017 ms | -171 ms |
-| London -> Oxford | `fastbike` | 2,614 ms | 2,347 ms | -267 ms |
-| London -> Oxford | `fastbike-lowtraffic` | 3,023 ms | 2,770 ms | -253 ms |
-| London -> Oxford | `fastbike-verylowtraffic` | 4,696 ms | 4,353 ms | -343 ms |
-| London -> Cardiff | `fastbike` | 6,286 ms | 6,094 ms | -192 ms |
-| London -> Cardiff | `fastbike-lowtraffic` | 7,586 ms | 7,387 ms | -199 ms |
-| London -> Cardiff | `fastbike-verylowtraffic` | 8,918 ms | 8,676 ms | -242 ms |
-| Regional Graph Load | - | 5,696 ms | 5,573 ms | -123 ms |
+| Clapham -> Hackney (Local Graph) | `fastbike` | 708 ms | 460 ms | 1.54x faster |
+| Clapham -> Hackney (Regional Graph) | `fastbike` | 708 ms | 942 ms | 1.33x slower |
+| Clapham -> Hackney | `fastbike-lowtraffic` | 721 ms | 999 ms | 1.39x slower |
+| Clapham -> Hackney | `fastbike-verylowtraffic` | 707 ms | 1,030 ms | 1.46x slower |
+| London -> Brighton | `fastbike` | 2,844 ms | 2,309 ms | 1.23x faster |
+| London -> Brighton | `fastbike-lowtraffic` | 3,372 ms | 2,637 ms | 1.28x faster |
+| London -> Brighton | `fastbike-verylowtraffic` | 4,882 ms | 3,858 ms | 1.27x faster |
+| London -> Oxford | `fastbike` | 2,733 ms | 2,533 ms | 1.08x faster |
+| London -> Oxford | `fastbike-lowtraffic` | 3,109 ms | 3,065 ms | 1.01x faster |
+| London -> Oxford | `fastbike-verylowtraffic` | 5,045 ms | 4,788 ms | 1.05x faster |
+| London -> Cardiff | `fastbike` | 7,576 ms | 6,524 ms | 1.16x faster |
+| London -> Cardiff | `fastbike-lowtraffic` | 9,210 ms | 8,441 ms | 1.09x faster |
+| London -> Cardiff | `fastbike-verylowtraffic` | 12,442 ms | 10,114 ms | 1.23x faster |
+| Richmond -> Windsor -> Marlow -> Oxford | `fastbike` | 934 ms | 304 ms | 3.07x faster |
+| Richmond -> Windsor -> Marlow -> Oxford | `fastbike-lowtraffic` | 945 ms | 375 ms | 2.52x faster |
+| Richmond -> Windsor -> Marlow -> Oxford | `fastbike-verylowtraffic` | 1,397 ms | 627 ms | 2.23x faster |
 
-Parity status: 12 / 12 routes meet parity bounds with 0 regressions.
+## Optimizations
+
+| Optimization | Description |
+| :--- | :--- |
+| Early edge rejection | Reject closed edges and dead ends before evaluating costs or heuristics |
+| Flat 32-bit edge indexing | Sequential `edge_idx: u32` replaces 16-byte tuple hashing in `edge_states` |
+| Cul-de-sac pruning | Iterative leaf peeling skips dead-end trees, with waypoint ancestor protection |
+| 4-ary min-heap | `QuadHeap` with 4 children per node, fits in 32-byte cache lines |
+| Dense edge closure bitset | `Vec<u64>` bitset replaces hash map for edge closed checks |
+| Bidirectional counterlink closure | Marks counterlinks closed immediately during graph construction |
+| Dense edge candidate pool | Flat `Vec<u32>` replaces hash maps for 15M+ edge relaxations per pass |
+| Compact history | 32-byte `HistoryStep` with `u32::MAX` sentinels, 2 per cache line |
+| Packed coordinate types | `Point2D` (8B) and `Point3D` (12B) with `#[repr(C)]` |
+| Integer elevation math | Quarter-meter deltas × 250,000 for micrometers, no float round trips |
+
+## Future Parity Items (TODOs)
+
+| Category | Feature | Description |
+| :--- | :--- | :--- |
+| Routing | Nogo exclusion zones | Circular and polygonal avoid areas via `nogos=lon,lat,radius[,weight]` |
+| Routing | Dynamic tile streaming | Load RD5 tiles on-demand during A* search with LRU eviction instead of preloading fixed boxes |
+| Routing | Departure heading constraints | Force initial departure bearing via `heading=degrees` to avoid immediate U-turns |
+| Routing | Beeline segments | Straight-line connections across unmapped terrain via `straight=...` |
+| Routing | GPX map-matching | Snap recorded GPS tracks to the graph network |
+| Routing | Elevation filter alignment | Align small 1-meter elevation differences on long multi-stage descents |
+| Navigation | Voice and turn instructions | Generate turn-by-turn guidance hints: turns, roundabouts, and straight segments |
+| Server API | Custom profile upload | Upload arbitrary `.brf` profile text directly via `customprofile=...` or request body |
+| Server API | Additional export formats | Support GPX (tracks, routes, waypoints) and KML formats alongside GeoJSON |
+| Server API | Profile message matrix | Output per-segment attribute table in GeoJSON properties for UI surface coloring |
+| Server API | Query parameters | Support `direction`, `nointail`, and `noground` options |
 

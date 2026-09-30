@@ -1,19 +1,9 @@
-[package]
-name = "rsrouter"
-version = "0.1.0"
-edition = "2021"
-authors = ["Antigravity"]
-description = "High-performance BRouter bicycle router in idiomatic Rust"
+[workspace]
+members = [
+    "crates/rsrouter-core",
+    "crates/rsrouter-server",
+]
+resolver = "2"
 
-[dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.38", features = ["full"] }
-axum = "0.7"
-clap = { version = "4.5", features = ["derive"] }
-rayon = "1.10"
-
-[dev-dependencies]
-http-body-util = "0.1"
-tower = { version = "0.5", features = ["util"] }
-
+[profile.test]
+opt-level = 3

@@ -514,13 +514,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsrouter"
+name = "rsrouter-core"
+version = "0.1.0"
+dependencies = [
+ "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rsrouter-server"
 version = "0.1.0"
 dependencies = [
  "axum",
  "clap",
  "http-body-util",
  "rayon",
+ "rsrouter-core",
  "serde",
  "serde_json",
  "tokio",
