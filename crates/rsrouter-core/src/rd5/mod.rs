@@ -11,4 +11,5 @@ pub mod crc;
 pub mod micro_cache;
 pub mod osm_file;
 pub mod physical_file;
+pub mod rd5_slice;
 pub mod tile_manager;

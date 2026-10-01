@@ -1,3 +1,8 @@
 /target
 /data
 routes_comparison.html
+node_modules/
+dist/
+tools/pmtiles
+*.pmtiles
+web/public/map-tiles/

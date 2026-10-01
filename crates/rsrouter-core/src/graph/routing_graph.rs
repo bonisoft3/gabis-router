@@ -722,4 +722,64 @@ impl RoutingGraph {
             -10.0
         }
     }
+
+    /// Adds a single 1°×1° square from an in-memory RD5 slice into the graph without resolving edges yet.
+    pub fn add_rd5_slice_square(
+        &mut self,
+        slice: &crate::rd5::rd5_slice::Rd5Slice,
+        lon_deg: i32,
+        lat_deg: i32,
+    ) -> std::io::Result<usize> {
+        self.elevation_types.insert((lon_deg, lat_deg), slice.elevation_type);
+        let caches = slice.decode_square(lon_deg, lat_deg, None)?;
+        let count = caches.len();
+        for cache in caches {
+            self.add_micro_cache(cache);
+        }
+        Ok(count)
+    }
+
+    /// Loads a single 1°×1° square from an in-memory RD5 slice into the graph and resolves edges.
+    pub fn load_rd5_slice_square(
+        &mut self,
+        slice: &crate::rd5::rd5_slice::Rd5Slice,
+        lon_deg: i32,
+        lat_deg: i32,
+    ) -> std::io::Result<usize> {
+        let count = self.add_rd5_slice_square(slice, lon_deg, lat_deg)?;
+        self.resolve_edge_target_elevations();
+        Ok(count)
+    }
+
+    /// Loads all non-empty squares in a 5°×5° segment slice into the graph.
+    /// `base_lon` and `base_lat` are bottom-left coordinates (e.g. -5, 50 for W5_N50).
+    pub fn load_rd5_segment(
+        &mut self,
+        slice: &crate::rd5::rd5_slice::Rd5Slice,
+        base_lon: i32,
+        base_lat: i32,
+    ) -> std::io::Result<usize> {
+        let mut total_caches = 0;
+        let base_lon_deg = base_lon + 180;
+        let base_lat_deg = base_lat + 90;
+
+        for lon_offset in 0..5 {
+            for lat_offset in 0..5 {
+                let tile_idx = (lon_offset * 5 + lat_offset) as usize;
+                if slice.has_data_for_tile(tile_idx) {
+                    let lon_deg = base_lon_deg + lon_offset;
+                    let lat_deg = base_lat_deg + lat_offset;
+                    self.elevation_types.insert((lon_deg, lat_deg), slice.elevation_type);
+                    if let Ok(caches) = slice.decode_square(lon_deg, lat_deg, None) {
+                        for cache in caches {
+                            self.add_micro_cache(cache);
+                            total_caches += 1;
+                        }
+                    }
+                }
+            }
+        }
+        self.resolve_edge_target_elevations();
+        Ok(total_caches)
+    }
 }

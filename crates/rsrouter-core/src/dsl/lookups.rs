@@ -190,10 +190,16 @@ pub struct LookupData {
 }
 
 impl LookupData {
+    pub fn parse(text: &str) -> io::Result<Self> {
+        Self::load_from_reader(text.as_bytes())
+    }
+
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let file = File::open(path)?;
-        let reader = BufReader::new(file);
+        Self::load_from_reader(BufReader::new(file))
+    }
 
+    pub fn load_from_reader<R: BufRead>(reader: R) -> io::Result<Self> {
         let mut lookup_version = -1i16;
         let mut minor_version = -1i16;
         let mut min_app_version = -1i16;

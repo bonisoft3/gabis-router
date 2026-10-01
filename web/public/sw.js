@@ -1,12 +1,10 @@
-// Basic service worker for rsrouter PWA offline caching.
+// Service worker for rsrouter PWA offline caching.
+// Note: Only caches data tiles and profiles. Never caches application JS or WASM binaries
+// to prevent stale binary mismatches.
 
-const CACHE_NAME = 'rsrouter-cache-v1';
-const STATIC_ASSETS = ['/', '/index.html', '/manifest.json'];
+const CACHE_NAME = 'rsrouter-segments-v2';
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
+self.addEventListener('install', (_event) => {
   self.skipWaiting();
 });
 
@@ -24,25 +22,25 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Cache static assets and segment tiles
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) {
-        return cached;
-      }
-      return fetch(event.request).then((response) => {
-        // Cache successful responses for segment data or static files
-        if (
-          response.ok &&
-          (url.pathname.endsWith('.rd5') ||
-            url.pathname.endsWith('.brf') ||
-            url.pathname.endsWith('.wasm'))
-        ) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+  // Cache only segment files, profiles, and dictionaries for offline routing
+  if (
+    url.pathname.endsWith('.rd5') ||
+    url.pathname.endsWith('.brf') ||
+    url.pathname.endsWith('.dat')
+  ) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) {
+          return cached;
         }
-        return response;
-      });
-    })
-  );
+        return fetch(event.request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        });
+      })
+    );
+  }
 });

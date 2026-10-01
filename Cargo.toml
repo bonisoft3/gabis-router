@@ -2,6 +2,7 @@
 members = [
     "crates/rsrouter-core",
     "crates/rsrouter-server",
+    "crates/rsrouter-wasm",
 ]
 resolver = "2"
 

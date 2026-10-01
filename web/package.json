@@ -4,12 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:wasm": "cargo build -p rsrouter-wasm --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir src/pkg ../target/wasm32-unknown-unknown/release/rsrouter_wasm.wasm",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "maplibre-gl": "^4.7.1"
+    "maplibre-gl": "^4.7.1",
+    "pmtiles": "^4.5.0",
+    "protomaps-themes-base": "^4.5.0"
   },
   "devDependencies": {
     "typescript": "^5.6.3",
