@@ -751,6 +751,53 @@ impl RoutingGraph {
         Ok(count)
     }
 
+    /// Adds the microcaches of a 5°×5° segment slice that lie inside a lon/lat box,
+    /// without resolving edges yet. `base_lon` and `base_lat` are the segment's bottom-left
+    /// corner (e.g. -5, 50 for W5_N50). Returns the number of microcaches added.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_rd5_slice_box(
+        &mut self,
+        slice: &crate::rd5::rd5_slice::Rd5Slice,
+        base_lon: i32,
+        base_lat: i32,
+        min_lon: f64,
+        min_lat: f64,
+        max_lon: f64,
+        max_lat: f64,
+    ) -> std::io::Result<usize> {
+        let d = slice.divisor as f64;
+        let cells = (
+            ((min_lon + 180.0) * d).floor() as i32,
+            ((min_lat + 90.0) * d).floor() as i32,
+            ((max_lon + 180.0) * d).floor() as i32,
+            ((max_lat + 90.0) * d).floor() as i32,
+        );
+
+        let mut total = 0;
+        for lon_offset in 0..5 {
+            for lat_offset in 0..5 {
+                let lon = base_lon + lon_offset;
+                let lat = base_lat + lat_offset;
+                // Skip squares that do not overlap the box.
+                if (lon + 1) as f64 <= min_lon || lon as f64 > max_lon || (lat + 1) as f64 <= min_lat || lat as f64 > max_lat {
+                    continue;
+                }
+                let tile_idx = (lon_offset * 5 + lat_offset) as usize;
+                if !slice.has_data_for_tile(tile_idx) {
+                    continue;
+                }
+                let lon_deg = lon + 180;
+                let lat_deg = lat + 90;
+                self.elevation_types.insert((lon_deg, lat_deg), slice.elevation_type);
+                for cache in slice.decode_square_cells(lon_deg, lat_deg, None, cells)? {
+                    self.add_micro_cache(cache);
+                    total += 1;
+                }
+            }
+        }
+        Ok(total)
+    }
+
     /// Loads all non-empty squares in a 5°×5° segment slice into the graph.
     /// `base_lon` and `base_lat` are bottom-left coordinates (e.g. -5, 50 for W5_N50).
     pub fn load_rd5_segment(

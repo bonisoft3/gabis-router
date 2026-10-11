@@ -233,11 +233,73 @@ fn test_real_full_route_generation() {
     assert!(geojson.contains("\"FeatureCollection\""));
     assert!(geojson.contains("\"LineString\""));
     assert!(geojson.contains("\"track-length\""));
+    assert!(geojson.contains("\"segments\""));
+    assert!(!route.segments.is_empty());
 
-    // Save GeoJSON route to target dir for verification and inspection
+    // Verify GPX format
+    let gpx = route.to_gpx("fastbike");
+    assert!(gpx.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+    assert!(gpx.contains("<gpx version=\"1.1\" creator=\"rsrouter\""));
+    assert!(gpx.contains("<name>fastbike</name>"));
+    assert!(gpx.contains("<trk>"));
+    assert!(gpx.contains("<trkseg>"));
+    assert!(gpx.contains("<trkpt lat="));
+    assert!(gpx.contains("<ele>"));
+
+    // Save route artifacts to target dir for verification and inspection
     let _ = fs::create_dir_all("target/routes");
     let _ = fs::write("target/routes/east_london_fastbike.geojson", &geojson);
-    println!("Saved route to target/routes/east_london_fastbike.geojson");
+    let _ = fs::write("target/routes/east_london_fastbike.gpx", &gpx);
+    println!("Saved route to target/routes/east_london_fastbike.geojson and .gpx");
+}
+
+#[test]
+fn test_route_result_to_gpx() {
+    use rsrouter_core::routing::search::{RoutePoint, RouteResult};
+
+    let points = vec![
+        RoutePoint {
+            lon: -0.143613,
+            lat: 51.462414,
+            elevation_m: 24.25,
+            distance_from_start_m: 0.0,
+            time_from_start_s: 0.0,
+            energy_j: 0.0,
+            cost: 0,
+        },
+        RoutePoint {
+            lon: -0.142000,
+            lat: 51.463000,
+            elevation_m: 25.50,
+            distance_from_start_m: 120.0,
+            time_from_start_s: 18.0,
+            energy_j: 1800.0,
+            cost: 150,
+        },
+    ];
+
+    let route = RouteResult {
+        total_distance_m: 120.0,
+        total_time_s: 18.0,
+        total_energy_j: 1800.0,
+        total_cost: 150,
+        filtered_ascend_m: 1.25,
+        plain_ascend_m: 1.25,
+        points,
+        segments: Vec::new(),
+    };
+
+    let gpx = route.to_gpx("test & track");
+    assert!(gpx.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+    assert!(gpx.contains("<gpx version=\"1.1\" creator=\"rsrouter\""));
+    assert!(gpx.contains("<name>test &amp; track</name>"));
+    assert!(gpx.contains("<trkpt lat=\"51.462414\" lon=\"-0.143613\">"));
+    assert!(gpx.contains("<ele>24.25</ele>"));
+    assert!(gpx.contains("<trkpt lat=\"51.463000\" lon=\"-0.142000\">"));
+    assert!(gpx.contains("<ele>25.50</ele>"));
+    assert!(gpx.contains("</trkseg>"));
+    assert!(gpx.contains("</trk>"));
+    assert!(gpx.contains("</gpx>"));
 }
 
 #[test]
@@ -529,6 +591,128 @@ fn test_clapham_hackney_verylowtraffic() {
         881,
         "Point count divergence from BRouter baseline"
     );
+}
+
+#[test]
+fn test_clapham_hackney_gabis_safe_road() {
+    let segment_path = repo_path("data/segments4/W5_N50.rd5");
+    if !segment_path.exists() {
+        println!("Skipping clapham_hackney test: {:?} does not exist", segment_path);
+        return;
+    }
+
+    let lookups =
+        LookupData::load_from_file(&repo_path("profiles/lookups.dat")).expect("Failed to load lookups.dat");
+    let profile = Profile::load_from_file(&repo_path("profiles/gabis-safe-road.brf"), &lookups)
+        .expect("Failed to load gabis-safe-road profile");
+
+    let mut tile_mgr = TileManager::new(repo_path("data/segments4"));
+    let microcaches = tile_mgr
+        .decode_all_in_square(179, 141, None)
+        .expect("Failed to decode square (179, 141)");
+
+    let mut graph = RoutingGraph::with_capacities(100_000, 250_000);
+    for cache in microcaches {
+        graph.add_micro_cache(cache);
+    }
+    graph.resolve_edge_target_elevations();
+
+    let start_lon = -0.143613;
+    let start_lat = 51.462414;
+    let target_lon = -0.055296;
+    let target_lat = 51.544998;
+
+    let router = AStarRouter::new();
+    println!("Routing Clapham -> Hackney with gabis-safe-road...");
+    let t_route = Instant::now();
+    let route = router
+        .find_route(
+            &graph,
+            &lookups,
+            &profile,
+            (start_lon, start_lat),
+            (target_lon, target_lat),
+        )
+        .expect("Clapham -> Hackney gabis-safe-road routing failed");
+    let route_elapsed = t_route.elapsed();
+
+    println!("--- Clapham -> Hackney (gabis-safe-road) Summary ---");
+    println!("Total distance: {:.1} m", route.total_distance_m);
+    println!("Total time:     {:.0} s", route.total_time_s);
+    println!("Total energy:   {:.0} J", route.total_energy_j);
+    println!("Filtered ascend:{:.1} m", route.filtered_ascend_m);
+    println!("Total cost:     {}", route.total_cost);
+    println!("Route points:   {}", route.points.len());
+    println!("Search time:    {:.2} ms", route_elapsed.as_secs_f64() * 1000.0);
+
+    let _ = fs::create_dir_all("target/routes");
+    let geojson = route.to_geojson("clapham_hackney_gabis-safe-road");
+    let _ = fs::write(
+        "target/routes/clapham_hackney_gabis-safe-road.geojson",
+        &geojson,
+    );
+    assert!(route.total_distance_m > 0.0);
+}
+
+#[test]
+fn test_clapham_hackney_gabis_lite_gravel() {
+    let segment_path = repo_path("data/segments4/W5_N50.rd5");
+    if !segment_path.exists() {
+        println!("Skipping clapham_hackney test: {:?} does not exist", segment_path);
+        return;
+    }
+
+    let lookups =
+        LookupData::load_from_file(&repo_path("profiles/lookups.dat")).expect("Failed to load lookups.dat");
+    let profile = Profile::load_from_file(&repo_path("profiles/gabis-lite-gravel.brf"), &lookups)
+        .expect("Failed to load gabis-lite-gravel profile");
+
+    let mut tile_mgr = TileManager::new(repo_path("data/segments4"));
+    let microcaches = tile_mgr
+        .decode_all_in_square(179, 141, None)
+        .expect("Failed to decode square (179, 141)");
+
+    let mut graph = RoutingGraph::with_capacities(100_000, 250_000);
+    for cache in microcaches {
+        graph.add_micro_cache(cache);
+    }
+    graph.resolve_edge_target_elevations();
+
+    let start_lon = -0.143613;
+    let start_lat = 51.462414;
+    let target_lon = -0.055296;
+    let target_lat = 51.544998;
+
+    let router = AStarRouter::new();
+    println!("Routing Clapham -> Hackney with gabis-lite-gravel...");
+    let t_route = Instant::now();
+    let route = router
+        .find_route(
+            &graph,
+            &lookups,
+            &profile,
+            (start_lon, start_lat),
+            (target_lon, target_lat),
+        )
+        .expect("Clapham -> Hackney gabis-lite-gravel routing failed");
+    let route_elapsed = t_route.elapsed();
+
+    println!("--- Clapham -> Hackney (gabis-lite-gravel) Summary ---");
+    println!("Total distance: {:.1} m", route.total_distance_m);
+    println!("Total time:     {:.0} s", route.total_time_s);
+    println!("Total energy:   {:.0} J", route.total_energy_j);
+    println!("Filtered ascend:{:.1} m", route.filtered_ascend_m);
+    println!("Total cost:     {}", route.total_cost);
+    println!("Route points:   {}", route.points.len());
+    println!("Search time:    {:.2} ms", route_elapsed.as_secs_f64() * 1000.0);
+
+    let _ = fs::create_dir_all("target/routes");
+    let geojson = route.to_geojson("clapham_hackney_gabis-lite-gravel");
+    let _ = fs::write(
+        "target/routes/clapham_hackney_gabis-lite-gravel.geojson",
+        &geojson,
+    );
+    assert!(route.total_distance_m > 0.0);
 }
 
 #[test]

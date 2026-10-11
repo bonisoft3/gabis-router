@@ -141,6 +141,19 @@ impl<'a> Rd5Slice<'a> {
         lat_degree: i32,
         way_validator: Option<&dyn TagValueValidator>,
     ) -> io::Result<Vec<DecodedMicroCache>> {
+        self.decode_square_cells(lon_degree, lat_degree, way_validator, (i32::MIN, i32::MIN, i32::MAX, i32::MAX))
+    }
+
+    /// Decodes the microcaches of a 1°×1° square whose cell indices fall inside `cells`,
+    /// given as inclusive `(min_lon_idx, min_lat_idx, max_lon_idx, max_lat_idx)`.
+    /// Cell indices are `floor((lon + 180) * divisor)` and `floor((lat + 90) * divisor)`.
+    pub fn decode_square_cells(
+        &self,
+        lon_degree: i32,
+        lat_degree: i32,
+        way_validator: Option<&dyn TagValueValidator>,
+        cells: (i32, i32, i32, i32),
+    ) -> io::Result<Vec<DecodedMicroCache>> {
         let lon_mod5 = lon_degree % 5;
         let lat_mod5 = lat_degree % 5;
         let tile_index = (lon_mod5 * 5 + lat_mod5) as usize;
@@ -192,6 +205,7 @@ impl<'a> Rd5Slice<'a> {
             pos_idx.push(dis.read_int() as usize);
         }
 
+        let (min_lon_idx, min_lat_idx, max_lon_idx, max_lat_idx) = cells;
         let mut raw_cells = Vec::with_capacity(ncaches);
         for sub_idx in 0..ncaches {
             let start_pos = if sub_idx == 0 {
@@ -214,6 +228,9 @@ impl<'a> Rd5Slice<'a> {
                 let rel_lon = (sub_idx as i32) % divisor;
                 let lon_idx = divisor * lon_degree + rel_lon;
                 let lat_idx = divisor * lat_degree + rel_lat;
+                if lon_idx < min_lon_idx || lon_idx > max_lon_idx || lat_idx < min_lat_idx || lat_idx > max_lat_idx {
+                    continue;
+                }
                 raw_cells.push((cell_bytes.to_vec(), lon_idx, lat_idx));
             }
         }

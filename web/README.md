@@ -9,7 +9,7 @@ Progressive Web App (PWA) for browser-based bicycle routing powered by WebAssemb
 | UI & Map | TypeScript, MapLibre GL JS | Renders map view, handles click waypoints, displays GeoJSON routes. |
 | Routing Worker | Web Worker (`worker.ts`) | Runs route calculation off the main thread to prevent UI freezing. |
 | Engine | `rsrouter-wasm` (WebAssembly) | In-memory graph loading and A* path computation. |
-| Offline Cache | Service Worker (`sw.js`) | Caches static assets, `.wasm` binaries, and downloaded `.rd5` segments. |
+| Offline Cache | Service Worker (`sw.js`) | Caches the app shell (HTML, JS, CSS, `.wasm`, icons) so the app opens offline. Routing data and map tiles are cached by the app code. |
 
 ## Directory Layout
 
@@ -19,13 +19,15 @@ web/
 ├── package.json            # Dependencies and scripts
 ├── tsconfig.json           # TypeScript configuration
 ├── vite.config.ts          # Vite build configuration
+├── map-tiles/              # .pmtiles archives, extracted on first request (dev server, not copied to dist)
 ├── public/
 │   ├── manifest.json       # PWA metadata
 │   ├── sw.js               # Service Worker
 │   └── favicon.svg
 └── src/
-    ├── main.ts             # Map rendering and UI interaction
+    ├── main.ts             # Map rendering, UI, offline download
     ├── worker.ts           # Routing Web Worker
+    ├── download-worker.ts  # Streams map tile archives to browser storage (OPFS)
     └── types.ts            # Data contracts and messages
 ```
 

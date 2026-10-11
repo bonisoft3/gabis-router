@@ -197,3 +197,33 @@ async fn test_brouter_alternative_routes_endpoint() {
         .unwrap();
     assert!(dist_alt1 > 5000.0);
 }
+
+#[tokio::test]
+async fn test_brouter_endpoint_gpx_format() {
+    let Some(app) = get_test_app() else {
+        return;
+    };
+
+    let uri =
+        "/brouter?lonlats=-0.143613,51.462414|-0.055296,51.544998&profile=fastbike&format=gpx";
+    let response = app
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "application/gpx+xml"
+    );
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let gpx = String::from_utf8_lossy(&body);
+
+    assert!(gpx.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+    assert!(gpx.contains("<gpx version=\"1.1\""));
+    assert!(gpx.contains("<trk>"));
+    assert!(gpx.contains("<trkseg>"));
+    assert!(gpx.contains("<trkpt lat="));
+    assert!(gpx.contains("<ele>"));
+}

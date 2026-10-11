@@ -200,6 +200,8 @@ async fn handle_brouter(
             .into_response();
     }
 
+    let format = params.format.as_deref().unwrap_or("geojson");
+
     match state.router.find_multi_route_with_alternative(
         &state.graph,
         &state.lookups,
@@ -208,12 +210,25 @@ async fn handle_brouter(
         alt_idx,
     ) {
         Ok(route) => {
-            let geojson = route.to_geojson(profile_name);
-            Response::builder()
-                .status(StatusCode::OK)
-                .header("Content-Type", "application/json")
-                .body(geojson.into())
-                .unwrap()
+            if format.eq_ignore_ascii_case("gpx") {
+                let gpx = route.to_gpx(profile_name);
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "application/gpx+xml")
+                    .header(
+                        "Content-Disposition",
+                        format!("attachment; filename=\"{profile_name}.gpx\""),
+                    )
+                    .body(gpx.into())
+                    .unwrap()
+            } else {
+                let geojson = route.to_geojson(profile_name);
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "application/json")
+                    .body(geojson.into())
+                    .unwrap()
+            }
         }
         Err(e) => (StatusCode::NOT_FOUND, format!("Routing failed: {}", e)).into_response(),
     }

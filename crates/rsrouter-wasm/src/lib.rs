@@ -77,6 +77,26 @@ impl WasmRouter {
         Ok(count)
     }
 
+    /// Adds the part of a 5°×5° segment (e.g. "W5_N50") that lies inside a lon/lat box,
+    /// at cell resolution, without resolving edges yet. Returns the number of cells added.
+    pub fn add_rd5_box(
+        &mut self,
+        data: &[u8],
+        segment_name: &str,
+        min_lon: f64,
+        min_lat: f64,
+        max_lon: f64,
+        max_lat: f64,
+    ) -> Result<usize, JsValue> {
+        let (base_lon, base_lat) = parse_segment_name(segment_name)
+            .ok_or_else(|| JsValue::from_str(&format!("Invalid segment name: {segment_name}")))?;
+        let slice = rsrouter_core::rd5::rd5_slice::Rd5Slice::parse(data)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse RD5 data: {e}")))?;
+        self.graph
+            .add_rd5_slice_box(&slice, base_lon, base_lat, min_lon, min_lat, max_lon, max_lat)
+            .map_err(|e| JsValue::from_str(&format!("Failed to load {segment_name}: {e}")))
+    }
+
     /// Resolves target elevations and edge indices for the entire graph.
     pub fn resolve_graph(&mut self) {
         self.graph.resolve_edge_target_elevations();
@@ -160,6 +180,52 @@ impl WasmRouter {
         ).map_err(|e| JsValue::from_str(&format!("Routing failed: {e}")))?;
 
         Ok(route.to_geojson(profile_name))
+    }
+
+    /// Computes a route for given waypoints ("lon,lat|lon,lat") and returns a GPX string.
+    pub fn find_route_gpx(
+        &self,
+        waypoints_str: &str,
+        profile_name: &str,
+        alternative_idx: usize,
+    ) -> Result<String, JsValue> {
+        let Some(lookups) = &self.lookups else {
+            return Err(JsValue::from_str("Lookups not loaded"));
+        };
+        let Some(profile) = self.profiles.get(profile_name) else {
+            return Err(JsValue::from_str(&format!("Profile not found: {profile_name}")));
+        };
+
+        let mut waypoints = Vec::new();
+        for pair in waypoints_str.split('|') {
+            let parts: Vec<&str> = pair.split(',').collect();
+            if parts.len() != 2 {
+                return Err(JsValue::from_str(&format!("Invalid waypoint format: {pair}")));
+            }
+            let lon: f64 = parts[0].trim().parse()
+                .map_err(|e| JsValue::from_str(&format!("Invalid lon: {e}")))?;
+            let lat: f64 = parts[1].trim().parse()
+                .map_err(|e| JsValue::from_str(&format!("Invalid lat: {e}")))?;
+            waypoints.push((lon, lat));
+        }
+
+        if waypoints.len() < 2 {
+            return Err(JsValue::from_str("At least two waypoints required"));
+        }
+
+        if self.graph.node_count() == 0 {
+            return Err(JsValue::from_str("Routing graph is empty. Please load tile data first."));
+        }
+
+        let route = self.router.find_multi_route_with_alternative(
+            &self.graph,
+            lookups,
+            profile,
+            &waypoints,
+            alternative_idx,
+        ).map_err(|e| JsValue::from_str(&format!("Routing failed: {e}")))?;
+
+        Ok(route.to_gpx(profile_name))
     }
 }
 

@@ -69,3 +69,15 @@ curl "http://localhost:17777/brouter?lonlats=-0.143613,51.462414|-0.055296,51.54
 On medium and long corridors, `rsrouter` is 1.05x to 3.07x faster than the official BRouter server. Short routes on the regional graph are 1.3x to 1.5x slower.
 
 See [PARITY.md](PARITY.md) for full tables and analysis.
+
+## Pre-Launch Checklist
+
+Items to revisit before public release or commercial deployment:
+
+| Area | Current State | Production Requirement |
+| :--- | :--- | :--- |
+| Basemap API Keys | Thunderforest key hardcoded in client bundle | Use a backend tile proxy or require user-supplied keys to avoid quota depletion |
+| Tile Usage Limits | Free tier on Thunderforest: 150,000 tiles per month, public CyclOSM | Verify commercial license and tile caching compliance under production traffic |
+| Tile and Routing Data CDN | Local files and test mirrors | Set up a production CDN with cache-control headers for `.rd5` and `.pmtiles` archives |
+| Error and Usage Telemetry | Local console error filtering only | Establish privacy-respecting error tracking with user opt-in |
+

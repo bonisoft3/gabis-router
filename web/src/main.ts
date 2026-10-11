@@ -1,158 +1,97 @@
 import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import * as pmtiles from 'pmtiles';
 import * as protomapsThemesBase from 'protomaps-themes-base';
-import type { LatLon, ProfileName, SegmentInfo, WorkerMessage } from './types.ts';
+import type { WorkerMessage } from './types.ts';
+import { drawRouteLayer, getCurrentRoute, initRoute, setWaypoints } from './route.ts';
+import { drawCompareLayer, initCompare } from './compare.ts';
+
+import './settings.ts';
+import { getBasemap, getThunderforestKey, onBasemapChange } from './basemap.ts';
+import type { DownloadEvent, DownloadRequest } from './download-worker.ts';
+
+// Ignore benign fetch abort cancellations from rapid style changes or aborted requests
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  const isAbort =
+    (reason instanceof DOMException && (reason.name === 'AbortError' || /signal is aborted/i.test(reason.message))) ||
+    (reason instanceof Error && (reason.name === 'AbortError' || /signal is aborted/i.test(reason.message))) ||
+    (typeof reason === 'string' && /signal is aborted/i.test(reason));
+  if (isAbort) {
+    event.preventDefault();
+  }
+});
+
+window.addEventListener('error', (event) => {
+  const msg = event.message || (event.error && event.error.message) || '';
+  if (/signal is aborted/i.test(msg) || (event.error instanceof DOMException && event.error.name === 'AbortError')) {
+    event.preventDefault();
+  }
+});
+
+const origConsoleError = console.error;
+console.error = (...args: any[]) => {
+  const msg = args.map((a) => (a && (a.message || String(a))) || '').join(' ');
+  if (/signal is aborted/i.test(msg) || (args[0] instanceof DOMException && args[0].name === 'AbortError')) {
+    return;
+  }
+  origConsoleError.apply(console, args);
+};
 
 // UI Elements
 const statusEl = document.getElementById('status')!;
-const profileSelect = document.getElementById('profile-select') as HTMLSelectElement;
-const btnClearRoute = document.getElementById('btn-clear-route') as HTMLButtonElement;
-const tabBtnRoute = document.getElementById('tab-btn-route') as HTMLButtonElement;
-const tabBtnTiles = document.getElementById('tab-btn-tiles') as HTMLButtonElement;
-const panelRoute = document.getElementById('panel-route') as HTMLDivElement;
-const panelTiles = document.getElementById('panel-tiles') as HTMLDivElement;
-const storageSummaryEl = document.getElementById('storage-summary') as HTMLDivElement;
-const segmentListEl = document.getElementById('segment-list') as HTMLDivElement;
 const btnToggleCollapse = document.getElementById('btn-toggle-collapse') as HTMLButtonElement;
 const controlsEl = document.getElementById('controls') as HTMLDivElement;
-const checkSelectAll = document.getElementById('check-select-all') as HTMLInputElement | null;
-const selectedSummaryEl = document.getElementById('selected-summary') as HTMLSpanElement | null;
-const btnBulkDownload = document.getElementById('btn-bulk-download') as HTMLButtonElement | null;
-const btnBulkDelete = document.getElementById('btn-bulk-delete') as HTMLButtonElement | null;
-const checkOfflineMode = document.getElementById('check-offline-mode') as HTMLInputElement | null;
-const badgeOfflineStatus = document.getElementById('badge-offline-status') as HTMLSpanElement | null;
-const mapStorageSummaryEl = document.getElementById('map-storage-summary') as HTMLDivElement | null;
+const checkOfflineMode = document.getElementById('check-offline-mode') as HTMLInputElement;
+const badgeOfflineStatus = document.getElementById('badge-offline-status') as HTMLSpanElement;
+const offlineCardBadge = document.getElementById('offline-card-badge') as HTMLSpanElement;
+const offlineCardDesc = document.getElementById('offline-card-desc') as HTMLParagraphElement;
+const progressBarContainer = document.getElementById('offline-progress-bar-container') as HTMLDivElement;
+const progressBar = document.getElementById('offline-progress-bar') as HTMLDivElement;
+const btnDownloadOffline = document.getElementById('btn-download-offline') as HTMLButtonElement;
+const btnDeleteOffline = document.getElementById('btn-delete-offline') as HTMLButtonElement;
 
+// 5°×5° segments covering the UK and Ireland. Used for both routing data (.rd5) and map tiles (.pmtiles).
+const UK_SEGMENTS = [
+  'W15_N50', // Ireland, far west coast
+  'W10_N50', // Ireland, Northern Ireland, Cornwall west tip
+  'W10_N55', // Donegal, Outer Hebrides
+  'W5_N50', // England, Wales, southern Scotland
+  'W5_N55', // Scotland, Orkney
+  'W5_N60', // Shetland
+  'E0_N50', // East England
+];
+const SEGMENT_CACHE_NAME = 'rsrouter-segments-v2';
 const MAP_TILES_CACHE_NAME = 'rsrouter-map-tiles-v1';
-let isOfflineMode = localStorage.getItem('rsrouter_offline_mode') === 'true';
+const MIN_RD5_BYTES = 50000;
+const FONT_BASE_URL = 'https://cdn.protomaps.com/fonts/pbf/';
+const FONT_NAMES = ['Noto Sans Regular', 'Noto Sans Medium', 'Noto Sans Italic'];
+// Basic Latin plus Latin-1 and Latin Extended-A, which covers Welsh (ŵ, ŷ) and Irish names.
+const FONT_RANGES = ['0-255', '256-511'];
+const ROUTING_FILES = [
+  '/profiles/lookups.dat',
+  '/profiles/fastbike.brf',
+  '/profiles/fastbike-lowtraffic.brf',
+  '/profiles/fastbike-verylowtraffic.brf',
+  '/profiles/gabis-lite-gravel.brf',
+  '/profiles/gabis-safe-road.brf',
+  '/profiles/gravel.brf',
+  '/profiles/trekking.brf',
+];
 
-let currentTab: 'route' | 'tiles' = 'route';
-const cachedSegments = new Map<string, { sizeBytes: number }>();
-const downloadingSegments = new Set<string>();
-const selectedSegmentIds = new Set<string>();
-const downloadQueue: string[] = [];
-let isProcessingQueue = false;
+// UK and Ireland focus area
+const UK_CENTER: [number, number] = [-4.5, 54.5];
+const UK_BOUNDS: [[number, number], [number, number]] = [
+  [-15.0, 49.0], // Southwest: west of Ireland, Scilly
+  [4.0, 61.5], // Northeast: Shetland, East Anglia
+];
+
+let isOfflineMode = localStorage.getItem('rsrouter_offline_mode') === 'true';
 
 // Collapsible panel toggle
 btnToggleCollapse.addEventListener('click', () => {
   controlsEl.classList.toggle('collapsed');
 });
-
-// Dynamic 5°×5° Grid Helpers
-function parseSegmentId(id: string): { bbox: [number, number, number, number]; minLon: number; minLat: number } {
-  const match = id.match(/^([EW])(\d+)_([NS])(\d+)$/);
-  if (!match) {
-    return { bbox: [0, 0, 5, 5], minLon: 0, minLat: 0 };
-  }
-  const lonDir = match[1];
-  const lonVal = parseInt(match[2], 10);
-  const latDir = match[3];
-  const latVal = parseInt(match[4], 10);
-  const minLon = lonDir === 'W' ? -lonVal : lonVal;
-  const minLat = latDir === 'S' ? -latVal : latVal;
-  return {
-    bbox: [minLon, minLat, minLon + 5, minLat + 5],
-    minLon,
-    minLat,
-  };
-}
-
-function formatCoord(val: number, isLat: boolean): string {
-  if (isLat) {
-    return val >= 0 ? `${val}°N` : `${Math.abs(val)}°S`;
-  }
-  return val >= 0 ? `${val}°E` : `${Math.abs(val)}°W`;
-}
-
-function formatBounds(bbox: [number, number, number, number]): string {
-  const [w, s, e, n] = bbox;
-  return `${formatCoord(s, true)} to ${formatCoord(n, true)}, ${formatCoord(w, false)} to ${formatCoord(e, false)}`;
-}
-
-function getSegmentIdFromCoords(lon: number, lat: number): string {
-  const clampedLat = Math.max(-85, Math.min(85, lat));
-  let normLon = lon;
-  while (normLon < -180) normLon += 360;
-  while (normLon >= 180) normLon -= 360;
-
-  const minLon = Math.floor(normLon / 5) * 5;
-  const minLat = Math.floor(clampedLat / 5) * 5;
-
-  const lonStr = minLon < 0 ? `W${Math.abs(minLon)}` : `E${minLon}`;
-  const latStr = minLat < 0 ? `S${Math.abs(minLat)}` : `N${minLat}`;
-  return `${lonStr}_${latStr}`;
-}
-
-function getVisibleSegmentIds(): string[] {
-  if (!map) return [];
-  const bounds = map.getBounds();
-  const west = Math.max(-180, bounds.getWest());
-  const east = Math.min(180, bounds.getEast());
-  const south = Math.max(-85, bounds.getSouth());
-  const north = Math.min(85, bounds.getNorth());
-
-  const minLon = Math.floor(west / 5) * 5;
-  const maxLon = Math.floor(east / 5) * 5;
-  const minLat = Math.floor(south / 5) * 5;
-  const maxLat = Math.floor(north / 5) * 5;
-
-  const ids: string[] = [];
-  for (let lat = minLat; lat <= maxLat; lat += 5) {
-    for (let lon = minLon; lon <= maxLon; lon += 5) {
-      const lonStr = lon < 0 ? `W${Math.abs(lon)}` : `E${lon}`;
-      const latStr = lat < 0 ? `S${Math.abs(lat)}` : `N${lat}`;
-      ids.push(`${lonStr}_${latStr}`);
-    }
-  }
-  return ids;
-}
-
-function getListSegments(): { segments: SegmentInfo[]; overflowCount: number } {
-  const visibleIds = getVisibleSegmentIds();
-  const ids = new Set<string>();
-
-  // Always include cached and selected segments in the list
-  for (const id of cachedSegments.keys()) {
-    ids.add(id);
-  }
-  for (const id of selectedSegmentIds) {
-    ids.add(id);
-  }
-
-  let overflowCount = 0;
-  if (visibleIds.length <= 60) {
-    for (const id of visibleIds) {
-      ids.add(id);
-    }
-  } else {
-    overflowCount = visibleIds.length;
-  }
-
-  const list: SegmentInfo[] = [];
-  for (const id of ids) {
-    const { bbox } = parseSegmentId(id);
-    const cachedInfo = cachedSegments.get(id);
-    const isCached = !!cachedInfo;
-    const isDownloading = downloadingSegments.has(id);
-
-    list.push({
-      id,
-      name: formatBounds(bbox),
-      bbox,
-      sizeMb: cachedInfo ? Math.round(cachedInfo.sizeBytes / (1024 * 1024)) : 0,
-      status: isCached ? 'cached' : isDownloading ? 'downloading' : 'available',
-      cachedBytes: cachedInfo?.sizeBytes,
-    });
-  }
-
-  list.sort((a, b) => {
-    if (a.status === 'cached' && b.status !== 'cached') return -1;
-    if (a.status !== 'cached' && b.status === 'cached') return 1;
-    return a.id.localeCompare(b.id);
-  });
-
-  return { segments: list, overflowCount };
-}
 
 // PMTiles in-memory map for cached archives
 const loadedPMTiles = new Map<string, pmtiles.PMTiles>();
@@ -163,7 +102,7 @@ const pmtilesProtocol = new pmtiles.Protocol();
 maplibregl.addProtocol('pmtiles', pmtilesProtocol.tile);
 (window as any).pmtilesProtocol = pmtilesProtocol;
 
-// Composite protocol to query across any downloaded PMTiles archives
+// Composite protocol to query across downloaded PMTiles archives
 maplibregl.addProtocol('pmtiles-composite', async (params) => {
   const match = params.url.match(/pmtiles-composite:\/\/(\d+)\/(\d+)\/(\d+)\.pbf/);
   if (!match) {
@@ -173,75 +112,57 @@ maplibregl.addProtocol('pmtiles-composite', async (params) => {
   const x = parseInt(match[2], 10);
   const y = parseInt(match[3], 10);
 
-  for (const [, p] of loadedPMTiles.entries()) {
-    try {
-      const tile = await p.getZxy(z, x, y);
-      if (tile && tile.data) {
-        return { data: tile.data };
-      }
-    } catch (_e) {
-      // ignore
+  // Tiles requested before the stored archives are open would otherwise come back empty.
+  await archivesReady;
+
+  for (const p of loadedPMTiles.values()) {
+    const tile = await p.getZxy(z, x, y);
+    if (tile && tile.data) {
+      return { data: tile.data };
     }
   }
 
   return { data: new Uint8Array(0) };
 });
 
-// Register custom offline-tile protocol for fonts, sprites, styles
+// Font glyphs for the offline style. Served from the map tiles cache, filled by the download.
 maplibregl.addProtocol('offline-tile', async (params, abortController) => {
   const originalUrl = params.url.replace(/^offline-tile:\/\//, 'https://');
 
-  if ('caches' in window) {
-    try {
-      const cache = await caches.open(MAP_TILES_CACHE_NAME);
-      const cached = await cache.match(originalUrl);
-      if (cached) {
-        if (params.type === 'json') {
-          return { data: await cached.json() };
-        } else if (params.type === 'arrayBuffer' || params.type === 'image') {
-          return { data: await cached.arrayBuffer() };
-        } else {
-          return { data: await cached.text() };
-        }
-      }
-    } catch (err) {
-      console.warn('Map tile cache match error:', err);
-    }
+  const cache = await caches.open(MAP_TILES_CACHE_NAME);
+  const cached = await cache.match(originalUrl);
+  if (cached) {
+    return { data: await cached.arrayBuffer() };
   }
 
   if (isOfflineMode) {
-    if (params.type === 'arrayBuffer') {
+    // Glyph range not downloaded: render those labels without text instead of failing.
+    return { data: new ArrayBuffer(0) };
+  }
+
+  try {
+    const res = await fetch(originalUrl, { signal: abortController.signal });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch map resource: HTTP ${res.status}`);
+    }
+    await cache.put(originalUrl, res.clone());
+    return { data: await res.arrayBuffer() };
+  } catch (err: any) {
+    if (
+      abortController.signal.aborted ||
+      (err instanceof DOMException && err.name === 'AbortError') ||
+      /signal is aborted/i.test(err?.message || '')
+    ) {
       return { data: new ArrayBuffer(0) };
     }
-    throw new Error(`Offline mode active: resource not cached (${originalUrl})`);
-  }
-
-  const res = await fetch(originalUrl, { signal: abortController.signal });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch map resource: HTTP ${res.status}`);
-  }
-
-  if ('caches' in window) {
-    try {
-      const cache = await caches.open(MAP_TILES_CACHE_NAME);
-      await cache.put(originalUrl, res.clone());
-    } catch (err) {
-      console.warn('Failed to cache map tile:', err);
-    }
-  }
-
-  if (params.type === 'json') {
-    return { data: await res.json() };
-  } else if (params.type === 'arrayBuffer' || params.type === 'image') {
-    return { data: await res.arrayBuffer() };
-  } else {
-    return { data: await res.text() };
+    throw err;
   }
 });
 
 function getOfflineStyle(): maplibregl.StyleSpecification {
   const layers = protomapsThemesBase.default('protomaps', 'light', 'en') as any[];
 
+  // These road and land tweaks are tuned for the light theme.
   for (const l of layers) {
     if (l.id === 'landcover') {
       l.paint = l.paint || {};
@@ -277,7 +198,7 @@ function getOfflineStyle(): maplibregl.StyleSpecification {
 
   return {
     version: 8,
-    glyphs: 'offline-tile://cdn.protomaps.com/fonts/pbf/{fontstack}/{range}.pbf',
+    glyphs: `${FONT_BASE_URL.replace(/^https:\/\//, 'offline-tile://')}{fontstack}/{range}.pbf`,
     sources: {
       protomaps: {
         type: 'vector',
@@ -291,35 +212,138 @@ function getOfflineStyle(): maplibregl.StyleSpecification {
   };
 }
 
-// Initialize MapLibre GL JS
+const ONLINE_STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
+
+const CYCLOSM_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: {
+    cyclosm: {
+      type: 'raster',
+      tiles: [
+        'https://a.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
+        'https://b.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
+        'https://c.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
+      ],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution:
+        '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Tiles courtesy of <a href="https://www.cyclosm.org" target="_blank" rel="noopener">CyclOSM</a>',
+    },
+  },
+  layers: [
+    {
+      id: 'cyclosm-tiles',
+      type: 'raster',
+      source: 'cyclosm',
+      minzoom: 0,
+      maxzoom: 19,
+    },
+  ],
+};
+
+function getOpenCycleMapStyle(): maplibregl.StyleSpecification {
+  const key = getThunderforestKey();
+  const query = key ? `?apikey=${encodeURIComponent(key)}` : '';
+  return {
+    version: 8,
+    sources: {
+      opencyclemap: {
+        type: 'raster',
+        tiles: [
+          `https://a.tile.thunderforest.com/cycle/{z}/{x}/{y}.png${query}`,
+          `https://b.tile.thunderforest.com/cycle/{z}/{x}/{y}.png${query}`,
+          `https://c.tile.thunderforest.com/cycle/{z}/{x}/{y}.png${query}`,
+        ],
+        tileSize: 256,
+        maxzoom: 18,
+        attribution:
+          'Maps © <a href="https://www.thunderforest.com/" target="_blank" rel="noopener">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>',
+      },
+    },
+    layers: [
+      {
+        id: 'opencyclemap-tiles',
+        type: 'raster',
+        source: 'opencyclemap',
+        minzoom: 0,
+        maxzoom: 18,
+      },
+    ],
+  };
+}
+
+function getOnlineStyle(): string | maplibregl.StyleSpecification {
+  const b = getBasemap();
+  if (b === 'cyclosm') {
+    return CYCLOSM_STYLE;
+  }
+  if (b === 'opencyclemap') {
+    return getOpenCycleMapStyle();
+  }
+  return ONLINE_STYLE_URL;
+}
+
+// Which style the map currently shows, and whether it has finished loading.
+let appliedStyleOffline = isOfflineMode;
+let appliedBasemap = getBasemap();
+let appliedThunderforestKey = getThunderforestKey();
+let styleReady = false;
+
+// Initialize MapLibre GL JS centered and bounded to UK and Ireland
 const map = new maplibregl.Map({
   container: 'map',
-  style: isOfflineMode
-    ? getOfflineStyle()
-    : 'offline-tile://tiles.openfreemap.org/styles/bright',
-  center: [-1.5, 53.5], // Center of UK
+  style: isOfflineMode ? getOfflineStyle() : getOnlineStyle(),
+  center: UK_CENTER,
   zoom: 6,
-  transformRequest: (url) => {
-    if (
-      url.startsWith('https://tiles.openfreemap.org') ||
-      url.startsWith('https://cdn.protomaps.com')
-    ) {
-      return { url: url.replace(/^https:\/\//, 'offline-tile://') };
-    }
-    return { url };
-  },
+  maxBounds: isOfflineMode ? UK_BOUNDS : undefined,
 });
+
+function applyMapStyle(offline: boolean) {
+  const currentBasemap = getBasemap();
+  const currentKey = getThunderforestKey();
+
+  if (
+    offline === appliedStyleOffline &&
+    currentBasemap === appliedBasemap &&
+    currentKey === appliedThunderforestKey
+  ) {
+    return;
+  }
+
+  appliedStyleOffline = offline;
+  appliedBasemap = currentBasemap;
+  appliedThunderforestKey = currentKey;
+  styleReady = false;
+  // Offline data only covers the UK and Ireland. Online, any region can be viewed and routed.
+  map.setMaxBounds(offline ? UK_BOUNDS : null);
+  // diff: false forces a full reload, so 'style.load' fires and the route layer is re-added.
+  map.setStyle(offline ? getOfflineStyle() : getOnlineStyle(), { diff: false });
+}
+
+onBasemapChange(() => applyMapStyle(isOfflineMode));
 
 map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 (window as any).map = map;
 (window as any).maplibregl = maplibregl;
 
+// Fires on first load and after every applyMapStyle. Re-adds the route layer.
+map.on('style.load', () => {
+  styleReady = true;
+  drawRouteLayer();
+  drawCompareLayer();
+});
+
 map.on('error', (e) => {
-  // Silence offline cache miss errors when in offline mode
-  if (isOfflineMode && e.error && String(e.error).includes('Offline mode active')) {
+  // Changing the style cancels requests that are still running. That is expected.
+  const err = e.error;
+  const msg = (err && (err.message || String(err))) || '';
+  if (err instanceof DOMException && err.name === 'AbortError') return;
+  if (/signal is aborted/i.test(msg) || /aborted/i.test(msg)) return;
+  if (err && typeof err === 'object' && ('status' in err || /403|401|404/i.test(msg))) {
+    console.warn('[MapLibre tile request notice]', msg || err);
     return;
   }
-  console.error('[MapLibre error]', e);
+  console.error('[MapLibre error]', err);
 });
 
 map.on('styleimagemissing', (e) => {
@@ -333,897 +357,444 @@ map.on('styleimagemissing', (e) => {
   }
 });
 
+// Map tile archives live in the Origin Private File System (OPFS).
+// A file only counts as complete once its size is recorded here after a finished download,
+// so a partial file left by an interrupted download is never used.
+const TILES_DONE_KEY = 'rsrouter_map_tiles_done';
+
+function pmtilesFileName(segmentId: string): string {
+  return `${segmentId}.pmtiles`;
+}
+
+function getCompletedTiles(): Record<string, number> {
+  return JSON.parse(localStorage.getItem(TILES_DONE_KEY) || '{}');
+}
+
+function setTileCompleted(segmentId: string, size: number | null) {
+  const done = getCompletedTiles();
+  if (size === null) {
+    delete done[segmentId];
+  } else {
+    done[segmentId] = size;
+  }
+  localStorage.setItem(TILES_DONE_KEY, JSON.stringify(done));
+}
+
+// Returns the stored archive only if it is complete.
+async function getTileFile(segmentId: string): Promise<File | null> {
+  const expectedSize = getCompletedTiles()[segmentId];
+  if (!expectedSize) return null;
+  const dir = await navigator.storage.getDirectory();
+  try {
+    const handle = await dir.getFileHandle(pmtilesFileName(segmentId));
+    const file = await handle.getFile();
+    return file.size === expectedSize ? file : null;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'NotFoundError') return null;
+    throw err;
+  }
+}
+
+async function deleteTileFile(segmentId: string) {
+  setTileCompleted(segmentId, null);
+  loadedPMTiles.delete(segmentId);
+  const dir = await navigator.storage.getDirectory();
+  try {
+    await dir.removeEntry(pmtilesFileName(segmentId));
+  } catch (err) {
+    if (!(err instanceof DOMException && err.name === 'NotFoundError')) throw err;
+  }
+}
+
+// The File returned by OPFS is backed by disk. PMTiles reads small slices on demand,
+// so the archive is never loaded into memory as a whole.
+async function loadPMTilesArchive(segmentId: string, file: File) {
+  const p = new pmtiles.PMTiles(new pmtiles.FileSource(file));
+  await p.getHeader();
+  loadedPMTiles.set(segmentId, p);
+}
+
+async function initCachedMapTiles() {
+  // Archives used to be stored in IndexedDB. Drop that copy; it is re-downloaded into OPFS.
+  indexedDB.deleteDatabase('rsrouter-pmtiles-v1');
+
+  // Older versions cached every online map tile here. Only fonts belong in this cache.
+  const tileCache = await caches.open(MAP_TILES_CACHE_NAME);
+  for (const req of await tileCache.keys()) {
+    if (!req.url.startsWith(FONT_BASE_URL)) {
+      await tileCache.delete(req);
+    }
+  }
+
+  for (const id of UK_SEGMENTS) {
+    const file = await getTileFile(id);
+    if (file) {
+      await loadPMTilesArchive(id, file);
+    }
+  }
+}
+
+const archivesReady = initCachedMapTiles();
+
+// Size of a cached routing segment, read from headers so the file is not loaded into memory.
+async function getCachedSegmentSize(cache: Cache, segmentId: string): Promise<number> {
+  const match = await cache.match(`/segments4/${segmentId}.rd5`);
+  return Number(match?.headers.get('content-length')) || 0;
+}
+
+// Verification: Check if all offline components are present
+async function checkOfflineBundleStatus(): Promise<{ ready: boolean; totalBytes: number }> {
+  let totalBytes = 0;
+
+  for (const id of UK_SEGMENTS) {
+    const file = await getTileFile(id);
+    if (!file) return { ready: false, totalBytes: 0 };
+    totalBytes += file.size;
+  }
+
+  const cache = await caches.open(SEGMENT_CACHE_NAME);
+  for (const id of UK_SEGMENTS) {
+    const size = await getCachedSegmentSize(cache, id);
+    if (size < MIN_RD5_BYTES) return { ready: false, totalBytes: 0 };
+    totalBytes += size;
+  }
+
+  // The router cannot start offline without lookups and profiles.
+  for (const url of ROUTING_FILES) {
+    if (!(await cache.match(url))) return { ready: false, totalBytes: 0 };
+  }
+
+  return { ready: true, totalBytes };
+}
+
+// UI State Updater
+async function updateOfflineUI(bundleStatus?: { ready: boolean; totalBytes: number }) {
+  const status = bundleStatus || (await checkOfflineBundleStatus());
+
+  if (status.ready) {
+    checkOfflineMode.disabled = false;
+    offlineCardBadge.textContent = 'Ready';
+    offlineCardBadge.className = 'offline-mini-badge badge-ready';
+    const mb = Math.round(status.totalBytes / (1024 * 1024));
+    offlineCardDesc.textContent = `UK and Ireland offline data ready: ${mb} MB.`;
+    btnDownloadOffline.style.display = 'none';
+    btnDeleteOffline.style.display = 'inline-flex';
+    progressBarContainer.style.display = 'none';
+  } else {
+    if (isOfflineMode) {
+      setOfflineMode(false);
+    }
+    checkOfflineMode.disabled = true;
+    checkOfflineMode.checked = false;
+    offlineCardBadge.textContent = 'Not Downloaded';
+    offlineCardBadge.className = 'offline-mini-badge badge-missing';
+    offlineCardDesc.textContent = 'Download UK routing data and map tiles to enable offline mode.';
+    btnDownloadOffline.style.display = 'inline-flex';
+    btnDownloadOffline.disabled = false;
+    btnDownloadOffline.textContent = 'Download UK Data';
+    btnDeleteOffline.style.display = 'none';
+    progressBarContainer.style.display = 'none';
+  }
+}
+
+// Offline Mode Controller
+function setOfflineMode(enabled: boolean) {
+  const changed = enabled !== appliedStyleOffline;
+  isOfflineMode = enabled;
+  localStorage.setItem('rsrouter_offline_mode', String(enabled));
+  checkOfflineMode.checked = enabled;
+  const basemapSelectEl = document.getElementById('select-basemap') as HTMLSelectElement | null;
+  if (basemapSelectEl) basemapSelectEl.disabled = enabled;
+  badgeOfflineStatus.textContent = enabled ? 'Offline' : 'Online';
+  badgeOfflineStatus.className = `offline-badge ${enabled ? 'badge-offline' : 'badge-online'}`;
+  worker.postMessage({ type: 'SET_OFFLINE_MODE', offline: enabled } satisfies WorkerMessage);
+
+  if (changed) {
+    applyMapStyle(enabled);
+    statusEl.textContent = enabled
+      ? 'Offline mode active. Rendering with local PMTiles archives.'
+      : 'Online mode active. Streaming tiles on the fly.';
+  }
+}
+
+// Mandatory Offline Mode Guard: Prevent toggling offline mode if data is not downloaded
+checkOfflineMode.addEventListener('change', async () => {
+  const status = await checkOfflineBundleStatus();
+  if (!status.ready && checkOfflineMode.checked) {
+    checkOfflineMode.checked = false;
+    statusEl.textContent = 'Download UK offline data before enabling offline mode.';
+    return;
+  }
+  setOfflineMode(checkOfflineMode.checked);
+});
+
 // Web Worker for off-thread routing
 const worker = new Worker(new URL('./worker.ts', import.meta.url), {
   type: 'module',
 });
 
-worker.postMessage({ type: 'INIT', payload: { segmentUrls: [] } });
-worker.postMessage({ type: 'SET_OFFLINE_MODE', offline: isOfflineMode });
+worker.postMessage({ type: 'SET_OFFLINE_MODE', offline: isOfflineMode } satisfies WorkerMessage);
+worker.postMessage({ type: 'INIT' } satisfies WorkerMessage);
 
-// Message handling from Web Worker
-worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
-  const msg = e.data;
-  switch (msg.type) {
-    case 'STATUS':
-      statusEl.textContent = msg.message;
-      break;
+initRoute({ map, worker, isStyleReady: () => styleReady });
+initCompare({ map, isStyleReady: () => styleReady, setWaypoints });
+(window as any).getCurrentRoute = getCurrentRoute;
 
-    case 'ROUTE_SUCCESS': {
-      const feat = msg.payload.features[0];
-      const props = feat?.properties;
-      if (props && props['track-length'] && Number(props['track-length']) > 0) {
-        const distKm = (Number(props['track-length']) / 1000).toFixed(2);
-        const timeMin = Math.round(Number(props['total-time']) / 60);
-        const ascend = Math.round(Number(props['filtered ascend']));
-        statusEl.textContent = `Distance: ${distKm} km | Time: ${timeMin} min | Ascend: ${ascend} m`;
-      } else {
-        statusEl.textContent = 'Route calculated successfully.';
+// Offline Bundle Download Helpers
+async function cacheMapFonts(onProgress: (msg: string) => void) {
+  const cache = await caches.open(MAP_TILES_CACHE_NAME);
+  for (const fontName of FONT_NAMES) {
+    onProgress(`Downloading font ${fontName}...`);
+    for (const range of FONT_RANGES) {
+      const url = `${FONT_BASE_URL}${encodeURIComponent(fontName)}/${range}.pbf`;
+      if (await cache.match(url)) continue;
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Failed to download font ${fontName} ${range}: HTTP ${res.status}`);
       }
-      renderRoute(msg.payload);
-      break;
-    }
-
-    case 'ROUTE_ERROR':
-      statusEl.textContent = `Routing error: ${msg.error}`;
-      break;
-
-    case 'CACHE_STATUS_RESPONSE': {
-      cachedSegments.clear();
-      for (const [id, info] of Object.entries(msg.segments)) {
-        if (info.cached) {
-          cachedSegments.set(id, { sizeBytes: info.sizeBytes });
-        }
-      }
-      updateGridSource();
-      renderSegmentList();
-      break;
-    }
-
-    case 'DOWNLOAD_PROGRESS': {
-      downloadingSegments.add(msg.segmentId);
-      updateGridSource();
-      renderSegmentList();
-      statusEl.textContent = msg.message;
-      break;
-    }
-
-    case 'DOWNLOAD_COMPLETE': {
-      downloadingSegments.delete(msg.segmentId);
-      cachedSegments.set(msg.segmentId, { sizeBytes: msg.sizeBytes });
-      updateGridSource();
-      renderSegmentList();
-      statusEl.textContent = `Segment ${msg.segmentId} downloaded and cached for offline use.`;
-      processDownloadQueue();
-      break;
-    }
-
-    case 'DOWNLOAD_ERROR': {
-      downloadingSegments.delete(msg.segmentId);
-      updateGridSource();
-      renderSegmentList();
-      statusEl.textContent = `Download failed for ${msg.segmentId}: ${msg.error}`;
-      processDownloadQueue();
-      break;
-    }
-
-    case 'DELETE_COMPLETE': {
-      cachedSegments.delete(msg.segmentId);
-      updateGridSource();
-      renderSegmentList();
-      statusEl.textContent = `Segment ${msg.segmentId} removed from local cache.`;
-      break;
+      await cache.put(url, res);
     }
   }
-};
+}
 
-// Routing state
-let waypoints: LatLon[] = [];
-let markers: maplibregl.Marker[] = [];
+async function cacheRoutingProfiles(onProgress: (msg: string) => void) {
+  const cache = await caches.open(SEGMENT_CACHE_NAME);
+  for (const url of ROUTING_FILES) {
+    if (await cache.match(url)) continue;
+    onProgress(`Downloading profile ${url.split('/').pop()}...`);
+    const res = await fetch(url);
+    if (!res.ok || (res.headers.get('content-type') || '').includes('text/html')) {
+      throw new Error(`Failed to download ${url}: HTTP ${res.status}`);
+    }
+    await cache.put(url, res);
+  }
+}
 
-// Waypoint interaction and popup display on map click
-map.on('click', (e) => {
-  if (currentTab === 'tiles') {
-    const segId = getSegmentIdFromCoords(e.lngLat.lng, e.lngLat.lat);
-    toggleSegmentSelection(segId, true);
+// Fails early with a clear message if the browser cannot store another `bytes` bytes.
+async function ensureStorageFor(bytes: number, what: string) {
+  const { quota = 0, usage = 0 } = await navigator.storage.estimate();
+  const free = quota - usage;
+  if (bytes > free) {
+    const needMb = Math.round(bytes / (1024 * 1024));
+    const freeMb = Math.round(free / (1024 * 1024));
+    throw new Error(`Not enough browser storage for ${what}: needs ${needMb} MB, ${freeMb} MB free`);
+  }
+}
+
+// Streams a routing segment into CacheStorage without holding the whole file in memory.
+async function cacheSegmentRd5(
+  segmentId: string,
+  onProgress: (received: number, total: number) => void,
+) {
+  const cache = await caches.open(SEGMENT_CACHE_NAME);
+  const localUrl = `/segments4/${segmentId}.rd5`;
+  if ((await getCachedSegmentSize(cache, segmentId)) >= MIN_RD5_BYTES) {
     return;
   }
 
-  // Route mode: set waypoints
-  if (waypoints.length >= 2) {
-    clearWaypoints();
-    clearRoute();
+  // Bundled locally for some segments, otherwise proxied from brouter.de.
+  // Static hosts answer missing files with index.html and HTTP 200, so treat HTML as missing.
+  const isHtml = (r: Response) => (r.headers.get('content-type') || '').includes('text/html');
+  let res = await fetch(localUrl);
+  if (!res.ok || isHtml(res)) {
+    res = await fetch(`/remote-segments/${segmentId}.rd5`);
   }
-
-  const point: LatLon = { lat: e.lngLat.lat, lon: e.lngLat.lng };
-  waypoints.push(point);
-
-  const markerColor = waypoints.length === 1 ? '#10b981' : '#ef4444';
-  const marker = new maplibregl.Marker({ color: markerColor })
-    .setLngLat([point.lon, point.lat])
-    .addTo(map);
-  markers.push(marker);
-
-  if (waypoints.length === 1) {
-    statusEl.textContent = 'Start point set. Click to set destination.';
-  } else if (waypoints.length === 2) {
-    requestRoute();
+  if (!res.ok || !res.body || isHtml(res)) {
+    throw new Error(`Failed to fetch routing segment ${segmentId}: HTTP ${res.status}`);
   }
-});
-
-// Cursor styling when hovering over segments in Tiles tab
-map.on('mousemove', 'segments-fill', () => {
-  if (currentTab === 'tiles') {
-    map.getCanvas().style.cursor = 'pointer';
-  }
-});
-
-map.on('mouseleave', 'segments-fill', () => {
-  map.getCanvas().style.cursor = '';
-});
-
-// Refresh dynamic grid when map pans or zooms in Tiles tab
-map.on('moveend', () => {
-  if (currentTab === 'tiles') {
-    updateGridSource();
-    renderSegmentList();
-  }
-});
-
-function toggleSegmentSelection(segId: string, scrollList = false) {
-  if (selectedSegmentIds.has(segId)) {
-    selectedSegmentIds.delete(segId);
-  } else {
-    selectedSegmentIds.add(segId);
-  }
-  updateGridSource();
-  renderSegmentList();
-
-  if (scrollList) {
-    const rowEl = segmentListEl.querySelector(`[data-id="${segId}"]`) as HTMLElement | null;
-    if (rowEl) {
-      rowEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Servers that compress on the fly send no content-length. Then the size is only known at the end.
+  const total = Number(res.headers.get('content-length')) || 0;
+  if (total) {
+    if (total < MIN_RD5_BYTES) {
+      throw new Error(`Routing segment ${segmentId} is too small (${total} bytes)`);
     }
+    await ensureStorageFor(total, `${segmentId}.rd5`);
   }
-}
 
-function clearWaypoints() {
-  markers.forEach((m) => m.remove());
-  markers = [];
-  waypoints = [];
-}
-
-btnClearRoute.addEventListener('click', () => {
-  clearWaypoints();
-  clearRoute();
-  statusEl.textContent = 'Route cleared. Click on the map to set waypoints.';
-});
-
-profileSelect.addEventListener('change', () => {
-  if (waypoints.length === 2) {
-    requestRoute();
-  }
-});
-
-function requestRoute() {
-  const profile = profileSelect.value as ProfileName;
-  statusEl.textContent = 'Requesting route...';
-  worker.postMessage({
-    type: 'ROUTE_REQUEST',
-    id: String(Date.now()),
-    payload: {
-      waypoints,
-      profile,
+  let received = 0;
+  const counter = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      received += chunk.byteLength;
+      onProgress(received, total);
+      controller.enqueue(chunk);
     },
-  });
-}
-
-let currentRouteGeoJson: GeoJSON.FeatureCollection | null = null;
-(window as any).getCurrentRoute = () => currentRouteGeoJson;
-
-function renderRoute(geojson: GeoJSON.FeatureCollection) {
-  currentRouteGeoJson = geojson;
-  const source = map.getSource('route') as maplibregl.GeoJSONSource | undefined;
-  if (source) {
-    source.setData(geojson);
-  } else {
-    map.addSource('route', {
-      type: 'geojson',
-      data: geojson,
-    });
-    map.addLayer({
-      id: 'route-line',
-      type: 'line',
-      source: 'route',
-      layout: {
-        'line-join': 'round',
-        'line-cap': 'round',
-      },
-      paint: {
-        'line-color': '#2563eb',
-        'line-width': 5,
-        'line-opacity': 0.85,
-      },
-    });
-  }
-}
-
-function clearRoute() {
-  currentRouteGeoJson = null;
-  const source = map.getSource('route') as maplibregl.GeoJSONSource | undefined;
-  if (source) {
-    source.setData({
-      type: 'FeatureCollection',
-      features: [],
-    });
-  }
-}
-
-// Map Grid Layer GeoJSON: covers the entire global 5°×5° grid so it never disappears
-function buildGridGeoJson(): GeoJSON.FeatureCollection {
-  const features: GeoJSON.Feature[] = [];
-
-  for (let lat = -85; lat < 85; lat += 5) {
-    for (let lon = -180; lon < 180; lon += 5) {
-      const slon = lon < 0 ? `W${Math.abs(lon)}` : `E${lon}`;
-      const slat = lat < 0 ? `S${Math.abs(lat)}` : `N${lat}`;
-      const id = `${slon}_${slat}`;
-
-      const isCached = cachedSegments.has(id);
-      const isDownloading = downloadingSegments.has(id);
-      const isSelected = selectedSegmentIds.has(id);
-      const cachedInfo = cachedSegments.get(id);
-
-      features.push({
-        type: 'Feature',
-        id,
-        properties: {
-          id,
-          name: formatBounds([lon, lat, lon + 5, lat + 5]),
-          status: isCached ? 'cached' : isDownloading ? 'downloading' : 'available',
-          sizeMb: cachedInfo ? Math.round(cachedInfo.sizeBytes / (1024 * 1024)) : 0,
-          selected: isSelected,
-        },
-        geometry: {
-          type: 'Polygon',
-          coordinates: [
-            [
-              [lon, lat],
-              [lon + 5, lat],
-              [lon + 5, lat + 5],
-              [lon, lat + 5],
-              [lon, lat],
-            ],
-          ],
-        },
-      });
-    }
-  }
-
-  return {
-    type: 'FeatureCollection',
-    features,
-  };
-}
-
-function initGridLayers() {
-  if (map.getSource('segments-grid')) {
-    setGridVisibility(currentTab === 'tiles');
-    return;
-  }
-
-  const initialVis = currentTab === 'tiles' ? 'visible' : 'none';
-
-  // Add segment grid source
-  map.addSource('segments-grid', {
-    type: 'geojson',
-    data: buildGridGeoJson(),
-  });
-
-  // Fill styling: highlighted when selected, tinted otherwise
-  map.addLayer({
-    id: 'segments-fill',
-    type: 'fill',
-    source: 'segments-grid',
-    layout: {
-      visibility: initialVis,
-    },
-    paint: {
-      'fill-color': [
-        'case',
-        ['boolean', ['get', 'selected'], false],
-        [
-          'match',
-          ['get', 'status'],
-          'cached',
-          'rgba(16, 185, 129, 0.55)',
-          'downloading',
-          'rgba(245, 158, 11, 0.60)',
-          /* available */ 'rgba(37, 99, 235, 0.45)',
-        ],
-        [
-          'match',
-          ['get', 'status'],
-          'cached',
-          'rgba(16, 185, 129, 0.22)',
-          'downloading',
-          'rgba(245, 158, 11, 0.30)',
-          /* available */ 'rgba(59, 130, 246, 0.12)',
-        ],
-      ],
+    flush() {
+      if (total ? received !== total : received < MIN_RD5_BYTES) {
+        throw new Error(`Incomplete download of ${segmentId}.rd5: ${received} of ${total || '?'} bytes`);
+      }
     },
   });
 
-  // Outer border outline: bold when selected, subtle otherwise
-  map.addLayer({
-    id: 'segments-line',
-    type: 'line',
-    source: 'segments-grid',
-    layout: {
-      visibility: initialVis,
-    },
-    paint: {
-      'line-color': [
-        'case',
-        ['boolean', ['get', 'selected'], false],
-        [
-          'match',
-          ['get', 'status'],
-          'cached',
-          '#047857',
-          'downloading',
-          '#b45309',
-          /* available */ '#1e40af',
-        ],
-        [
-          'match',
-          ['get', 'status'],
-          'cached',
-          '#059669',
-          'downloading',
-          '#d97706',
-          /* available */ '#60a5fa',
-        ],
-      ],
-      'line-width': [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        2,
-        ['case', ['boolean', ['get', 'selected'], false], 3, 0.75],
-        6,
-        ['case', ['boolean', ['get', 'selected'], false], 4, 1.5],
-        10,
-        ['case', ['boolean', ['get', 'selected'], false], 5, 2.5],
-      ],
-      'line-opacity': 0.95,
-    },
-  });
-
-  // Query cache status on init
-  worker.postMessage({ type: 'CACHE_STATUS_REQUEST' });
-}
-
-function setGridVisibility(visible: boolean) {
-  const vis = visible ? 'visible' : 'none';
-  const layerIds = ['segments-fill', 'segments-line'];
-  for (const id of layerIds) {
-    if (map.getLayer(id)) {
-      map.setLayoutProperty(id, 'visibility', vis);
-    }
-  }
-}
-
-function onStyleLoaded() {
-  initGridLayers();
-  if (currentRouteGeoJson) {
-    renderRoute(currentRouteGeoJson);
-  }
-}
-
-if (map.isStyleLoaded()) {
-  onStyleLoaded();
-}
-map.on('style.load', onStyleLoaded);
-map.on('load', onStyleLoaded);
-
-function updateGridSource() {
-  const src = map.getSource('segments-grid') as maplibregl.GeoJSONSource | undefined;
-  if (src) {
-    src.setData(buildGridGeoJson());
-  }
-}
-
-// Tab navigation
-tabBtnRoute.addEventListener('click', () => switchTab('route'));
-tabBtnTiles.addEventListener('click', () => switchTab('tiles'));
-
-function switchTab(tab: 'route' | 'tiles') {
-  currentTab = tab;
-  if (tab === 'route') {
-    tabBtnRoute.classList.add('active');
-    tabBtnTiles.classList.remove('active');
-    panelRoute.classList.add('active');
-    panelTiles.classList.remove('active');
-    setGridVisibility(false);
-  } else {
-    tabBtnTiles.classList.add('active');
-    tabBtnRoute.classList.remove('active');
-    panelTiles.classList.add('active');
-    panelRoute.classList.remove('active');
-    setGridVisibility(true);
-    updateGridSource();
-    renderSegmentList();
-    worker.postMessage({ type: 'CACHE_STATUS_REQUEST' });
-  }
-}
-
-function updateBulkToolbar() {
-  const { segments } = getListSegments();
-  const selectedCount = selectedSegmentIds.size;
-
-  const selectedList: SegmentInfo[] = [];
-  for (const id of selectedSegmentIds) {
-    const { bbox } = parseSegmentId(id);
-    const cachedInfo = cachedSegments.get(id);
-    selectedList.push({
-      id,
-      name: formatBounds(bbox),
-      bbox,
-      sizeMb: cachedInfo ? Math.round(cachedInfo.sizeBytes / (1024 * 1024)) : 0,
-      status: cachedInfo ? 'cached' : downloadingSegments.has(id) ? 'downloading' : 'available',
-    });
-  }
-
-  if (selectedSummaryEl) {
-    selectedSummaryEl.textContent = `${selectedCount} selected`;
-  }
-
-  if (checkSelectAll) {
-    const totalCount = segments.length;
-    checkSelectAll.checked = totalCount > 0 && selectedCount === totalCount;
-    checkSelectAll.indeterminate = selectedCount > 0 && selectedCount < totalCount;
-  }
-
-  const unCachedCount = selectedList.filter((s) => s.status === 'available').length;
-  const cachedCount = selectedList.filter((s) => s.status === 'cached').length;
-
-  if (btnBulkDownload) {
-    btnBulkDownload.disabled = selectedCount === 0;
-    if (unCachedCount > 0) {
-      btnBulkDownload.textContent = `Download (${selectedCount})`;
-    } else {
-      btnBulkDownload.textContent = `Download Map Tiles (${selectedCount})`;
-    }
-  }
-
-  if (btnBulkDelete) {
-    btnBulkDelete.disabled = cachedCount === 0;
-    btnBulkDelete.textContent = cachedCount > 0 ? `Delete (${cachedCount})` : 'Delete Selected';
-  }
-}
-
-checkSelectAll?.addEventListener('change', () => {
-  const isChecked = checkSelectAll.checked;
-  const { segments } = getListSegments();
-  if (isChecked) {
-    for (const seg of segments) {
-      selectedSegmentIds.add(seg.id);
-    }
-  } else {
-    selectedSegmentIds.clear();
-  }
-  updateGridSource();
-  renderSegmentList();
-});
-
-btnBulkDownload?.addEventListener('click', async () => {
-  if (selectedSegmentIds.size === 0) return;
-
-  const selectedList = Array.from(selectedSegmentIds);
-  const toDownloadSegments = selectedList.filter(
-    (id) => !cachedSegments.has(id) && !downloadingSegments.has(id),
+  const headers = { 'content-type': 'application/octet-stream' };
+  await cache.put(
+    localUrl,
+    new Response(res.body.pipeThrough(counter), {
+      headers: total ? { ...headers, 'content-length': String(total) } : headers,
+    }),
   );
 
-  for (const id of toDownloadSegments) {
-    if (!downloadQueue.includes(id)) {
-      downloadQueue.push(id);
-    }
-  }
-
-  if (toDownloadSegments.length > 0 && !isProcessingQueue) {
-    processDownloadQueue();
-  }
-
-  for (let idx = 0; idx < selectedList.length; idx++) {
-    const id = selectedList[idx];
-    statusEl.textContent = `Downloading map tiles for ${id}...`;
-    try {
-      await downloadMapTilesForSegment(id, (done, total) => {
-        if (total > 0) {
-          const pct = Math.round((done / total) * 100);
-          const doneMb = (done / (1024 * 1024)).toFixed(1);
-          const totalMb = (total / (1024 * 1024)).toFixed(1);
-          statusEl.textContent = `Downloading map tiles for ${id} (${idx + 1}/${selectedList.length}): ${pct}% (${doneMb}/${totalMb} MB)`;
-        } else {
-          const doneMb = (done / (1024 * 1024)).toFixed(1);
-          statusEl.textContent = `Downloading map tiles for ${id} (${idx + 1}/${selectedList.length}): ${doneMb} MB`;
-        }
-      });
-    } catch (err: any) {
-      console.error(`Failed to download map tiles for ${id}:`, err);
-      statusEl.textContent = `Failed map tiles download for ${id}: ${err.message}`;
-    }
-  }
-  statusEl.textContent = `Map tiles cached for selected region(s).`;
-});
-
-btnBulkDelete?.addEventListener('click', () => {
-  const toDelete = Array.from(selectedSegmentIds).filter((id) => cachedSegments.has(id));
-
-  for (const id of toDelete) {
-    deleteSegment(id);
-  }
-});
-
-function processDownloadQueue() {
-  if (downloadQueue.length === 0) {
-    isProcessingQueue = false;
-    return;
-  }
-  isProcessingQueue = true;
-  const nextId = downloadQueue.shift()!;
-  if (!cachedSegments.has(nextId)) {
-    downloadSegment(nextId);
-  } else {
-    processDownloadQueue();
+  if (!total) {
+    // getCachedSegmentSize reads the size from this header. Copy the entry once, disk to disk, to set it.
+    const stored = await cache.match(localUrl);
+    if (!stored?.body) throw new Error(`Routing segment ${segmentId} was not stored`);
+    await cache.put(
+      localUrl,
+      new Response(stored.body, { headers: { ...headers, 'content-length': String(received) } }),
+    );
   }
 }
 
-// Render Tile Manager list as compact selectable rows
-function renderSegmentList() {
-  const { segments, overflowCount } = getListSegments();
-  const cachedCount = cachedSegments.size;
-  let totalCachedBytes = 0;
-  for (const info of cachedSegments.values()) {
-    totalCachedBytes += info.sizeBytes;
-  }
-  const totalCachedMb = (totalCachedBytes / (1024 * 1024)).toFixed(1);
-
-  storageSummaryEl.textContent = `Route segments: ${cachedCount} cached (${totalCachedMb} MB)`;
-  updateMapTileStorageSummary();
-
-  segmentListEl.innerHTML = '';
-
-  if (overflowCount > 0) {
-    const noteEl = document.createElement('div');
-    noteEl.style.padding = '8px 10px';
-    noteEl.style.marginBottom = '6px';
-    noteEl.style.background = '#f8fafc';
-    noteEl.style.border = '1px solid #e2e8f0';
-    noteEl.style.borderRadius = '6px';
-    noteEl.style.color = '#64748b';
-    noteEl.style.fontSize = '0.75rem';
-    noteEl.style.lineHeight = '1.3';
-    noteEl.textContent = `Zoom in to list local tiles (${overflowCount} in view), or click any tile on the map.`;
-    segmentListEl.appendChild(noteEl);
-  }
-
-  if (segments.length === 0 && overflowCount === 0) {
-    const emptyMsg = document.createElement('div');
-    emptyMsg.style.padding = '16px 8px';
-    emptyMsg.style.color = '#64748b';
-    emptyMsg.style.fontSize = '0.85rem';
-    emptyMsg.style.textAlign = 'center';
-    emptyMsg.textContent = 'Zoom in to view tiles in this area, or click the map.';
-    segmentListEl.appendChild(emptyMsg);
-    updateBulkToolbar();
-    return;
-  }
-
-  for (const seg of segments) {
-    const isSelected = selectedSegmentIds.has(seg.id);
-    const row = document.createElement('div');
-    row.className = `segment-row ${seg.status}${isSelected ? ' selected' : ''}`;
-    row.setAttribute('data-id', seg.id);
-
-    const badgeClass =
-      seg.status === 'cached'
-        ? 'badge-cached'
-        : seg.status === 'downloading'
-          ? 'badge-downloading'
-          : 'badge-available';
-
-    const badgeLabel =
-      seg.status === 'cached'
-        ? 'Cached'
-        : seg.status === 'downloading'
-          ? 'Downloading'
-          : 'Available';
-
-    const sizeLabel = seg.cachedBytes
-      ? `${(seg.cachedBytes / (1024 * 1024)).toFixed(1)} MB`
-      : '5°×5°';
-
-    row.innerHTML = `
-      <input type="checkbox" class="segment-check" data-id="${seg.id}" ${isSelected ? 'checked' : ''} aria-label="Select ${seg.id}" />
-      <div class="segment-info">
-        <div class="segment-row-top">
-          <span class="segment-id">${seg.id}</span>
-          <span class="segment-size">${sizeLabel}</span>
-        </div>
-        <div class="segment-desc">${seg.name}</div>
-      </div>
-      <span class="badge ${badgeClass}">${badgeLabel}</span>
-    `;
-
-    row.addEventListener('click', () => {
-      toggleSegmentSelection(seg.id, false);
-
-      const centerLngLat = new maplibregl.LngLat(
-        (seg.bbox[0] + seg.bbox[2]) / 2,
-        (seg.bbox[1] + seg.bbox[3]) / 2,
-      );
-      if (!map.getBounds().contains(centerLngLat)) {
-        map.easeTo({ center: centerLngLat, duration: 400 });
-      }
-    });
-
-    segmentListEl.appendChild(row);
-  }
-
-  updateBulkToolbar();
-}
-
-function downloadSegment(segmentId: string) {
-  downloadingSegments.add(segmentId);
-  updateGridSource();
-  renderSegmentList();
-  worker.postMessage({ type: 'DOWNLOAD_SEGMENT', segmentId });
-}
-
-async function deleteSegment(segmentId: string) {
-  worker.postMessage({ type: 'DELETE_SEGMENT', segmentId });
-  try {
-    await deleteArchiveFromIDB(segmentId);
-    loadedPMTiles.delete(segmentId);
-    await updateMapTileStorageSummary();
-    if (isOfflineMode) {
-      map.triggerRepaint();
-    }
-  } catch (_e) {}
-}
-
-// Initial render of the segment list
-renderSegmentList();
-
-function setOfflineMode(enabled: boolean) {
-  isOfflineMode = enabled;
-  localStorage.setItem('rsrouter_offline_mode', String(enabled));
-
-  if (checkOfflineMode) {
-    checkOfflineMode.checked = enabled;
-  }
-
-  if (badgeOfflineStatus) {
-    if (enabled) {
-      badgeOfflineStatus.textContent = 'Offline';
-      badgeOfflineStatus.className = 'offline-badge badge-offline';
-    } else {
-      badgeOfflineStatus.textContent = 'Online';
-      badgeOfflineStatus.className = 'offline-badge badge-online';
-    }
-  }
-
-  worker.postMessage({ type: 'SET_OFFLINE_MODE', offline: enabled });
-
-  if (enabled) {
-    map.setStyle(getOfflineStyle());
-    statusEl.textContent = 'Offline mode active. Rendering with local PMTiles archives.';
-  } else {
-    map.setStyle('offline-tile://tiles.openfreemap.org/styles/bright');
-    statusEl.textContent = 'Online mode active. Streaming tiles on the fly.';
-  }
-}
-
-checkOfflineMode?.addEventListener('change', () => {
-  setOfflineMode(checkOfflineMode.checked);
-});
-
-// Set initial offline UI state
-setOfflineMode(isOfflineMode);
-
-const IDB_NAME = 'rsrouter-pmtiles-v1';
-const IDB_STORE = 'archives';
-
-function openTileDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore(IDB_STORE);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function saveArchiveToIDB(id: string, blob: Blob): Promise<void> {
-  const db = await openTileDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).put(blob, id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function getArchiveFromIDB(id: string): Promise<Blob | undefined> {
-  const db = await openTileDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readonly');
-    const req = tx.objectStore(IDB_STORE).get(id);
-    req.onsuccess = () => resolve(req.result as Blob | undefined);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function deleteArchiveFromIDB(id: string): Promise<void> {
-  const db = await openTileDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function getAllArchiveEntriesFromIDB(): Promise<Array<{ id: string; size: number }>> {
-  const db = await openTileDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readonly');
-    const store = tx.objectStore(IDB_STORE);
-    const entries: Array<{ id: string; size: number }> = [];
-    const req = store.openCursor();
-    req.onsuccess = (e) => {
-      const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
-      if (cursor) {
-        const id = String(cursor.key);
-        const blob = cursor.value as Blob;
-        entries.push({ id, size: blob?.size || 0 });
-        cursor.continue();
-      } else {
-        resolve(entries);
-      }
-    };
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function loadPMTilesArchive(segmentId: string, blob: Blob): Promise<pmtiles.PMTiles> {
-  const fileSource = new pmtiles.FileSource(new File([blob], `${segmentId}.pmtiles`));
-  const p = new pmtiles.PMTiles(fileSource);
-  await p.getHeader();
-  loadedPMTiles.set(segmentId, p);
-  return p;
-}
-
-async function initCachedMapTiles() {
-  try {
-    const entries = await getAllArchiveEntriesFromIDB();
-    for (const entry of entries) {
-      if (!loadedPMTiles.has(entry.id)) {
-        const blob = await getArchiveFromIDB(entry.id);
-        if (blob) {
-          await loadPMTilesArchive(entry.id, blob);
-          console.log(`[PMTiles] Loaded cached archive for ${entry.id}`);
-        }
-      }
-    }
-    await updateMapTileStorageSummary();
-    if (isOfflineMode) {
-      map.triggerRepaint();
-    }
-  } catch (err) {
-    console.warn('Failed to initialize cached map tiles:', err);
-  }
-}
-
-initCachedMapTiles();
-
-async function updateMapTileStorageSummary() {
-  if (!mapStorageSummaryEl) return;
-  try {
-    const entries = await getAllArchiveEntriesFromIDB();
-    const totalBytes = entries.reduce((acc, e) => acc + e.size, 0);
-    const mb = (totalBytes / (1024 * 1024)).toFixed(1);
-    mapStorageSummaryEl.textContent = `Map tiles: ${entries.length} ${entries.length === 1 ? 'region' : 'regions'} (${mb} MB)`;
-  } catch (err) {
-    console.warn('Failed to calculate map tile storage:', err);
-  }
-}
-
+// Streams a map tile archive to OPFS in a worker, then opens it from disk.
 async function downloadMapTilesForSegment(
   segmentId: string,
-  onProgress?: (done: number, total: number) => void,
+  onProgress: (received: number, total: number) => void,
 ) {
-  // 1. Pre-cache Protomaps font glyphs in CacheStorage
-  if ('caches' in window) {
-    try {
-      const cache = await caches.open(MAP_TILES_CACHE_NAME);
-      const fontNames = ['Noto Sans Regular', 'Noto Sans Medium', 'Noto Sans Italic'];
-      for (const fontName of fontNames) {
-        const fontUrlEncoded = `https://cdn.protomaps.com/fonts/pbf/${encodeURIComponent(fontName)}/0-255.pbf`;
-        const fontUrlRaw = `https://cdn.protomaps.com/fonts/pbf/${fontName}/0-255.pbf`;
-        const existing = (await cache.match(fontUrlEncoded)) || (await cache.match(fontUrlRaw));
-        if (!existing) {
-          const res = await fetch(fontUrlEncoded);
-          if (res.ok) {
-            await cache.put(fontUrlEncoded, res.clone());
-            await cache.put(fontUrlRaw, res);
-          }
-        }
-      }
-    } catch (_e) {}
-  }
-
-  // 2. Check if PMTiles archive is already in IndexedDB
-  const existingBlob = await getArchiveFromIDB(segmentId);
-  if (existingBlob) {
-    if (!loadedPMTiles.has(segmentId)) {
-      await loadPMTilesArchive(segmentId, existingBlob);
-    }
-    await updateMapTileStorageSummary();
+  if (loadedPMTiles.has(segmentId)) return;
+  const existing = await getTileFile(segmentId);
+  if (existing) {
+    await loadPMTilesArchive(segmentId, existing);
     return;
   }
 
-  // 3. Download PMTiles archive from server with streaming progress
-  statusEl.textContent = `Extracting & downloading map tiles for ${segmentId}...`;
-  const res = await fetch(`/map-tiles/${segmentId}.pmtiles`);
-  if (!res.ok) {
-    throw new Error(`Failed to download map tiles for ${segmentId}: HTTP ${res.status}`);
+  setTileCompleted(segmentId, null);
+  const dl = new Worker(new URL('./download-worker.ts', import.meta.url), { type: 'module' });
+  try {
+    const size = await new Promise<number>((resolve, reject) => {
+      dl.onmessage = (e: MessageEvent<DownloadEvent>) => {
+        const msg = e.data;
+        if (msg.type === 'progress') onProgress(msg.received, msg.total);
+        else if (msg.type === 'done') resolve(msg.size);
+        else reject(new Error(msg.error));
+      };
+      dl.onerror = (e) => reject(new Error(e.message));
+      dl.postMessage({
+        url: `/map-tiles/${segmentId}.pmtiles`,
+        fileName: pmtilesFileName(segmentId),
+      } satisfies DownloadRequest);
+    });
+    setTileCompleted(segmentId, size);
+  } finally {
+    dl.terminate();
   }
 
-  const contentLength = Number(res.headers.get('content-length')) || 0;
-  let receivedBytes = 0;
+  const file = await getTileFile(segmentId);
+  if (!file) {
+    throw new Error(`Map tiles for ${segmentId} were not saved correctly`);
+  }
+  await loadPMTilesArchive(segmentId, file);
+}
 
-  const reader = res.body!.getReader();
-  const chunks: BlobPart[] = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    receivedBytes += value.byteLength;
-    if (onProgress) {
-      onProgress(receivedBytes, contentLength);
+function formatMb(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1);
+}
+
+// Single-Button Download: Downloads routing data, profiles, and map tiles
+async function downloadUkOfflineBundle() {
+  btnDownloadOffline.disabled = true;
+  btnDownloadOffline.textContent = 'Downloading...';
+  progressBarContainer.style.display = 'block';
+  progressBar.style.width = '2%';
+
+  try {
+    // Ask the browser not to evict this data under storage pressure.
+    await navigator.storage.persist();
+
+    statusEl.textContent = 'Downloading map fonts...';
+    await cacheMapFonts((msg) => {
+      statusEl.textContent = msg;
+    });
+    progressBar.style.width = '5%';
+
+    statusEl.textContent = 'Downloading routing profiles...';
+    await cacheRoutingProfiles((msg) => {
+      statusEl.textContent = msg;
+    });
+    progressBar.style.width = '10%';
+
+    // Routing data is about 10% of the total size, map tiles the rest.
+    const n = UK_SEGMENTS.length;
+    for (let i = 0; i < n; i++) {
+      const segId = UK_SEGMENTS[i];
+      await cacheSegmentRd5(segId, (done, total) => {
+        const frac = total > 0 ? done / total : 0;
+        progressBar.style.width = `${Math.round(10 + ((i + frac) / n) * 10)}%`;
+        const totalLabel = total > 0 ? formatMb(total) : '?';
+        statusEl.textContent = `Routing data ${i + 1}/${n}: ${segId} (${formatMb(done)} / ${totalLabel} MB)`;
+      });
     }
-  }
 
-  const blob = new Blob(chunks, { type: 'application/vnd.pmtiles' });
+    for (let i = 0; i < n; i++) {
+      const segId = UK_SEGMENTS[i];
+      statusEl.textContent = `Map tiles ${i + 1}/${n}: ${segId} (preparing, this can take a few minutes)`;
+      await downloadMapTilesForSegment(segId, (done, total) => {
+        const frac = total > 0 ? done / total : 0;
+        progressBar.style.width = `${Math.min(99, Math.round(20 + ((i + frac) / n) * 80))}%`;
+        const totalLabel = total > 0 ? formatMb(total) : '?';
+        statusEl.textContent = `Map tiles ${i + 1}/${n}: ${segId} (${formatMb(done)} / ${totalLabel} MB)`;
+      });
+    }
 
-  // 4. Save to IndexedDB and load into memory
-  await saveArchiveToIDB(segmentId, blob);
-  await loadPMTilesArchive(segmentId, blob);
-
-  await updateMapTileStorageSummary();
-  if (isOfflineMode) {
-    map.triggerRepaint();
+    progressBar.style.width = '100%';
+    await updateOfflineUI(await checkOfflineBundleStatus());
+    statusEl.textContent = 'Offline data downloaded. You can now enable Offline Mode.';
+  } catch (err) {
+    console.error('Offline download failed:', err);
+    await updateOfflineUI(await checkOfflineBundleStatus());
+    statusEl.textContent = `Download failed: ${err instanceof Error ? err.message : String(err)}. Press Download to resume.`;
   }
 }
-(window as any).downloadMapTilesForSegment = downloadMapTilesForSegment;
+
+async function deleteUkOfflineBundle() {
+  if (isOfflineMode) {
+    setOfflineMode(false);
+  }
+  statusEl.textContent = 'Removing offline data...';
+
+  for (const segId of UK_SEGMENTS) {
+    await deleteTileFile(segId);
+  }
+
+  const cache = await caches.open(SEGMENT_CACHE_NAME);
+  for (const segId of UK_SEGMENTS) {
+    await cache.delete(`/segments4/${segId}.rd5`);
+    await cache.delete(`/remote-segments/${segId}.rd5`);
+  }
+  worker.postMessage({ type: 'CLEAR_GRAPH' } satisfies WorkerMessage);
+
+  await updateOfflineUI(await checkOfflineBundleStatus());
+  statusEl.textContent = 'Offline data removed from local storage.';
+}
+
+btnDownloadOffline.addEventListener('click', downloadUkOfflineBundle);
+btnDeleteOffline.addEventListener('click', deleteUkOfflineBundle);
+
+// Initialization: wait for stored archives, check offline bundle status, enforce rules
+archivesReady.then(async () => {
+  const status = await checkOfflineBundleStatus();
+  if (isOfflineMode && !status.ready) {
+    isOfflineMode = false;
+  }
+  if (!navigator.onLine && status.ready) {
+    isOfflineMode = true;
+  }
+  setOfflineMode(isOfflineMode);
+  await updateOfflineUI(status);
+});
+
+// Losing the network mid-session: switch to the downloaded data if there is any.
+window.addEventListener('offline', async () => {
+  if (isOfflineMode) return;
+  const status = await checkOfflineBundleStatus();
+  if (status.ready) {
+    setOfflineMode(true);
+  }
+});
 
 // Service worker registration
 if ('serviceWorker' in navigator) {
-  if (import.meta.env.DEV) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      for (const reg of registrations) {
-        reg.unregister();
-      }
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('Service worker registration failed:', err);
     });
-  } else {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch((err) => {
-        console.warn('Service worker registration failed:', err);
-      });
-    });
-  }
+  });
 }

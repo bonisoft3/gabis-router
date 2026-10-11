@@ -153,7 +153,7 @@ Measured against the official BRouter server (`brouter.de`) with warm caches:
 | Routing | Elevation filter alignment | Align small 1-meter elevation differences on long multi-stage descents |
 | Navigation | Voice and turn instructions | Generate turn-by-turn guidance hints: turns, roundabouts, and straight segments |
 | Server API | Custom profile upload | Upload arbitrary `.brf` profile text directly via `customprofile=...` or request body |
-| Server API | Additional export formats | Support GPX (tracks, routes, waypoints) and KML formats alongside GeoJSON |
+| Server API | Additional export formats | GPX track export supported; KML format remaining |
 | Server API | Profile message matrix | Output per-segment attribute table in GeoJSON properties for UI surface coloring |
 | Server API | Query parameters | Support `direction`, `nointail`, and `noground` options |
 

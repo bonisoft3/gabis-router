@@ -5,4 +5,5 @@ node_modules/
 dist/
 tools/pmtiles
 *.pmtiles
-web/public/map-tiles/
+web/map-tiles/
+web/.cert/

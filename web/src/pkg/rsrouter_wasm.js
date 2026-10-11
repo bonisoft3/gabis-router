@@ -12,6 +12,28 @@ export class WasmRouter {
         wasm.__wbg_wasmrouter_free(ptr, 0);
     }
     /**
+     * Adds the part of a 5°×5° segment (e.g. "W5_N50") that lies inside a lon/lat box,
+     * at cell resolution, without resolving edges yet. Returns the number of cells added.
+     * @param {Uint8Array} data
+     * @param {string} segment_name
+     * @param {number} min_lon
+     * @param {number} min_lat
+     * @param {number} max_lon
+     * @param {number} max_lat
+     * @returns {number}
+     */
+    add_rd5_box(data, segment_name, min_lon, min_lat, max_lon, max_lat) {
+        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(segment_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmrouter_add_rd5_box(this.__wbg_ptr, ptr0, len0, ptr1, len1, min_lon, min_lat, max_lon, max_lat);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
      * Adds a single 1°×1° square from RD5 byte data into the routing graph without resolving edges yet.
      * @param {Uint8Array} data
      * @param {number} lon_deg
@@ -57,6 +79,35 @@ export class WasmRouter {
             const ptr1 = passStringToWasm0(profile_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             const len1 = WASM_VECTOR_LEN;
             const ret = wasm.wasmrouter_find_route(this.__wbg_ptr, ptr0, len0, ptr1, len1, alternative_idx);
+            var ptr3 = ret[0];
+            var len3 = ret[1];
+            if (ret[3]) {
+                ptr3 = 0; len3 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred4_0 = ptr3;
+            deferred4_1 = len3;
+            return getStringFromWasm0(ptr3, len3);
+        } finally {
+            wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+        }
+    }
+    /**
+     * Computes a route for given waypoints ("lon,lat|lon,lat") and returns a GPX string.
+     * @param {string} waypoints_str
+     * @param {string} profile_name
+     * @param {number} alternative_idx
+     * @returns {string}
+     */
+    find_route_gpx(waypoints_str, profile_name, alternative_idx) {
+        let deferred4_0;
+        let deferred4_1;
+        try {
+            const ptr0 = passStringToWasm0(waypoints_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ptr1 = passStringToWasm0(profile_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmrouter_find_route_gpx(this.__wbg_ptr, ptr0, len0, ptr1, len1, alternative_idx);
             var ptr3 = ret[0];
             var len3 = ret[1];
             if (ret[3]) {

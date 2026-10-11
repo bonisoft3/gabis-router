@@ -44,6 +44,17 @@ pub struct RoutePoint {
     pub cost: Cost,
 }
 
+/// A contiguous route segment with uniform surface and highway classifications.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RouteSegment {
+    pub from_dist_m: Distance,
+    pub to_dist_m: Distance,
+    pub surface: String,
+    pub highway: String,
+    pub noise_class: u8,
+    pub traffic_class: u8,
+}
+
 /// The final computed route with full metrics.
 #[derive(Debug, Clone)]
 pub struct RouteResult {
@@ -54,6 +65,7 @@ pub struct RouteResult {
     pub filtered_ascend_m: Distance,
     pub plain_ascend_m: Distance,
     pub points: Vec<RoutePoint>,
+    pub segments: Vec<RouteSegment>,
 }
 
 impl RouteResult {
@@ -100,6 +112,22 @@ impl RouteResult {
             });
         }
 
+        for mut seg in next.segments {
+            seg.from_dist_m += dist_offset;
+            seg.to_dist_m += dist_offset;
+            if let Some(last) = self.segments.last_mut() {
+                if last.surface == seg.surface
+                    && last.highway == seg.highway
+                    && last.noise_class == seg.noise_class
+                    && last.traffic_class == seg.traffic_class
+                {
+                    last.to_dist_m = seg.to_dist_m;
+                    continue;
+                }
+            }
+            self.segments.push(seg);
+        }
+
         self.total_distance_m += next.total_distance_m;
         self.total_time_s += next.total_time_s;
         self.total_energy_j += next.total_energy_j;
@@ -121,6 +149,17 @@ impl RouteResult {
             ));
         }
 
+        let mut seg_json = String::new();
+        for (i, seg) in self.segments.iter().enumerate() {
+            if i > 0 {
+                seg_json.push_str(",\n          ");
+            }
+            seg_json.push_str(&format!(
+                r#"{{"from": {:.1}, "to": {:.1}, "surface": "{}", "highway": "{}", "noise": {}, "traffic": {}}}"#,
+                seg.from_dist_m, seg.to_dist_m, seg.surface, seg.highway, seg.noise_class, seg.traffic_class
+            ));
+        }
+
         format!(
             r#"{{
   "type": "FeatureCollection",
@@ -135,7 +174,10 @@ impl RouteResult {
         "plain-ascend": "{:.0}",
         "total-time": "{:.0}",
         "total-energy": "{:.0}",
-        "cost": "{}"
+        "cost": "{}",
+        "segments": [
+          {}
+        ]
       }},
       "geometry": {{
         "type": "LineString",
@@ -152,9 +194,62 @@ impl RouteResult {
             self.total_time_s,
             self.total_energy_j,
             self.total_cost,
+            seg_json,
             coords
         )
     }
+
+    /// Formats the route as a standard GPX 1.1 track.
+    pub fn to_gpx(&self, track_name: &str) -> String {
+        let mut trkpts = String::new();
+        for (i, pt) in self.points.iter().enumerate() {
+            if i > 0 {
+                trkpts.push('\n');
+            }
+            trkpts.push_str(&format!(
+                "      <trkpt lat=\"{:.6}\" lon=\"{:.6}\">\n        <ele>{:.2}</ele>\n      </trkpt>",
+                pt.lat, pt.lon, pt.elevation_m
+            ));
+        }
+
+        let dist_km = self.total_distance_m / 1000.0;
+        let time_min = (self.total_time_s / 60.0).round();
+        let name_escaped = escape_xml(track_name);
+
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="rsrouter"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>{name_escaped}</name>
+    <desc>Distance: {:.2} km, Time: {:.0} min, Ascend: {:.0} m</desc>
+  </metadata>
+  <trk>
+    <name>{name_escaped}</name>
+    <desc>Distance: {:.2} km, Time: {:.0} min, Ascend: {:.0} m</desc>
+    <trkseg>
+{trkpts}
+    </trkseg>
+  </trk>
+</gpx>"#,
+            dist_km,
+            time_min,
+            self.filtered_ascend_m,
+            dist_km,
+            time_min,
+            self.filtered_ascend_m,
+        )
+    }
+}
+
+fn escape_xml(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 /// A* router engine implementing 2-pass guided search.
@@ -413,6 +508,7 @@ impl AStarRouter {
             // 3. Run Pass 2 (re-tracking): walk the winning path, decode geometry, evaluate kinematics
             let route = self.retrack_path(
                 graph,
+                lookups,
                 &winning_track.steps,
                 winning_track.total_cost,
                 &kinematic_cfg,
@@ -471,11 +567,13 @@ impl AStarRouter {
     fn retrack_path(
         &self,
         graph: &RoutingGraph,
+        lookups: &LookupData,
         steps: &[TrackStep],
         final_cost: u32,
         kinematic_cfg: &KinematicConfig,
     ) -> Result<RouteResult, String> {
         let mut route_points: Vec<RoutePoint> = Vec::new();
+        let mut route_segments: Vec<RouteSegment> = Vec::new();
         let mut cum_dist = 0.0;
         let mut cum_time = 0.0f32;
         let mut cum_energy = 0.0f32;
@@ -488,8 +586,64 @@ impl AStarRouter {
         let mut last_pt_pos: Option<Point2D> = None;
 
         let mut detail_state = PathState::default();
+        let mut way_buf = vec![0i32; lookups.way.names.len()];
+        let surface_idx = lookups.way.get_name_idx("surface");
+        let highway_idx = lookups.way.get_name_idx("highway");
+        let noise_idx = lookups.way.get_name_idx("estimated_noise_class");
+        let traffic_idx = lookups.way.get_name_idx("estimated_traffic_class");
 
         for (s_i, step) in steps.iter().enumerate() {
+            let start_step_dist = cum_dist;
+            let (surface_str, highway_str, noise_val, traffic_val) = {
+                let edges = graph.get_edges(step.from_node_id);
+                let edge = if (step.edge_idx as usize) < edges.len()
+                    && (step.node_id == 0 || edges[step.edge_idx as usize].target_id == step.node_id)
+                {
+                    Some(&edges[step.edge_idx as usize])
+                } else {
+                    edges.iter().find(|e| {
+                        e.edge_idx == step.global_edge_idx
+                            || (step.node_id != 0 && e.target_id == step.node_id)
+                    })
+                };
+
+                if let Some(e) = edge {
+                    if let Some(desc_bytes) = e.description(graph) {
+                        lookups.way.decode_into(&mut way_buf, e.is_reverse, desc_bytes);
+                        let s_val = surface_idx.map(|idx| way_buf[idx]).unwrap_or(0);
+                        let h_val = highway_idx.map(|idx| way_buf[idx]).unwrap_or(0);
+                        let n_val = noise_idx.map(|idx| way_buf[idx]).unwrap_or(0);
+                        let t_val = traffic_idx.map(|idx| way_buf[idx]).unwrap_or(0);
+
+                        let s = if s_val > 0 && surface_idx.map_or(false, |idx| (s_val as usize) < lookups.way.values[idx].len()) {
+                            lookups.way.values[surface_idx.unwrap()][s_val as usize].value.clone()
+                        } else {
+                            String::new()
+                        };
+                        let h = if h_val > 0 && highway_idx.map_or(false, |idx| (h_val as usize) < lookups.way.values[idx].len()) {
+                            lookups.way.values[highway_idx.unwrap()][h_val as usize].value.clone()
+                        } else {
+                            String::new()
+                        };
+                        let n = if n_val > 0 && noise_idx.map_or(false, |idx| (n_val as usize) < lookups.way.values[idx].len()) {
+                            lookups.way.values[noise_idx.unwrap()][n_val as usize].value.parse::<u8>().unwrap_or(0)
+                        } else {
+                            0
+                        };
+                        let t = if t_val > 0 && traffic_idx.map_or(false, |idx| (t_val as usize) < lookups.way.values[idx].len()) {
+                            lookups.way.values[traffic_idx.unwrap()][t_val as usize].value.parse::<u8>().unwrap_or(0)
+                        } else {
+                            0
+                        };
+                        (s, h, n, t)
+                    } else {
+                        (String::new(), String::new(), 0, 0)
+                    }
+                } else {
+                    (String::new(), String::new(), 0, 0)
+                }
+            };
+
             let poly = if let Some(ref sliced) = step.sliced_points {
                 sliced.clone()
             } else {
@@ -597,6 +751,37 @@ impl AStarRouter {
                     cost: step.cost,
                 });
             }
+
+            let end_step_dist = cum_dist;
+            if end_step_dist > start_step_dist {
+                if let Some(last) = route_segments.last_mut() {
+                    if last.surface == surface_str
+                        && last.highway == highway_str
+                        && last.noise_class == noise_val
+                        && last.traffic_class == traffic_val
+                    {
+                        last.to_dist_m = end_step_dist;
+                    } else {
+                        route_segments.push(RouteSegment {
+                            from_dist_m: start_step_dist,
+                            to_dist_m: end_step_dist,
+                            surface: surface_str,
+                            highway: highway_str,
+                            noise_class: noise_val,
+                            traffic_class: traffic_val,
+                        });
+                    }
+                } else {
+                    route_segments.push(RouteSegment {
+                        from_dist_m: start_step_dist,
+                        to_dist_m: end_step_dist,
+                        surface: surface_str,
+                        highway: highway_str,
+                        noise_class: noise_val,
+                        traffic_class: traffic_val,
+                    });
+                }
+            }
         }
 
         let plain_ascend = ele_end - ele_start;
@@ -609,6 +794,7 @@ impl AStarRouter {
             filtered_ascend_m: filtered_ascend,
             plain_ascend_m: plain_ascend,
             points: route_points,
+            segments: route_segments,
         })
     }
 }
