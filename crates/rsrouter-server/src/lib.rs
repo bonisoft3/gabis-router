@@ -37,6 +37,7 @@ pub struct BRouterQueryParams {
     pub profile: Option<String>,
     pub alternativeidx: Option<usize>,
     pub format: Option<String>,
+    pub nogos: Option<String>,
 }
 
 pub struct ServerState {
@@ -201,13 +202,19 @@ async fn handle_brouter(
     }
 
     let format = params.format.as_deref().unwrap_or("geojson");
+    let nogos = params
+        .nogos
+        .as_deref()
+        .map(rsrouter_core::routing::parse_nogos)
+        .unwrap_or_default();
 
-    match state.router.find_multi_route_with_alternative(
+    match state.router.find_multi_route_with_alternative_and_nogos(
         &state.graph,
         &state.lookups,
         &profile,
         &coords,
         alt_idx,
+        &nogos,
     ) {
         Ok(route) => {
             if format.eq_ignore_ascii_case("gpx") {

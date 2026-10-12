@@ -8,6 +8,7 @@ import { drawCompareLayer, initCompare } from './compare.ts';
 
 import './settings.ts';
 import { getBasemap, getThunderforestKey, onBasemapChange } from './basemap.ts';
+import { tilePickerControl } from './tile-picker.ts';
 import type { DownloadEvent, DownloadRequest } from './download-worker.ts';
 
 // Ignore benign fetch abort cancellations from rapid style changes or aborted requests
@@ -296,6 +297,7 @@ const map = new maplibregl.Map({
   center: UK_CENTER,
   zoom: 6,
   maxBounds: isOfflineMode ? UK_BOUNDS : undefined,
+  attributionControl: false,
 });
 
 function applyMapStyle(offline: boolean) {
@@ -323,6 +325,7 @@ function applyMapStyle(offline: boolean) {
 onBasemapChange(() => applyMapStyle(isOfflineMode));
 
 map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+map.addControl(new maplibregl.AttributionControl({ compact: false }), 'bottom-right');
 (window as any).map = map;
 (window as any).maplibregl = maplibregl;
 
@@ -503,6 +506,7 @@ function setOfflineMode(enabled: boolean) {
   isOfflineMode = enabled;
   localStorage.setItem('rsrouter_offline_mode', String(enabled));
   checkOfflineMode.checked = enabled;
+  tilePickerControl.setOffline(enabled);
   const basemapSelectEl = document.getElementById('select-basemap') as HTMLSelectElement | null;
   if (basemapSelectEl) basemapSelectEl.disabled = enabled;
   badgeOfflineStatus.textContent = enabled ? 'Offline' : 'Online';
@@ -515,6 +519,7 @@ function setOfflineMode(enabled: boolean) {
       ? 'Offline mode active. Rendering with local PMTiles archives.'
       : 'Online mode active. Streaming tiles on the fly.';
   }
+  window.dispatchEvent(new CustomEvent('offlinemodechange', { detail: { offline: enabled } }));
 }
 
 // Mandatory Offline Mode Guard: Prevent toggling offline mode if data is not downloaded

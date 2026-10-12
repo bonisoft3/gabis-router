@@ -24,11 +24,11 @@ export class WasmRouter {
     /**
      * Computes a route for given waypoints ("lon,lat|lon,lat") and returns a GeoJSON string.
      */
-    find_route(waypoints_str: string, profile_name: string, alternative_idx: number): string;
+    find_route(waypoints_str: string, profile_name: string, alternative_idx: number, nogos_str?: string | null): string;
     /**
      * Computes a route for given waypoints ("lon,lat|lon,lat") and returns a GPX string.
      */
-    find_route_gpx(waypoints_str: string, profile_name: string, alternative_idx: number): string;
+    find_route_gpx(waypoints_str: string, profile_name: string, alternative_idx: number, nogos_str?: string | null): string;
     /**
      * Loads the lookups.dat dictionary from a string.
      */
@@ -65,8 +65,8 @@ export interface InitOutput {
     readonly wasmrouter_add_rd5_square: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmrouter_clear_graph: (a: number) => void;
     readonly wasmrouter_edge_count: (a: number) => number;
-    readonly wasmrouter_find_route: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly wasmrouter_find_route_gpx: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly wasmrouter_find_route: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
+    readonly wasmrouter_find_route_gpx: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly wasmrouter_load_lookups: (a: number, b: number, c: number) => [number, number];
     readonly wasmrouter_load_profile: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly wasmrouter_load_rd5_segment: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];

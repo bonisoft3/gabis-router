@@ -70,12 +70,51 @@
         transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.2s ease;
       }
       #map .maplibregl-ctrl-bottom-right {
-        bottom: env(safe-area-inset-bottom);
+        bottom: calc(28px + env(safe-area-inset-bottom));
         right: env(safe-area-inset-right);
+        z-index: 3;
       }
       #map .maplibregl-ctrl-bottom-left {
         bottom: env(safe-area-inset-bottom);
         left: env(safe-area-inset-left);
+      }
+      #map .maplibregl-ctrl-attrib {
+        position: fixed;
+        bottom: env(safe-area-inset-bottom);
+        right: env(safe-area-inset-right);
+        z-index: 2;
+        display: block !important;
+        margin: 0 !important;
+        padding: 2px 8px !important;
+        background: var(--panel) !important;
+        backdrop-filter: blur(8px);
+        font-size: 11px !important;
+        line-height: 1.4 !important;
+        color: var(--muted) !important;
+        border-top-left-radius: 6px;
+        box-shadow: 0 0 6px rgba(0, 0, 0, 0.1);
+        pointer-events: auto;
+      }
+      #map .maplibregl-ctrl-attrib a {
+        color: var(--muted) !important;
+        text-decoration: none;
+      }
+      #map .maplibregl-ctrl-attrib a:hover {
+        text-decoration: underline;
+        color: var(--text) !important;
+      }
+      #map .maplibregl-ctrl-attrib-button {
+        display: none !important;
+      }
+      #map .maplibregl-ctrl-attrib-inner {
+        display: block !important;
+      }
+      #map .maplibregl-ctrl-attrib.maplibregl-compact {
+        display: block !important;
+        background: var(--panel) !important;
+        padding: 2px 8px !important;
+        min-height: auto !important;
+        border-radius: 6px 0 0 0 !important;
       }
       .header {
         margin-bottom: 10px;
@@ -143,38 +182,47 @@
         padding: 6px 10px;
         margin-bottom: 6px;
       }
+      .field label.offline-mode-toggle,
       .offline-mode-toggle {
-        display: flex;
+        display: inline-flex !important;
         align-items: center;
         gap: 8px;
         cursor: pointer;
         user-select: none;
+        margin-bottom: 0 !important;
+        text-transform: none !important;
+        letter-spacing: normal !important;
       }
       .offline-mode-toggle input {
         display: none;
       }
       .offline-slider {
+        display: inline-block;
+        flex-shrink: 0;
         width: 32px;
         height: 18px;
-        background: var(--border);
+        background: var(--border-2);
+        border: 1px solid var(--border);
         border-radius: 18px;
         position: relative;
         transition: background 0.2s ease, opacity 0.2s ease;
+        box-sizing: border-box;
       }
       .offline-slider::after {
         content: "";
         position: absolute;
-        width: 14px;
-        height: 14px;
+        width: 12px;
+        height: 12px;
         border-radius: 50%;
-        background: white;
+        background: #ffffff;
         top: 2px;
         left: 2px;
         transition: transform 0.2s ease;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
       }
       .offline-mode-toggle input:checked + .offline-slider {
-        background: #f59e0b;
+        background: #10b981;
+        border-color: #059669;
       }
       .offline-mode-toggle input:checked + .offline-slider::after {
         transform: translateX(14px);
@@ -191,6 +239,8 @@
         font-size: 0.8rem;
         font-weight: 600;
         color: var(--text-2);
+        text-transform: none;
+        letter-spacing: normal;
       }
       .offline-badge {
         font-size: 0.7rem;
@@ -414,11 +464,156 @@
       .wp-drag-handle:active {
         cursor: grabbing;
       }
-      .wp-coords {
+      .wp-info {
         flex: 1;
-        font-size: 0.78rem;
-        color: var(--text-2);
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        margin-right: 4px;
+      }
+      .wp-name {
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        line-height: 1.25;
+        cursor: pointer;
+      }
+      .wp-name:hover {
+        text-decoration: underline;
+      }
+      .wp-coords {
+        font-size: 0.68rem;
+        color: var(--muted);
+        line-height: 1.15;
         font-variant-numeric: tabular-nums;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .search-box {
+        position: relative;
+        margin-bottom: 10px;
+      }
+      .search-input-wrap {
+        display: flex;
+        align-items: center;
+        background: var(--field);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0 8px;
+        gap: 6px;
+      }
+      .search-input-wrap:focus-within {
+        border-color: #2563eb;
+      }
+      .search-icon {
+        color: var(--muted);
+        flex-shrink: 0;
+      }
+      #input-place-search {
+        border: none;
+        outline: none;
+        background: transparent;
+        width: 100%;
+        height: 32px;
+        font-size: 0.82rem;
+        color: var(--text);
+      }
+      #input-place-search::placeholder {
+        color: var(--muted);
+      }
+      .search-clear-btn {
+        border: none;
+        background: none;
+        color: var(--muted);
+        cursor: pointer;
+        padding: 2px 4px;
+        font-size: 0.8rem;
+        line-height: 1;
+        border-radius: 4px;
+      }
+      .search-clear-btn:hover {
+        color: var(--text);
+      }
+      .search-results {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        background: var(--panel);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+        max-height: 220px;
+        overflow-y: auto;
+        z-index: 50;
+      }
+      .search-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 10px;
+        cursor: pointer;
+        border-bottom: 1px solid var(--border-2);
+        transition: background 0.15s;
+        gap: 6px;
+      }
+      .search-item:last-child {
+        border-bottom: none;
+      }
+      .search-item:hover,
+      .search-item.active {
+        background: var(--surface-2);
+      }
+      .search-item-info {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        flex: 1;
+      }
+      .search-item-title {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .search-item-subtitle {
+        font-size: 0.7rem;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .search-item-actions {
+        display: flex;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .search-act-btn {
+        font-size: 0.7rem;
+        padding: 2px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--surface);
+        color: var(--text-2);
+        cursor: pointer;
+      }
+      .search-act-btn:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .search-status-item {
+        padding: 8px 10px;
+        font-size: 0.78rem;
+        color: var(--muted);
+        text-align: center;
       }
       .wp-btn {
         width: 28px;
@@ -478,10 +673,10 @@
       }
       #route-info {
         position: absolute;
-        z-index: 9;
+        z-index: 11;
         left: calc(392px + env(safe-area-inset-left));
         right: calc(64px + env(safe-area-inset-right));
-        bottom: calc(24px + env(safe-area-inset-bottom));
+        bottom: calc(26px + env(safe-area-inset-bottom));
         max-width: 640px;
         padding: 10px 14px 6px;
         background: var(--panel);
@@ -726,10 +921,18 @@
         pointer-events: none;
       }
       @media (max-width: 640px) {
+        #map .maplibregl-ctrl-bottom-right {
+          bottom: calc(38px + env(safe-area-inset-bottom));
+          right: env(safe-area-inset-right);
+          transition: bottom 0.2s ease;
+        }
+        #route-info:not([hidden]) ~ #map .maplibregl-ctrl-bottom-right {
+          bottom: calc(148px + env(safe-area-inset-bottom));
+        }
         #route-info {
           left: calc(12px + env(safe-area-inset-left));
           right: calc(12px + env(safe-area-inset-right));
-          bottom: calc(28px + env(safe-area-inset-bottom));
+          bottom: calc(38px + env(safe-area-inset-bottom));
         }
       }
       .settings {
@@ -855,50 +1058,90 @@
         padding: 4px 8px;
         font-size: 0.75rem;
       }
-      #basemap-control {
+      .tile-picker-ctrl {
+        position: relative;
+      }
+      .maplibregl-ctrl-tile-picker .maplibregl-ctrl-icon {
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' viewBox='0 0 29 29'%3E%3Cg fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='14.5 6 6 10 14.5 14 23 10 14.5 6'/%3E%3Cpolyline points='6 14 14.5 18 23 14'/%3E%3Cpolyline points='6 18 14.5 22 23 18'/%3E%3C/g%3E%3C/svg%3E");
+      }
+      .maplibregl-ctrl-tile-picker.active {
+        background-color: rgba(0, 0, 0, 0.08);
+      }
+      .tile-picker-menu {
         position: absolute;
-        top: 12px;
-        right: 12px;
-        z-index: 8;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        background: var(--surface);
+        right: calc(100% + 8px);
+        bottom: 0;
+        background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 4px 8px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-        backdrop-filter: blur(8px);
-        transition: background-color 0.2s, border-color 0.2s;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 175px;
+        z-index: 100;
+        backdrop-filter: blur(12px);
       }
-      #basemap-control:hover {
-        border-color: var(--border-2);
-        background: var(--surface-2);
+      .tile-picker-menu[hidden] {
+        display: none !important;
       }
-      .basemap-icon {
+      .tile-picker-header {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
         color: var(--muted);
-        flex-shrink: 0;
+        padding: 4px 8px 2px;
       }
-      #basemap-control select {
+      .tile-picker-menu button.tile-picker-opt {
+        width: 100% !important;
+        height: auto !important;
+        min-height: 42px;
+        display: flex !important;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 6px 10px !important;
+        border-radius: 6px;
+        border: 1px solid transparent;
         background: transparent;
-        border: none;
         color: var(--text);
-        font-size: 0.8rem;
-        font-weight: 500;
         cursor: pointer;
-        outline: none;
-        padding: 3px 4px 3px 0;
+        text-align: left;
         font-family: inherit;
+        line-height: 1.3 !important;
+        transition: background 0.15s ease, border-color 0.15s ease;
       }
-      #basemap-control select option {
+      .tile-picker-opt:hover:not(:disabled) {
+        background: var(--surface-2);
+        border-color: var(--border-2);
+      }
+      .tile-picker-opt.active {
         background: var(--field);
+        border-color: var(--border);
+        font-weight: 600;
+      }
+      .tile-picker-opt:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .tile-opt-info {
+        display: flex;
+        flex-direction: column;
+      }
+      .tile-opt-label {
+        font-size: 0.82rem;
+        font-weight: 600;
         color: var(--text);
       }
-      @media (max-width: 640px) {
-        #basemap-control {
-          top: calc(56px + env(safe-area-inset-top));
-          right: calc(12px + env(safe-area-inset-right));
-        }
+      .tile-opt-desc {
+        font-size: 0.68rem;
+        color: var(--muted);
+      }
+      .tile-opt-check {
+        color: #2563eb;
+        flex-shrink: 0;
       }
     </style>
   </head>
@@ -928,6 +1171,17 @@
             <option value="gravel">Gravel</option>
             <option value="trekking">Trekking</option>
           </select>
+        </div>
+        <div class="search-box">
+          <div class="search-input-wrap">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="input-place-search" placeholder="Search place or address..." autocomplete="off" />
+            <button id="btn-clear-search" class="search-clear-btn" title="Clear search" aria-label="Clear search" style="display: none;">✕</button>
+          </div>
+          <div id="search-results-list" class="search-results" style="display: none;"></div>
         </div>
         <button id="btn-my-location" class="btn btn-outline" style="width: 100%; margin-bottom: 10px;">Start from my location</button>
         <div id="waypoint-list" style="display: none;"></div>
@@ -1044,7 +1298,7 @@
       </div>
     </div>
 
-    <div id="route-info" hidden>
+    <div id="route-info" class="collapsed" hidden>
       <div class="ri-stats">
         <div class="ri-stat"><span id="ri-distance"></span><small>Distance</small></div>
         <div class="ri-stat"><span id="ri-time"></span><small>Time</small></div>
@@ -1107,18 +1361,6 @@
           </div>
         </details>
       </div>
-    </div>
-    <div id="basemap-control" class="basemap-control" title="Map style">
-      <svg class="basemap-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-        <polyline points="2 17 12 22 22 17"></polyline>
-        <polyline points="2 12 12 17 22 12"></polyline>
-      </svg>
-      <select id="select-basemap" aria-label="Select map style">
-        <option value="standard">Standard</option>
-        <option value="cyclosm">CyclOSM</option>
-        <option value="opencyclemap">OpenCycleMap</option>
-      </select>
     </div>
     <div id="map"></div>
     <script type="module" src="/src/main.ts"></script>

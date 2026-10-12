@@ -6,8 +6,8 @@ export const wasmrouter_add_rd5_box: (a: number, b: number, c: number, d: number
 export const wasmrouter_add_rd5_square: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const wasmrouter_clear_graph: (a: number) => void;
 export const wasmrouter_edge_count: (a: number) => number;
-export const wasmrouter_find_route: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-export const wasmrouter_find_route_gpx: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const wasmrouter_find_route: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
+export const wasmrouter_find_route_gpx: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
 export const wasmrouter_load_lookups: (a: number, b: number, c: number) => [number, number];
 export const wasmrouter_load_profile: (a: number, b: number, c: number, d: number, e: number) => [number, number];
 export const wasmrouter_load_rd5_segment: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];

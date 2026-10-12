@@ -197,8 +197,62 @@ function buildProfile(coords: number[][]): Profile {
   for (let i = 1; i < coords.length; i++) {
     dist.push(dist[i - 1] + haversine(coords[i - 1], coords[i]));
   }
-  return { dist, ele: coords.map((c) => c[2]), coords };
+  const ele = coords.map((c) => c[2]);
+
+  // Frontend elevation smoothing for water crossings:
+  // Raster DEM datasets, like SRTM, lack bridge deck elevations and treat water
+  // bodies or missing cells as 0 m. Bridges crossing tidal rivers, such as the
+  // Thames in London, drop abruptly to 0 m in the raw profile.
+  //
+  // Here we linearly interpolate intermediate runs of 0 m between valid non-zero
+  // endpoints along the route.
+  //
+  // Caveats:
+  // 1. Only fixes structures dropping to 0 m. Inland bridges over valleys (which
+  //    drop to non-zero ground level) and tunnels (which spike upwards) remain unaffected.
+  // 2. Coastal roads sitting at sea level (0 m) between higher points will be
+  //    interpolated into an artificial ramp.
+  // 3. This is visual-only smoothing for the elevation chart. Core router metrics
+  //    like filtered ascend, travel time, and energy still reflect raw DEM heights.
+  let i = 0;
+  while (i < ele.length) {
+    if (ele[i] === 0) {
+      let j = i;
+      while (j < ele.length && ele[j] === 0) j++;
+
+      const hasLeft = i > 0;
+      const hasRight = j < ele.length;
+
+      if (hasLeft && hasRight) {
+        const leftEle = ele[i - 1];
+        const rightEle = ele[j];
+        const leftDist = dist[i - 1];
+        const rightDist = dist[j];
+        const span = rightDist - leftDist;
+        if (span > 0) {
+          for (let k = i; k < j; k++) {
+            const t = (dist[k] - leftDist) / span;
+            ele[k] = leftEle + t * (rightEle - leftEle);
+          }
+        }
+      } else if (hasLeft) {
+        for (let k = i; k < j; k++) {
+          ele[k] = ele[i - 1];
+        }
+      } else if (hasRight) {
+        for (let k = i; k < j; k++) {
+          ele[k] = ele[j];
+        }
+      }
+      i = j;
+    } else {
+      i++;
+    }
+  }
+
+  return { dist, ele, coords };
 }
+
 
 let profile: Profile | null = null;
 
@@ -577,11 +631,36 @@ function gradeAt(i: number): number {
   return run > 0 ? ((ele[b] - ele[a]) / run) * 100 : 0;
 }
 
+function isMobile(): boolean {
+  return window.matchMedia('(max-width: 640px)').matches;
+}
+
+let userManuallyExpanded = false;
+
+export function setRouteInfoCollapsed(collapsed: boolean) {
+  panel.classList.toggle('collapsed', collapsed);
+  if (btnToggleRiCollapse) {
+    btnToggleRiCollapse.setAttribute('aria-expanded', String(!collapsed));
+    btnToggleRiCollapse.title = collapsed ? 'Expand details' : 'Collapse details';
+    btnToggleRiCollapse.setAttribute('aria-label', btnToggleRiCollapse.title);
+  }
+  if (collapsed) {
+    hooks?.onHover(null);
+    hooks?.onHighlightSegment?.(null);
+  }
+}
+
 /** Shows the panel for a route. `index` is the alternative the route belongs to. */
 export function showRouteInfo(geojson: GeoJSON.FeatureCollection, index: number) {
+  const isFirstShow = panel.hidden;
   route = geojson;
   alternative = index;
   panel.hidden = false;
+  if (isMobile() && (isFirstShow || !userManuallyExpanded)) {
+    setRouteInfoCollapsed(true);
+  } else if (!isMobile() && isFirstShow) {
+    setRouteInfoCollapsed(false);
+  }
   render();
 }
 
@@ -590,6 +669,10 @@ export function hideRouteInfo() {
   profile = null;
   routeSegments = [];
   panel.hidden = true;
+  userManuallyExpanded = false;
+  if (isMobile()) {
+    setRouteInfoCollapsed(true);
+  }
   hooks.onHover(null);
   hooks.onHighlightSegment?.(null);
 }
@@ -612,6 +695,12 @@ function setupBarHover(bar: HTMLElement | null) {
 
 export function initRouteInfo(h: Hooks) {
   hooks = h;
+  if (isMobile()) {
+    setRouteInfoCollapsed(true);
+  } else {
+    setRouteInfoCollapsed(false);
+  }
+
   altsEl.addEventListener('click', (e) => {
     const button = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-alt]');
     if (button) hooks.onAlternative(Number(button.dataset.alt));
@@ -620,6 +709,7 @@ export function initRouteInfo(h: Hooks) {
   if (btnToggleRiCollapse) {
     btnToggleRiCollapse.addEventListener('click', () => {
       const isCollapsed = panel.classList.toggle('collapsed');
+      userManuallyExpanded = !isCollapsed;
       btnToggleRiCollapse.setAttribute('aria-expanded', String(!isCollapsed));
       btnToggleRiCollapse.title = isCollapsed ? 'Expand details' : 'Collapse details';
       btnToggleRiCollapse.setAttribute('aria-label', btnToggleRiCollapse.title);

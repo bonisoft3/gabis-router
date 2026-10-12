@@ -15,6 +15,10 @@
 use std::collections::HashSet;
 
 use super::cost::KinematicConfig;
+use super::nogo::{
+    check_polyline_against_nogos, check_segment_against_nogos, clean_nogos, InternalNogo,
+    NogoArea, NogoCheckResult,
+};
 use super::path::{CrossingConfig, ElevationConfig, PathState, SectionInput, StdPathCalculator};
 use super::slicing::{slice_between_crosspoints, slice_from_crosspoint, slice_to_crosspoint};
 use super::state::{
@@ -301,6 +305,7 @@ pub struct SearchPassParams<'a> {
     pub air_distance_factor: f64,
     pub cost_cutting: Option<CostCuttingGuide<'a>>,
     pub ref_nodes: Option<&'a HashSet<NodeId>>,
+    pub nogos: &'a [InternalNogo],
 }
 
 /// Resource and termination bounds for a search pass.
@@ -344,7 +349,7 @@ impl AStarRouter {
         profile: &Profile,
         waypoints: &[(f64, f64)],
     ) -> Result<RouteResult, String> {
-        self.find_multi_route_with_alternative(graph, lookups, profile, waypoints, 0)
+        self.find_multi_route_with_alternative_and_nogos(graph, lookups, profile, waypoints, 0, &[])
     }
 
     /// Computes a continuous route passing sequentially through multiple waypoints with an alternative route index (0..=3).
@@ -356,18 +361,39 @@ impl AStarRouter {
         waypoints: &[(f64, f64)],
         alternative_idx: usize,
     ) -> Result<RouteResult, String> {
+        self.find_multi_route_with_alternative_and_nogos(
+            graph,
+            lookups,
+            profile,
+            waypoints,
+            alternative_idx,
+            &[],
+        )
+    }
+
+    /// Computes a continuous route passing sequentially through multiple waypoints with an alternative route index (0..=3) and no-go areas.
+    pub fn find_multi_route_with_alternative_and_nogos(
+        &self,
+        graph: &RoutingGraph,
+        lookups: &LookupData,
+        profile: &Profile,
+        waypoints: &[(f64, f64)],
+        alternative_idx: usize,
+        nogos: &[NogoArea],
+    ) -> Result<RouteResult, String> {
         if waypoints.len() < 2 {
             return Err("At least two waypoints required for routing".to_string());
         }
         let mut legs = Vec::with_capacity(waypoints.len() - 1);
         for i in 0..waypoints.len() - 1 {
-            let leg = self.find_route_with_alternative(
+            let leg = self.find_route_with_alternative_and_nogos(
                 graph,
                 lookups,
                 profile,
                 waypoints[i],
                 waypoints[i + 1],
                 alternative_idx,
+                nogos,
             )?;
             legs.push(leg);
         }
@@ -383,7 +409,7 @@ impl AStarRouter {
         start: (f64, f64),
         target: (f64, f64),
     ) -> Result<RouteResult, String> {
-        self.find_route_with_alternative(graph, lookups, profile, start, target, 0)
+        self.find_route_with_alternative_and_nogos(graph, lookups, profile, start, target, 0, &[])
     }
 
     /// Computes a complete route between `start` and `target` waypoints with an alternative route index (0..=3).
@@ -395,6 +421,28 @@ impl AStarRouter {
         start: (f64, f64),
         target: (f64, f64),
         alternative_idx: usize,
+    ) -> Result<RouteResult, String> {
+        self.find_route_with_alternative_and_nogos(
+            graph,
+            lookups,
+            profile,
+            start,
+            target,
+            alternative_idx,
+            &[],
+        )
+    }
+
+    /// Computes a complete route between `start` and `target` waypoints with an alternative route index (0..=3) and no-go areas.
+    pub fn find_route_with_alternative_and_nogos(
+        &self,
+        graph: &RoutingGraph,
+        lookups: &LookupData,
+        profile: &Profile,
+        start: (f64, f64),
+        target: (f64, f64),
+        alternative_idx: usize,
+        nogos: &[NogoArea],
     ) -> Result<RouteResult, String> {
         let (start_lon, start_lat) = start;
         let (target_lon, target_lat) = target;
@@ -408,6 +456,16 @@ impl AStarRouter {
         let target_mwp = graph
             .snap_waypoint("to", target_lon, target_lat, 200.0, &mut evaluator, lookups)
             .ok_or_else(|| "Target position could not be mapped to graph".to_string())?;
+
+        let cleaned_nogos = clean_nogos(
+            nogos,
+            &[
+                start_mwp.crosspoint,
+                target_mwp.crosspoint,
+                Point2D::new(spatial::lon_to_ilon(start_lon), spatial::lat_to_ilat(start_lat)),
+                Point2D::new(spatial::lon_to_ilon(target_lon), spatial::lat_to_ilat(target_lat)),
+            ],
+        );
 
         let kinematic_cfg = KinematicConfig::from_profile(profile);
         let elev_cfg = ElevationConfig::from_profile(profile);
@@ -451,6 +509,7 @@ impl AStarRouter {
                 air_distance_factor: pass1_coeff,
                 cost_cutting: None,
                 ref_nodes: ref_param,
+                nogos: &cleaned_nogos,
             };
             let pass0_limits = SearchLimits {
                 max_cost: None,
@@ -478,6 +537,7 @@ impl AStarRouter {
                     air_distance_factor: pass2_coeff,
                     cost_cutting: Some(&cost_guide),
                     ref_nodes: ref_param,
+                    nogos: &cleaned_nogos,
                 };
                 let pass1_limits = SearchLimits {
                     max_cost: cost_cutting_threshold,
@@ -821,6 +881,7 @@ struct SearchPassContext<'a> {
     cost_cutting: Option<CostCuttingGuide<'a>>,
     ref_nodes: Option<&'a HashSet<NodeId>>,
     protected_nodes: Vec<NodeId>,
+    nogos: &'a [InternalNogo],
 }
 
 impl<'a> SearchPassContext<'a> {
@@ -881,6 +942,7 @@ impl<'a> SearchPassContext<'a> {
             cost_cutting: params.cost_cutting,
             ref_nodes: params.ref_nodes,
             protected_nodes,
+            nogos: params.nogos,
         }
     }
 }
@@ -1018,6 +1080,11 @@ impl<'a> SearchPassState<'a> {
                         ctx.target_mwp.crosspoint,
                     ) {
                         if sliced.len() >= 2 {
+                            let nogo_res = check_polyline_against_nogos(&sliced, ctx.nogos);
+                            let nogo_cost = match nogo_res {
+                                NogoCheckResult::Blocked => continue,
+                                NogoCheckResult::Pass { added_cost } => added_cost,
+                            };
                             let mut path_state = PathState::default();
                             let edge_ctx = EdgeContext {
                                 crossing_class: None,
@@ -1033,6 +1100,7 @@ impl<'a> SearchPassState<'a> {
                                 &ctx.routing_configs(),
                                 &edge_ctx,
                             );
+                            let cost = cost + nogo_cost;
                             if cost < self.final_cost {
                                 self.final_cost = cost;
                                 let h_idx = self.history.len() as u32;
@@ -1160,6 +1228,11 @@ impl<'a> SearchPassState<'a> {
                         ctx.start_mwp.crosspoint,
                     );
                     if sliced.len() >= 2 {
+                        let nogo_res = check_polyline_against_nogos(&sliced, ctx.nogos);
+                        let nogo_cost = match nogo_res {
+                            NogoCheckResult::Blocked => continue,
+                            NogoCheckResult::Pass { added_cost } => added_cost,
+                        };
                         let mut path_state = PathState::default();
                         let edge_ctx = EdgeContext {
                             crossing_class: None,
@@ -1177,7 +1250,7 @@ impl<'a> SearchPassState<'a> {
                                 &edge_ctx,
                             );
 
-                        let mut total_cost = cost;
+                        let mut total_cost = cost + nogo_cost;
                         if let Some(target_node) = t_node {
                             if let Some(ref node_desc) = target_node.node_description {
                                 if let Some(desc_bytes) = edge.description(ctx.graph) {
@@ -1285,6 +1358,11 @@ impl<'a> SearchPassState<'a> {
                         ctx.start_mwp.crosspoint,
                     );
                     if sliced.len() >= 2 {
+                        let nogo_res = check_polyline_against_nogos(&sliced, ctx.nogos);
+                        let nogo_cost = match nogo_res {
+                            NogoCheckResult::Blocked => continue,
+                            NogoCheckResult::Pass { added_cost } => added_cost,
+                        };
                         let mut path_state = PathState::default();
                         let edge_ctx = EdgeContext {
                             crossing_class: None,
@@ -1302,7 +1380,7 @@ impl<'a> SearchPassState<'a> {
                                 &edge_ctx,
                             );
 
-                        let mut total_cost = cost;
+                        let mut total_cost = cost + nogo_cost;
                         if let Some(target_node) = t_node {
                             if let Some(ref node_desc) = target_node.node_description {
                                 if let Some(desc_bytes) = edge.description(ctx.graph) {
@@ -1718,6 +1796,11 @@ impl<'a> SearchPassState<'a> {
                 ctx.target_mwp.crosspoint,
             );
             if sliced.len() >= 2 {
+                let nogo_res = check_polyline_against_nogos(&sliced, ctx.nogos);
+                let nogo_cost = match nogo_res {
+                    NogoCheckResult::Blocked => return,
+                    NogoCheckResult::Pass { added_cost } => added_cost,
+                };
                 let mut path_state = curr.path_state;
                 let edge_ctx = EdgeContext {
                     crossing_class,
@@ -1733,7 +1816,7 @@ impl<'a> SearchPassState<'a> {
                     &ctx.routing_configs(),
                     &edge_ctx,
                 );
-                edge_cost += classifier_cost;
+                edge_cost += classifier_cost + nogo_cost;
 
                 let target_cost = curr.cost + edge_cost;
                 if target_cost < self.final_cost {
@@ -1791,7 +1874,16 @@ impl<'a> SearchPassState<'a> {
             is_start: false,
             is_detail: false,
         };
-        let (mut edge_cost, edge_dist, _, _, penultimate_pt) = if is_straight {
+        let (nogo_cost, (mut edge_cost, edge_dist, _, _, penultimate_pt)) = if is_straight {
+            let nogo_res = check_segment_against_nogos(
+                Point2D::new(curr.ilon, curr.ilat),
+                Point2D::new(edge.target_lon, edge.target_lat),
+                ctx.nogos,
+            );
+            let nogo_cost = match nogo_res {
+                NogoCheckResult::Blocked => return,
+                NogoCheckResult::Pass { added_cost } => added_cost,
+            };
             let seg_dist = if edge.straight_dist > 0.0 {
                 edge.straight_dist
             } else {
@@ -1802,25 +1894,36 @@ impl<'a> SearchPassState<'a> {
                 .round()
                 .max(1.0)
             };
-            process_straight_edge(
-                Point3D::new(curr.ilon, curr.ilat, curr.selev),
-                Point3D::new(edge.target_lon, edge.target_lat, t_elev),
-                seg_dist,
-                &mut path_state,
-                way_cost,
-                &ctx.routing_configs(),
-                &edge_ctx,
+            (
+                nogo_cost,
+                process_straight_edge(
+                    Point3D::new(curr.ilon, curr.ilat, curr.selev),
+                    Point3D::new(edge.target_lon, edge.target_lat, t_elev),
+                    seg_dist,
+                    &mut path_state,
+                    way_cost,
+                    &ctx.routing_configs(),
+                    &edge_ctx,
+                ),
             )
         } else {
-            process_polyline(
-                &self.poly_buf,
-                &mut path_state,
-                way_cost,
-                &ctx.routing_configs(),
-                &edge_ctx,
+            let nogo_res = check_polyline_against_nogos(&self.poly_buf, ctx.nogos);
+            let nogo_cost = match nogo_res {
+                NogoCheckResult::Blocked => return,
+                NogoCheckResult::Pass { added_cost } => added_cost,
+            };
+            (
+                nogo_cost,
+                process_polyline(
+                    &self.poly_buf,
+                    &mut path_state,
+                    way_cost,
+                    &ctx.routing_configs(),
+                    &edge_ctx,
+                ),
             )
         };
-        edge_cost += classifier_cost;
+        edge_cost += classifier_cost + nogo_cost;
 
         if let Some(ref_nodes) = ctx.ref_nodes {
             let source_id = Point2D::new(curr.ilon, curr.ilat).node_id();

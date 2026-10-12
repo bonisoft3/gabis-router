@@ -68,28 +68,31 @@ export class WasmRouter {
      * @param {string} waypoints_str
      * @param {string} profile_name
      * @param {number} alternative_idx
+     * @param {string | null} [nogos_str]
      * @returns {string}
      */
-    find_route(waypoints_str, profile_name, alternative_idx) {
-        let deferred4_0;
-        let deferred4_1;
+    find_route(waypoints_str, profile_name, alternative_idx, nogos_str) {
+        let deferred5_0;
+        let deferred5_1;
         try {
             const ptr0 = passStringToWasm0(waypoints_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             const len0 = WASM_VECTOR_LEN;
             const ptr1 = passStringToWasm0(profile_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             const len1 = WASM_VECTOR_LEN;
-            const ret = wasm.wasmrouter_find_route(this.__wbg_ptr, ptr0, len0, ptr1, len1, alternative_idx);
-            var ptr3 = ret[0];
-            var len3 = ret[1];
+            var ptr2 = isLikeNone(nogos_str) ? 0 : passStringToWasm0(nogos_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            var len2 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmrouter_find_route(this.__wbg_ptr, ptr0, len0, ptr1, len1, alternative_idx, ptr2, len2);
+            var ptr4 = ret[0];
+            var len4 = ret[1];
             if (ret[3]) {
-                ptr3 = 0; len3 = 0;
+                ptr4 = 0; len4 = 0;
                 throw takeFromExternrefTable0(ret[2]);
             }
-            deferred4_0 = ptr3;
-            deferred4_1 = len3;
-            return getStringFromWasm0(ptr3, len3);
+            deferred5_0 = ptr4;
+            deferred5_1 = len4;
+            return getStringFromWasm0(ptr4, len4);
         } finally {
-            wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+            wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
         }
     }
     /**
@@ -97,28 +100,31 @@ export class WasmRouter {
      * @param {string} waypoints_str
      * @param {string} profile_name
      * @param {number} alternative_idx
+     * @param {string | null} [nogos_str]
      * @returns {string}
      */
-    find_route_gpx(waypoints_str, profile_name, alternative_idx) {
-        let deferred4_0;
-        let deferred4_1;
+    find_route_gpx(waypoints_str, profile_name, alternative_idx, nogos_str) {
+        let deferred5_0;
+        let deferred5_1;
         try {
             const ptr0 = passStringToWasm0(waypoints_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             const len0 = WASM_VECTOR_LEN;
             const ptr1 = passStringToWasm0(profile_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             const len1 = WASM_VECTOR_LEN;
-            const ret = wasm.wasmrouter_find_route_gpx(this.__wbg_ptr, ptr0, len0, ptr1, len1, alternative_idx);
-            var ptr3 = ret[0];
-            var len3 = ret[1];
+            var ptr2 = isLikeNone(nogos_str) ? 0 : passStringToWasm0(nogos_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            var len2 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmrouter_find_route_gpx(this.__wbg_ptr, ptr0, len0, ptr1, len1, alternative_idx, ptr2, len2);
+            var ptr4 = ret[0];
+            var len4 = ret[1];
             if (ret[3]) {
-                ptr3 = 0; len3 = 0;
+                ptr4 = 0; len4 = 0;
                 throw takeFromExternrefTable0(ret[2]);
             }
-            deferred4_0 = ptr3;
-            deferred4_1 = len3;
-            return getStringFromWasm0(ptr3, len3);
+            deferred5_0 = ptr4;
+            deferred5_1 = len4;
+            return getStringFromWasm0(ptr4, len4);
         } finally {
-            wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+            wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
         }
     }
     /**
@@ -274,6 +280,10 @@ function getUint8ArrayMemory0() {
         cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
     }
     return cachedUint8ArrayMemory0;
+}
+
+function isLikeNone(x) {
+    return x === undefined || x === null;
 }
 
 function passArray8ToWasm0(arg, malloc) {

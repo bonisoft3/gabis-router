@@ -9,7 +9,9 @@ use rsrouter_core::dsl::lookups::LookupData;
 use rsrouter_core::dsl::parser::Profile;
 use rsrouter_core::graph::routing_graph::RoutingGraph;
 use rsrouter_core::rd5::tile_manager::TileManager;
+use rsrouter_core::graph::spatial::{distance, lat_to_ilat, lon_to_ilon, Point2D};
 use rsrouter_core::routing::cost::KinematicConfig;
+use rsrouter_core::routing::nogo::NogoArea;
 use rsrouter_core::routing::path::{ElevationConfig, PathState, SectionInput, StdPathCalculator};
 use rsrouter_core::routing::search::AStarRouter;
 
@@ -747,3 +749,78 @@ assign elevationbufferreduce = 0.0001
     assert_eq!(e_cfg.max_buffer, 8_000_000);
     assert_eq!(e_cfg.buffer_reduce, 1);
 }
+
+#[test]
+fn test_route_with_nogo_zone() {
+    let segment_path = repo_path("data/segments4/W5_N50.rd5");
+    if !segment_path.exists() {
+        println!("Skipping test_route_with_nogo_zone: {:?} does not exist", segment_path);
+        return;
+    }
+
+    let lookups =
+        LookupData::load_from_file(&repo_path("profiles/lookups.dat")).expect("Failed to load lookups.dat");
+    let profile = Profile::load_from_file(&repo_path("profiles/fastbike.brf"), &lookups)
+        .expect("Failed to load fastbike profile");
+
+    let mut tile_mgr = TileManager::new(repo_path("data/segments4"));
+    let microcaches = tile_mgr
+        .decode_all_in_square(179, 141, None)
+        .expect("Failed to decode square (179, 141)");
+
+    let mut graph = RoutingGraph::with_capacities(100_000, 250_000);
+    for cache in microcaches {
+        graph.add_micro_cache(cache);
+    }
+    graph.resolve_edge_target_elevations();
+
+    let start = (-0.143613, 51.462414);
+    let target = (-0.055296, 51.544998);
+    let router = AStarRouter::new();
+
+    // 1. Baseline route
+    let base_route = router
+        .find_route(&graph, &lookups, &profile, start, target)
+        .expect("Baseline route failed");
+
+    // 2. Place a 30m hard nogo directly on a midpoint along the baseline route
+    let mid_idx = base_route.points.len() / 2;
+    let mid_pt = &base_route.points[mid_idx];
+    let nogo_center = Point2D::new(lon_to_ilon(mid_pt.lon), lat_to_ilat(mid_pt.lat));
+    let nogo = NogoArea::new(mid_pt.lon, mid_pt.lat, 30.0);
+
+    // 3. Compute detour route with nogo
+    let detour_route = router
+        .find_route_with_alternative_and_nogos(
+            &graph,
+            &lookups,
+            &profile,
+            start,
+            target,
+            0,
+            &[nogo],
+        )
+        .expect("Detour route failed");
+
+    // 4. Verify detour route avoids the nogo circle
+    for pt in &detour_route.points {
+        let pt_2d = Point2D::new(lon_to_ilon(pt.lon), lat_to_ilat(pt.lat));
+        let dist_to_center = distance(pt_2d, nogo_center);
+        assert!(
+            dist_to_center >= 29.0, // slight tolerance for discretisation
+            "Detour route came too close to nogo center: {:.1}m < 30m",
+            dist_to_center
+        );
+    }
+
+    // 5. Verify the detour route changed
+    assert_ne!(base_route.total_cost, detour_route.total_cost);
+    println!(
+        "Nogo test passed: baseline cost {}, detour cost {}, baseline pts {}, detour pts {}",
+        base_route.total_cost,
+        detour_route.total_cost,
+        base_route.points.len(),
+        detour_route.points.len()
+    );
+}
+

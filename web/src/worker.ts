@@ -280,7 +280,7 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
       if (msg.id !== latestRouteId) return;
       try {
         const r = await ensureRouter();
-        const { waypoints, profile, alternativeIdx } = msg.payload;
+        const { waypoints, profile, alternativeIdx, nogos } = msg.payload;
         if (!isOfflineMode && navigator.onLine) {
           try {
             const profileText = await fetchText(`/profiles/${profile}.brf`);
@@ -290,6 +290,15 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
           }
         }
         const waypointsStr = waypoints.map((w) => `${w.lon},${w.lat}`).join('|');
+        const nogosStr =
+          nogos && nogos.length > 0
+            ? nogos
+                .map(
+                  (n) =>
+                    `${n.lon},${n.lat},${n.radius}${n.weight !== undefined ? ',' + n.weight : ''}`,
+                )
+                .join('|')
+            : undefined;
         const required = new Set(waypoints.map((w) => segmentName(w.lon, w.lat)));
         const bbox = waypointBox(waypoints);
 
@@ -299,7 +308,7 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
           await ensureBoxLoaded(r, padBox(bbox, marginKm), required);
           status(`Calculating route (${waypoints.length} points, ${profile}, ${Math.round(marginKm)} km margin)...`);
           try {
-            geojsonStr = r.find_route(waypointsStr, profile, alternativeIdx ?? 0);
+            geojsonStr = r.find_route(waypointsStr, profile, alternativeIdx ?? 0, nogosStr);
             break;
           } catch (err) {
             // A waypoint far from any road is not fixed by loading a wider area.

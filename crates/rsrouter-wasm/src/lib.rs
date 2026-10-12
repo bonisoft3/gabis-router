@@ -142,6 +142,7 @@ impl WasmRouter {
         waypoints_str: &str,
         profile_name: &str,
         alternative_idx: usize,
+        nogos_str: Option<String>,
     ) -> Result<String, JsValue> {
         let Some(lookups) = &self.lookups else {
             return Err(JsValue::from_str("Lookups not loaded"));
@@ -171,12 +172,15 @@ impl WasmRouter {
             return Err(JsValue::from_str("Routing graph is empty. Please load tile data first."));
         }
 
-        let route = self.router.find_multi_route_with_alternative(
+        let nogos = nogos_str.as_deref().map(rsrouter_core::routing::parse_nogos).unwrap_or_default();
+
+        let route = self.router.find_multi_route_with_alternative_and_nogos(
             &self.graph,
             lookups,
             profile,
             &waypoints,
             alternative_idx,
+            &nogos,
         ).map_err(|e| JsValue::from_str(&format!("Routing failed: {e}")))?;
 
         Ok(route.to_geojson(profile_name))
@@ -188,6 +192,7 @@ impl WasmRouter {
         waypoints_str: &str,
         profile_name: &str,
         alternative_idx: usize,
+        nogos_str: Option<String>,
     ) -> Result<String, JsValue> {
         let Some(lookups) = &self.lookups else {
             return Err(JsValue::from_str("Lookups not loaded"));
@@ -217,12 +222,15 @@ impl WasmRouter {
             return Err(JsValue::from_str("Routing graph is empty. Please load tile data first."));
         }
 
-        let route = self.router.find_multi_route_with_alternative(
+        let nogos = nogos_str.as_deref().map(rsrouter_core::routing::parse_nogos).unwrap_or_default();
+
+        let route = self.router.find_multi_route_with_alternative_and_nogos(
             &self.graph,
             lookups,
             profile,
             &waypoints,
             alternative_idx,
+            &nogos,
         ).map_err(|e| JsValue::from_str(&format!("Routing failed: {e}")))?;
 
         Ok(route.to_gpx(profile_name))

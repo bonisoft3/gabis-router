@@ -134,6 +134,23 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    host: '0.0.0.0',
+    port: 3000,
+    https: hasHttpsCerts
+      ? {
+          key: fs.readFileSync(keyPath),
+          cert: fs.readFileSync(certPath),
+        }
+      : undefined,
+    proxy: {
+      '/remote-segments': {
+        target: 'https://brouter.de/brouter/segments4',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/remote-segments/, ''),
+      },
+    },
+  },
   plugins: [
     {
       // Fill the service worker precache list with the built files so the app opens offline.

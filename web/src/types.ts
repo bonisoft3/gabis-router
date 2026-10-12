@@ -3,12 +3,21 @@ export type ProfileName = 'fastbike' | 'fastbike-lowtraffic' | 'fastbike-verylow
 export interface LatLon {
   lat: number;
   lon: number;
+  name?: string;
+}
+
+export interface AvoidArea {
+  lat: number;
+  lon: number;
+  radius: number;
+  weight?: number;
 }
 
 export interface RouteRequest {
   waypoints: LatLon[];
   profile: ProfileName;
   alternativeIdx?: number;
+  nogos?: AvoidArea[];
 }
 
 export interface RouteResponse {

@@ -227,3 +227,45 @@ async fn test_brouter_endpoint_gpx_format() {
     assert!(gpx.contains("<trkpt lat="));
     assert!(gpx.contains("<ele>"));
 }
+
+#[tokio::test]
+async fn test_brouter_endpoint_with_nogos() {
+    let Some(app) = get_test_app() else {
+        return;
+    };
+
+    // 1. Baseline route
+    let uri_base = "/brouter?lonlats=-0.143613,51.462414|-0.055296,51.544998&profile=fastbike&format=geojson";
+    let resp_base = app
+        .clone()
+        .oneshot(Request::builder().uri(uri_base).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(resp_base.status(), StatusCode::OK);
+    let body_base = resp_base.into_body().collect().await.unwrap().to_bytes();
+    let json_base: serde_json::Value = serde_json::from_slice(&body_base).unwrap();
+    let base_cost = json_base["features"][0]["properties"]["cost"].as_str().unwrap().to_string();
+    let coords = json_base["features"][0]["geometry"]["coordinates"].as_array().unwrap();
+
+    let mid = &coords[coords.len() / 2];
+    let mid_lon = mid[0].as_f64().unwrap();
+    let mid_lat = mid[1].as_f64().unwrap();
+
+    // 2. Route with 30m hard nogo directly on the midpoint
+    let uri_nogo = format!(
+        "/brouter?lonlats=-0.143613,51.462414|-0.055296,51.544998&profile=fastbike&format=geojson&nogos={:.6},{:.6},30",
+        mid_lon, mid_lat
+    );
+    let resp_nogo = app
+        .oneshot(Request::builder().uri(&uri_nogo).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(resp_nogo.status(), StatusCode::OK);
+    let body_nogo = resp_nogo.into_body().collect().await.unwrap().to_bytes();
+    let json_nogo: serde_json::Value = serde_json::from_slice(&body_nogo).unwrap();
+    let nogo_cost = json_nogo["features"][0]["properties"]["cost"].as_str().unwrap().to_string();
+
+    assert_ne!(base_cost, nogo_cost);
+}

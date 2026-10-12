@@ -9,12 +9,14 @@
 pub use crate::types::{Cost, Distance, Joules, Seconds};
 
 pub mod cost;
+pub mod nogo;
 pub mod path;
 pub mod search;
 pub mod slicing;
 pub mod state;
 
 pub use cost::*;
+pub use nogo::*;
 pub use path::*;
 pub use search::*;
 pub use slicing::*;

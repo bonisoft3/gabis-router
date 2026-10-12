@@ -2,8 +2,10 @@ import maplibregl from 'maplibre-gl';
 import { formatDistance, formatDuration, formatElevation, onUnitsChange } from './format.ts';
 import { hideMenu, menuClosedWithin, showMenu } from './menu.ts';
 import { hideRouteInfo, initRouteInfo, showRouteInfo, type SegmentHighlight } from './route-info.ts';
-import type { LatLon, ProfileName, WorkerMessage } from './types.ts';
+import type { AvoidArea, LatLon, ProfileName, WorkerMessage } from './types.ts';
 import { notifyRouterRouteChanged } from './compare.ts';
+import { tilePickerControl } from './tile-picker.ts';
+import { cachePlaceName, isOnlineMode, reverseGeocode, searchPlaces } from './geocoding.ts';
 
 
 interface Deps {
@@ -22,6 +24,9 @@ const btnExportGpx = document.getElementById('btn-export-gpx') as HTMLButtonElem
 const btnShare = document.getElementById('btn-share') as HTMLButtonElement;
 const btnMyLocation = document.getElementById('btn-my-location') as HTMLButtonElement;
 const waypointListEl = document.getElementById('waypoint-list') as HTMLDivElement;
+const inputPlaceSearch = document.getElementById('input-place-search') as HTMLInputElement | null;
+const btnClearSearch = document.getElementById('btn-clear-search') as HTMLButtonElement | null;
+const searchResultsList = document.getElementById('search-results-list') as HTMLDivElement | null;
 
 const STORAGE_KEY = 'rsrouter_route';
 const MAX_UNDO = 50;
@@ -45,6 +50,7 @@ let shownAlternative = 0;
 let hoverMarker: maplibregl.Marker | null = null;
 let currentRouteGeoJson: GeoJSON.FeatureCollection | null = null;
 let currentRouteProfile = '';
+let avoidAreas: AvoidArea[] = [];
 
 // ---------------------------------------------------------------------------
 // Waypoints
@@ -76,8 +82,8 @@ export function setWaypoints(next: LatLon[], recordUndo = true) {
     clearRouteLine();
     statusEl.textContent =
       waypoints.length === 1
-        ? 'Start point set. Double-click or click to add the next point.'
-        : 'Double-click or click on the map to set start and end points.';
+        ? 'Start point set. Click on the map to add the next point.'
+        : 'Click on the map to set start and end points.';
   }
 }
 
@@ -94,12 +100,6 @@ function undo() {
 /** Makes `p` the start. With no points, it is the first point. */
 function setStart(p: LatLon) {
   setWaypoints(waypoints.length === 0 ? [p] : [p, ...waypoints.slice(1)]);
-}
-
-/** Adds `p` just before the end. With fewer than two points it is appended. */
-function addVia(p: LatLon) {
-  if (waypoints.length < 2) return setWaypoints([...waypoints, p]);
-  setWaypoints([...waypoints.slice(0, -1), p, waypoints[waypoints.length - 1]]);
 }
 
 /** Makes `p` the end. With one point it is appended, with none it is the first point. */
@@ -144,16 +144,78 @@ function openStreetView(p: LatLon) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+function distToSegmentSq(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const cosLat = Math.cos(((ay + by) / 2) * (Math.PI / 180));
+  const dx = (bx - ax) * cosLat;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) {
+    const ex = (px - ax) * cosLat;
+    const ey = py - ay;
+    return ex * ex + ey * ey;
+  }
+  const t = Math.max(0, Math.min(1, (((px - ax) * cosLat) * dx + (py - ay) * dy) / lenSq));
+  const projX = ax + t * (bx - ax);
+  const projY = ay + t * (by - ay);
+  const rx = (px - projX) * cosLat;
+  const ry = py - projY;
+  return rx * rx + ry * ry;
+}
+
+function closestLeg(lon: number, lat: number): number {
+  let bestLeg = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const d = distToSegmentSq(
+      lon,
+      lat,
+      waypoints[i].lon,
+      waypoints[i].lat,
+      waypoints[i + 1].lon,
+      waypoints[i + 1].lat,
+    );
+    if (d < bestDist) {
+      bestDist = d;
+      bestLeg = i;
+    }
+  }
+  return bestLeg;
+}
+
+/** Adds `p` along the closest leg of the current route, or appends if fewer than 2 waypoints. */
+function addPointAlongRoute(p: LatLon) {
+  if (waypoints.length < 2) {
+    setWaypoints([...waypoints, p]);
+    return;
+  }
+  let leg = legIndexAt(p.lon, p.lat);
+  if (leg < 0) {
+    leg = closestLeg(p.lon, p.lat);
+  }
+  const next = [...waypoints];
+  next.splice(leg + 1, 0, p);
+  setWaypoints(next);
+}
+
+const DEFAULT_AVOID_RADIUS_M = 30;
 let lastOpenedMarkerIndex: number | null = null;
 
 function showMapMenu(p: LatLon, x: number, y: number) {
   lastOpenedMarkerIndex = null;
   showMenu(
     [
-      { label: 'Add point', onSelect: () => setWaypoints([...waypoints, p]) },
+      { label: 'Add point', onSelect: () => addPointAlongRoute(p) },
       { label: 'Start here', onSelect: () => setStart(p) },
-      { label: 'Via here', onSelect: () => addVia(p) },
+      { label: 'Via here', onSelect: () => addPointAlongRoute(p) },
       { label: 'End here', onSelect: () => setEnd(p) },
+      { label: 'Avoid here', onSelect: () => addAvoidArea(p, DEFAULT_AVOID_RADIUS_M) },
       { label: 'See on Google Street View', onSelect: () => openStreetView(p) },
       { label: 'Copy coordinates', onSelect: () => copyCoordinates(p) },
     ],
@@ -169,6 +231,18 @@ function showMarkerMenu(index: number, x: number, y: number) {
   showMenu(
     [
       {
+        label: 'Rename point',
+        onSelect: () => {
+          const current = p.name || '';
+          const nextName = window.prompt('Rename point:', current);
+          if (nextName !== null) {
+            p.name = nextName.trim() || undefined;
+            renderWaypoints();
+            saveRoute();
+          }
+        },
+      },
+      {
         label: 'Remove point',
         onSelect: () => {
           const currentIndex = waypoints.indexOf(p);
@@ -181,6 +255,176 @@ function showMarkerMenu(index: number, x: number, y: number) {
     x,
     y,
   );
+}
+
+function showAvoidAreaMenu(index: number, x: number, y: number) {
+  const area = avoidAreas[index];
+  if (!area) return;
+  lastOpenedMarkerIndex = null;
+  showMenu(
+    [
+      {
+        label: 'Remove avoid area',
+        onSelect: () => removeAvoidArea(index),
+      },
+      { label: 'See on Google Street View', onSelect: () => openStreetView(area) },
+      { label: 'Copy coordinates', onSelect: () => copyCoordinates(area) },
+    ],
+    x,
+    y,
+  );
+}
+
+function distanceMeters(a: LatLon, b: LatLon): number {
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+  const sinDLat2 = Math.sin(dLat / 2);
+  const sinDLon2 = Math.sin(dLon / 2);
+  const h = sinDLat2 * sinDLat2 + Math.cos(lat1) * Math.cos(lat2) * sinDLon2 * sinDLon2;
+  return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function findAvoidAreaAtPoint(p: LatLon, screenPoint?: { x: number; y: number }): number {
+  if (screenPoint && deps?.map) {
+    for (let i = avoidAreas.length - 1; i >= 0; i--) {
+      const area = avoidAreas[i];
+      const pt = deps.map.project([area.lon, area.lat]);
+      const dx = pt.x - screenPoint.x;
+      const dy = pt.y - screenPoint.y;
+      if (Math.hypot(dx, dy) <= 12) {
+        return i;
+      }
+    }
+  }
+  for (let i = avoidAreas.length - 1; i >= 0; i--) {
+    const area = avoidAreas[i];
+    const dist = distanceMeters(p, area);
+    if (dist <= Math.max(area.radius, 15)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+export function addAvoidArea(p: LatLon, radius = DEFAULT_AVOID_RADIUS_M) {
+  avoidAreas.push({ lat: p.lat, lon: p.lon, radius });
+  drawAvoidAreasLayer();
+  saveRoute();
+  if (waypoints.length >= 2) {
+    requestRoute();
+  }
+}
+
+export function removeAvoidArea(index: number) {
+  if (index >= 0 && index < avoidAreas.length) {
+    avoidAreas.splice(index, 1);
+    drawAvoidAreasLayer();
+    saveRoute();
+    if (waypoints.length >= 2) {
+      requestRoute();
+    }
+  }
+}
+
+export function getAvoidAreas(): readonly AvoidArea[] {
+  return avoidAreas;
+}
+
+function createCirclePolygon(center: LatLon, radiusMeters: number, points = 32): number[][] {
+  const coords: number[][] = [];
+  const latRad = (center.lat * Math.PI) / 180;
+  const dLat = (radiusMeters / 6371000) * (180 / Math.PI);
+  const dLon = (radiusMeters / (6371000 * Math.cos(latRad))) * (180 / Math.PI);
+  for (let i = 0; i <= points; i++) {
+    const theta = (i / points) * 2 * Math.PI;
+    coords.push([
+      center.lon + dLon * Math.sin(theta),
+      center.lat + dLat * Math.cos(theta),
+    ]);
+  }
+  return coords;
+}
+
+function avoidAreasGeoJson(): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: avoidAreas.map((area, index) => ({
+      type: 'Feature',
+      properties: { index, radius: area.radius },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [createCirclePolygon(area, area.radius)],
+      },
+    })),
+  };
+}
+
+function avoidAreasCenterGeoJson(): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: avoidAreas.map((area, index) => ({
+      type: 'Feature',
+      properties: { index },
+      geometry: {
+        type: 'Point',
+        coordinates: [area.lon, area.lat],
+      },
+    })),
+  };
+}
+
+export function drawAvoidAreasLayer() {
+  if (!deps?.isStyleReady?.()) return;
+  const map = deps.map;
+
+  const polyData = avoidAreasGeoJson();
+  const centerData = avoidAreasCenterGeoJson();
+
+  const polySource = map.getSource('nogo-areas') as maplibregl.GeoJSONSource | undefined;
+  if (polySource) {
+    polySource.setData(polyData);
+  } else {
+    map.addSource('nogo-areas', { type: 'geojson', data: polyData });
+    map.addLayer({
+      id: 'nogo-areas-fill',
+      type: 'fill',
+      source: 'nogo-areas',
+      paint: {
+        'fill-color': '#ef4444',
+        'fill-opacity': 0.35,
+      },
+    });
+    map.addLayer({
+      id: 'nogo-areas-stroke',
+      type: 'line',
+      source: 'nogo-areas',
+      paint: {
+        'line-color': '#dc2626',
+        'line-width': 2,
+        'line-dasharray': [2, 2],
+      },
+    });
+  }
+
+  const centerSource = map.getSource('nogo-areas-center') as maplibregl.GeoJSONSource | undefined;
+  if (centerSource) {
+    centerSource.setData(centerData);
+  } else {
+    map.addSource('nogo-areas-center', { type: 'geojson', data: centerData });
+    map.addLayer({
+      id: 'nogo-areas-center',
+      type: 'circle',
+      source: 'nogo-areas-center',
+      paint: {
+        'circle-radius': 5,
+        'circle-color': '#dc2626',
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+      },
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +468,12 @@ function createMarker(index: number): maplibregl.Marker {
   const el = document.createElement('div');
   el.className = `wp-marker ${waypointKind(index, n)}`;
   el.textContent = waypointLabel(index, n);
+  const p = waypoints[index];
+  if (p) {
+    el.title = p.name
+      ? `${waypointLabel(index, n)}: ${p.name}`
+      : `${waypointLabel(index, n)}: ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`;
+  }
 
   let wasDragged = false;
 
@@ -382,14 +632,65 @@ function setupHandleTouchDrag(handle: HTMLElement, index: number) {
   });
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function resolveWaypointNames() {
+  if (!isOnlineMode()) return;
+  const n = waypoints.length;
+  waypoints.forEach((w, i) => {
+    if (w.name) return;
+    const keyLat = w.lat;
+    const keyLon = w.lon;
+    reverseGeocode(keyLat, keyLon).then((name) => {
+      if (!name) return;
+      const current = waypoints[i];
+      if (current && Math.abs(current.lat - keyLat) < 0.00001 && Math.abs(current.lon - keyLon) < 0.00001) {
+        current.name = name;
+        const row = waypointListEl.querySelector<HTMLElement>(`.wp-row[data-index="${i}"]`);
+        if (row) {
+          const nameEl = row.querySelector<HTMLElement>('.wp-name');
+          const infoEl = row.querySelector<HTMLElement>('.wp-info');
+          const coordStr = `${current.lat.toFixed(5)}, ${current.lon.toFixed(5)}`;
+          if (nameEl) {
+            nameEl.textContent = name;
+            nameEl.title = `${name} (${coordStr}) - Click to rename`;
+          }
+          if (infoEl && !row.querySelector('.wp-coords')) {
+            const coordsSpan = document.createElement('span');
+            coordsSpan.className = 'wp-coords';
+            coordsSpan.textContent = coordStr;
+            infoEl.appendChild(coordsSpan);
+          }
+        }
+        if (markers[i]) {
+          markers[i].getElement().title = `${waypointLabel(i, n)}: ${name}`;
+        }
+        saveRoute();
+      }
+    });
+  });
+}
+
 function renderWaypoints() {
   markers.forEach((m) => m.remove());
   markers = waypoints.map((_, i) => createMarker(i));
 
   const n = waypoints.length;
   waypointListEl.innerHTML = waypoints
-    .map(
-      (w, i) => `
+    .map((w, i) => {
+      const coordStr = `${w.lat.toFixed(5)}, ${w.lon.toFixed(5)}`;
+      const displayName = w.name ? escapeHtml(w.name) : coordStr;
+      const titleAttr = w.name
+        ? `${escapeHtml(w.name)} (${coordStr}) - Click to rename`
+        : `${coordStr} - Click to rename`;
+      return `
       <div class="wp-row" data-index="${i}" draggable="true">
         <span class="wp-drag-handle" title="Drag to reorder" aria-label="Drag to reorder">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -402,12 +703,15 @@ function renderWaypoints() {
           </svg>
         </span>
         <span class="wp-badge ${waypointKind(i, n)}">${waypointLabel(i, n)}</span>
-        <span class="wp-coords">${w.lat.toFixed(5)}, ${w.lon.toFixed(5)}</span>
+        <div class="wp-info">
+          <span class="wp-name" title="${titleAttr}">${displayName}</span>
+          ${w.name ? `<span class="wp-coords">${coordStr}</span>` : ''}
+        </div>
         <button class="wp-btn" data-action="up" aria-label="Move point up" ${i === 0 ? 'disabled' : ''}>&#8593;</button>
         <button class="wp-btn" data-action="down" aria-label="Move point down" ${i === n - 1 ? 'disabled' : ''}>&#8595;</button>
         <button class="wp-btn" data-action="remove" aria-label="Remove point">&#10005;</button>
-      </div>`,
-    )
+      </div>`;
+    })
     .join('');
   waypointListEl.style.display = n ? 'block' : 'none';
   btnUndo.disabled = undoStack.length === 0;
@@ -418,7 +722,24 @@ function renderWaypoints() {
     setupRowDrag(row, idx);
     const handle = row.querySelector<HTMLElement>('.wp-drag-handle');
     if (handle) setupHandleTouchDrag(handle, idx);
+    const nameEl = row.querySelector<HTMLElement>('.wp-name');
+    if (nameEl) {
+      nameEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const current = waypoints[idx]?.name || '';
+        const nextName = window.prompt('Rename point:', current);
+        if (nextName !== null) {
+          if (waypoints[idx]) {
+            waypoints[idx].name = nextName.trim() || undefined;
+            renderWaypoints();
+            saveRoute();
+          }
+        }
+      });
+    }
   });
+
+  resolveWaypointNames();
 }
 
 waypointListEl.addEventListener('click', (e) => {
@@ -448,19 +769,36 @@ waypointListEl.addEventListener('click', (e) => {
 // The route lives in the URL hash, so copying the address is the share link.
 // Format: #r=lat,lon;lat,lon&p=profile
 function encodeHash(): string {
-  if (waypoints.length === 0) return '';
-  const r = waypoints.map((w) => `${w.lat.toFixed(5)},${w.lon.toFixed(5)}`).join(';');
-  return `#r=${r}&p=${encodeURIComponent(profileSelect.value)}`;
+  if (waypoints.length === 0 && avoidAreas.length === 0) return '';
+  const parts: string[] = [];
+  if (waypoints.length > 0) {
+    const r = waypoints.map((w) => `${w.lat.toFixed(5)},${w.lon.toFixed(5)}`).join(';');
+    parts.push(`r=${r}`);
+  }
+  parts.push(`p=${encodeURIComponent(profileSelect.value)}`);
+  if (avoidAreas.length > 0) {
+    const nogos = avoidAreas
+      .map(
+        (a) =>
+          `${a.lon.toFixed(5)},${a.lat.toFixed(5)},${Math.round(a.radius)}${
+            a.weight !== undefined ? ',' + a.weight : ''
+          }`,
+      )
+      .join(';');
+    parts.push(`nogos=${encodeURIComponent(nogos)}`);
+  }
+  return '#' + parts.join('&');
 }
 
 function saveRoute() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ waypoints, profile: profileSelect.value }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ waypoints, profile: profileSelect.value, avoidAreas }));
   history.replaceState(null, '', location.pathname + location.search + encodeHash());
 }
 
 interface SavedRoute {
   waypoints: LatLon[];
   profile?: string;
+  avoidAreas?: AvoidArea[];
 }
 
 function validPoint(lat: number, lon: number): boolean {
@@ -470,18 +808,39 @@ function validPoint(lat: number, lon: number): boolean {
 /** Reads a route from the URL hash. Returns null if there is none or it is invalid. */
 function parseHash(): SavedRoute | null {
   const raw = /(?:^#|&)r=([^&]*)/.exec(location.hash)?.[1];
-  if (!raw) return null;
+  const rawNogos = /(?:^#|&)nogos=([^&]*)/.exec(location.hash)?.[1];
+  if (!raw && !rawNogos) return null;
   const points: LatLon[] = [];
-  for (const pair of raw.split(';')) {
-    const [lat, lon] = pair.split(',').map(Number);
-    if (!validPoint(lat, lon)) {
-      statusEl.textContent = 'Ignored the route in the link: it has an invalid point.';
-      return null;
+  if (raw) {
+    for (const pair of raw.split(';')) {
+      const [lat, lon] = pair.split(',').map(Number);
+      if (!validPoint(lat, lon)) {
+        statusEl.textContent = 'Ignored the route in the link: it has an invalid point.';
+        return null;
+      }
+      points.push({ lat, lon });
     }
-    points.push({ lat, lon });
+  }
+  const parsedAvoidAreas: AvoidArea[] = [];
+  if (rawNogos) {
+    for (const item of decodeURIComponent(rawNogos).split(';')) {
+      const parts = item.split(',').map(Number);
+      if (parts.length >= 3 && validPoint(parts[1], parts[0])) {
+        parsedAvoidAreas.push({
+          lon: parts[0],
+          lat: parts[1],
+          radius: parts[2],
+          weight: parts[3],
+        });
+      }
+    }
   }
   const profile = /(?:^#|&)p=([^&]*)/.exec(location.hash)?.[1];
-  return { waypoints: points, profile: profile ? decodeURIComponent(profile) : undefined };
+  return {
+    waypoints: points,
+    profile: profile ? decodeURIComponent(profile) : undefined,
+    avoidAreas: parsedAvoidAreas,
+  };
 }
 
 function loadSavedRoute(): SavedRoute | null {
@@ -514,7 +873,12 @@ function requestRoute() {
   deps.worker.postMessage({
     type: 'ROUTE_REQUEST',
     id: activeRouteId,
-    payload: { waypoints, profile, alternativeIdx: requestedAlternative },
+    payload: {
+      waypoints,
+      profile,
+      alternativeIdx: requestedAlternative,
+      nogos: avoidAreas.length > 0 ? avoidAreas : undefined,
+    },
   } satisfies WorkerMessage);
 }
 
@@ -609,6 +973,7 @@ export function updateSegmentHighlight(highlight: SegmentHighlight | null) {
 export function drawRouteLayer() {
   if (!deps.isStyleReady()) return;
   const map = deps.map;
+  drawAvoidAreasLayer();
   const data: GeoJSON.FeatureCollection = currentRouteGeoJson || { type: 'FeatureCollection', features: [] };
   const source = map.getSource('route') as maplibregl.GeoJSONSource | undefined;
   if (source) {
@@ -623,11 +988,22 @@ export function drawRouteLayer() {
       paint: { 'line-color': '#000000', 'line-width': ROUTE_HIT_PX * 2, 'line-opacity': 0 },
     });
     map.addLayer({
+      id: 'route-casing',
+      type: 'line',
+      source: 'route',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#38bdf8',
+        'line-width': 10,
+        'line-opacity': 0.6,
+      },
+    });
+    map.addLayer({
       id: 'route-line',
       type: 'line',
       source: 'route',
       layout: { 'line-join': 'round', 'line-cap': 'round' },
-      paint: { 'line-color': '#2563eb', 'line-width': 5, 'line-opacity': 0.85 },
+      paint: { 'line-color': '#2563eb', 'line-width': 5, 'line-opacity': 0.95 },
     });
   }
 
@@ -727,16 +1103,17 @@ function legIndexAt(lon: number, lat: number): number {
   return leg;
 }
 
-function hitsRoute(point: maplibregl.Point): boolean {
-  if (!deps.map.getLayer('route-hit')) return false;
-  const box: [maplibregl.PointLike, maplibregl.PointLike] = [
-    [point.x - ROUTE_HIT_PX, point.y - ROUTE_HIT_PX],
-    [point.x + ROUTE_HIT_PX, point.y + ROUTE_HIT_PX],
-  ];
-  return deps.map.queryRenderedFeatures(box, { layers: ['route-hit'] }).length > 0;
+let suppressClickUntil = 0;
+const DRAG_THRESHOLD_PX = 5;
+
+interface InsertDragState {
+  leg: number;
+  startPoint: { x: number; y: number };
+  ghost: maplibregl.Marker | null;
+  hasDragged: boolean;
 }
 
-let insertDrag: { leg: number; ghost: maplibregl.Marker } | null = null;
+let insertDrag: InsertDragState | null = null;
 
 function beginInsert(e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) {
   if ('points' in e && e.points.length > 1) return; // Pinch zoom
@@ -747,21 +1124,43 @@ function beginInsert(e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) {
   if (leg < 0) return;
   // Stops the map from panning while the point is dragged.
   e.preventDefault();
-  const el = document.createElement('div');
-  el.className = 'wp-marker ghost';
-  insertDrag = { leg, ghost: new maplibregl.Marker({ element: el }).setLngLat(e.lngLat).addTo(deps.map) };
+  const pt = e.point;
+  insertDrag = {
+    leg,
+    startPoint: { x: pt.x, y: pt.y },
+    ghost: null,
+    hasDragged: false,
+  };
 }
 
 function moveInsert(e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) {
-  insertDrag?.ghost.setLngLat(e.lngLat);
+  if (!insertDrag) return;
+  const pt = e.point;
+  if (!insertDrag.hasDragged) {
+    const dx = pt.x - insertDrag.startPoint.x;
+    const dy = pt.y - insertDrag.startPoint.y;
+    if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+    insertDrag.hasDragged = true;
+    deps.map.getCanvas().style.cursor = 'grabbing';
+    const el = document.createElement('div');
+    el.className = 'wp-marker ghost';
+    insertDrag.ghost = new maplibregl.Marker({ element: el })
+      .setLngLat(e.lngLat)
+      .addTo(deps.map);
+    return;
+  }
+  insertDrag.ghost?.setLngLat(e.lngLat);
 }
 
 function finishInsert() {
   if (!insertDrag) return;
-  const { leg, ghost } = insertDrag;
+  const { leg, ghost, hasDragged } = insertDrag;
   insertDrag = null;
+  deps.map.getCanvas().style.cursor = '';
+  if (ghost) ghost.remove();
+  if (!hasDragged || !ghost) return;
+  suppressClickUntil = performance.now() + 400;
   const { lat, lng } = ghost.getLngLat();
-  ghost.remove();
   const next = [...waypoints];
   next.splice(leg + 1, 0, { lat, lon: lng });
   setWaypoints(next);
@@ -839,10 +1238,160 @@ function downloadGpxFile(content: string, filename: string) {
 
 btnExportGpx.addEventListener('click', () => {
   if (!currentRouteGeoJson) return;
-  const trackName = `${currentRouteProfile}_route`;
-  downloadGpxFile(routeToGpx(currentRouteGeoJson, trackName), `${trackName}.gpx`);
-  statusEl.textContent = `Route exported as ${trackName}.gpx`;
+  const startName = waypoints[0]?.name;
+  const endName = waypoints[waypoints.length - 1]?.name;
+  const trackName = startName && endName ? `${startName} to ${endName}` : `${currentRouteProfile}_route`;
+  const filename = `${trackName.replace(/[/\\?%*:|"<>]/g, '_')}.gpx`;
+  downloadGpxFile(routeToGpx(currentRouteGeoJson, trackName), filename);
+  statusEl.textContent = `Route exported as ${filename}`;
 });
+
+function initPlaceSearch() {
+  if (!inputPlaceSearch || !searchResultsList || !btnClearSearch) return;
+
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const hideResults = () => {
+    searchResultsList.style.display = 'none';
+    searchResultsList.innerHTML = '';
+  };
+
+  const updateOnlineState = () => {
+    const online = isOnlineMode();
+    inputPlaceSearch.placeholder = online ? 'Search place or address...' : 'Place search unavailable offline';
+    inputPlaceSearch.disabled = !online;
+    if (!online) {
+      hideResults();
+    }
+  };
+
+  updateOnlineState();
+  window.addEventListener('online', () => {
+    updateOnlineState();
+    resolveWaypointNames();
+  });
+  window.addEventListener('offline', updateOnlineState);
+  window.addEventListener('offlinemodechange', () => {
+    updateOnlineState();
+    if (isOnlineMode()) {
+      resolveWaypointNames();
+    }
+  });
+
+  btnClearSearch.addEventListener('click', () => {
+    inputPlaceSearch.value = '';
+    btnClearSearch.style.display = 'none';
+    hideResults();
+    inputPlaceSearch.focus();
+  });
+
+  inputPlaceSearch.addEventListener('input', () => {
+    const q = inputPlaceSearch.value.trim();
+    btnClearSearch.style.display = q ? 'block' : 'none';
+    if (debounceTimer) clearTimeout(debounceTimer);
+
+    if (!q) {
+      hideResults();
+      return;
+    }
+
+    if (!isOnlineMode()) {
+      searchResultsList.innerHTML = '<div class="search-status-item">Place search requires online mode</div>';
+      searchResultsList.style.display = 'block';
+      return;
+    }
+
+    debounceTimer = setTimeout(async () => {
+      const center = deps?.map ? { lat: deps.map.getCenter().lat, lon: deps.map.getCenter().lng } : undefined;
+      const places = await searchPlaces(q, center);
+
+      if (inputPlaceSearch.value.trim() !== q) return;
+
+      if (places.length === 0) {
+        searchResultsList.innerHTML = '<div class="search-status-item">No places found</div>';
+        searchResultsList.style.display = 'block';
+        return;
+      }
+
+      searchResultsList.innerHTML = places
+        .map(
+          (p, idx) => `
+        <div class="search-item" data-idx="${idx}">
+          <div class="search-item-info">
+            <span class="search-item-title">${escapeHtml(p.title)}</span>
+            ${p.subtitle ? `<span class="search-item-subtitle">${escapeHtml(p.subtitle)}</span>` : ''}
+          </div>
+          <div class="search-item-actions">
+            <button class="search-act-btn" data-action="start" title="Set as start">Start</button>
+            <button class="search-act-btn" data-action="end" title="Set as destination">End</button>
+            <button class="search-act-btn" data-action="via" title="Add as via point">Via</button>
+          </div>
+        </div>`,
+        )
+        .join('');
+      searchResultsList.style.display = 'block';
+
+      searchResultsList.querySelectorAll<HTMLElement>('.search-item').forEach((itemEl) => {
+        const idx = Number(itemEl.dataset.idx);
+        const place = places[idx];
+        if (!place) return;
+
+        itemEl.addEventListener('click', (e) => {
+          const actBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('.search-act-btn');
+          const targetPoint: LatLon = { lat: place.lat, lon: place.lon, name: place.name };
+          cachePlaceName(place.lat, place.lon, place.name);
+
+          if (actBtn) {
+            e.stopPropagation();
+            const action = actBtn.dataset.action;
+            if (action === 'start') {
+              setStart(targetPoint);
+            } else if (action === 'end') {
+              setEnd(targetPoint);
+            } else if (action === 'via') {
+              addPointAlongRoute(targetPoint);
+            }
+          } else {
+            if (waypoints.length === 0) {
+              setStart(targetPoint);
+            } else if (waypoints.length === 1) {
+              setEnd(targetPoint);
+            } else {
+              setWaypoints([...waypoints, targetPoint]);
+            }
+          }
+
+          deps.map.flyTo({
+            center: [place.lon, place.lat],
+            zoom: Math.max(deps.map.getZoom(), 14),
+          });
+
+          inputPlaceSearch.value = '';
+          btnClearSearch.style.display = 'none';
+          hideResults();
+        });
+      });
+    }, 250);
+  });
+
+  inputPlaceSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      hideResults();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const firstItem = searchResultsList.querySelector<HTMLElement>('.search-item');
+      if (firstItem) {
+        firstItem.click();
+      }
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!inputPlaceSearch.contains(e.target as Node) && !searchResultsList.contains(e.target as Node)) {
+      hideResults();
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -850,8 +1399,11 @@ btnExportGpx.addEventListener('click', () => {
 
 export function initRoute(d: Deps) {
   deps = d;
+  (window as any).deps = d;
   const { map, worker } = d;
   worker.onmessage = handleWorkerMessage;
+
+  initPlaceSearch();
 
   initRouteInfo({
     onHover: (position) => {
@@ -881,11 +1433,7 @@ export function initRoute(d: Deps) {
     if (currentRouteGeoJson) statusEl.textContent = routeStatus(currentRouteGeoJson);
   });
 
-  // Disable double click zoom so double clicking adds a point cleanly.
-  map.doubleClickZoom.disable();
-
   // Taps that only closed a menu or ended a long press must not add a point.
-  let suppressClickUntil = 0;
   let singleClickTimer: ReturnType<typeof setTimeout> | undefined;
 
   const clearSingleClick = () => {
@@ -897,7 +1445,6 @@ export function initRoute(d: Deps) {
 
   map.on('click', (e) => {
     if (performance.now() < suppressClickUntil || menuClosedWithin(300)) return;
-    if (hitsRoute(e.point)) return; // The line handles its own clicks.
     if ((e.originalEvent as MouseEvent)?.detail > 1) {
       clearSingleClick();
       return;
@@ -906,28 +1453,37 @@ export function initRoute(d: Deps) {
     singleClickTimer = setTimeout(() => {
       singleClickTimer = undefined;
       if (performance.now() < suppressClickUntil || menuClosedWithin(300)) return;
+      const p = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+      const avoidIdx = findAvoidAreaAtPoint(p, e.point);
+      if (avoidIdx !== -1) {
+        showAvoidAreaMenu(avoidIdx, e.originalEvent.clientX, e.originalEvent.clientY);
+        return;
+      }
       showMapMenu(
-        { lat: e.lngLat.lat, lon: e.lngLat.lng },
+        p,
         e.originalEvent.clientX,
         e.originalEvent.clientY,
       );
     }, 250);
   });
 
-  map.on('dblclick', (e) => {
+  map.on('dblclick', () => {
     clearSingleClick();
-    if (performance.now() < suppressClickUntil) return;
-    if (hitsRoute(e.point)) return;
     hideMenu();
-    setWaypoints([...waypoints, { lat: e.lngLat.lat, lon: e.lngLat.lng }]);
   });
 
   // Right click on desktop.
   map.on('contextmenu', (e) => {
     clearSingleClick();
     e.originalEvent.preventDefault();
+    const p = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+    const avoidIdx = findAvoidAreaAtPoint(p, e.point);
+    if (avoidIdx !== -1) {
+      showAvoidAreaMenu(avoidIdx, e.originalEvent.clientX, e.originalEvent.clientY);
+      return;
+    }
     showMapMenu(
-      { lat: e.lngLat.lat, lon: e.lngLat.lng },
+      p,
       e.originalEvent.clientX,
       e.originalEvent.clientY,
     );
@@ -944,10 +1500,16 @@ export function initRoute(d: Deps) {
     pressTimer = setTimeout(() => {
       suppressClickUntil = performance.now() + 500;
       if (insertDrag) {
-        insertDrag.ghost.remove();
+        insertDrag.ghost?.remove();
         insertDrag = null;
       }
-      showMapMenu({ lat: e.lngLat.lat, lon: e.lngLat.lng }, touch.clientX, touch.clientY);
+      const p = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+      const avoidIdx = findAvoidAreaAtPoint(p, e.point);
+      if (avoidIdx !== -1) {
+        showAvoidAreaMenu(avoidIdx, touch.clientX, touch.clientY);
+        return;
+      }
+      showMapMenu(p, touch.clientX, touch.clientY);
     }, LONG_PRESS_MS);
   });
   map.on('touchmove', cancelPress);
@@ -968,6 +1530,7 @@ export function initRoute(d: Deps) {
     }),
     'bottom-right',
   );
+  map.addControl(tilePickerControl, 'bottom-right');
   btnMyLocation.addEventListener('click', startFromMyLocation);
   btnShare.addEventListener('click', shareRoute);
 
@@ -978,10 +1541,19 @@ export function initRoute(d: Deps) {
   map.on('mouseup', finishInsert);
   map.on('touchend', finishInsert);
   map.on('mouseenter', 'route-hit', () => (map.getCanvas().style.cursor = 'grab'));
-  map.on('mouseleave', 'route-hit', () => (map.getCanvas().style.cursor = ''));
+  map.on('mouseleave', 'route-hit', () => {
+    if (!insertDrag?.hasDragged) map.getCanvas().style.cursor = '';
+  });
+  map.on('mouseenter', 'nogo-areas-fill', () => (map.getCanvas().style.cursor = 'pointer'));
+  map.on('mouseleave', 'nogo-areas-fill', () => (map.getCanvas().style.cursor = ''));
+  map.on('mouseenter', 'nogo-areas-center', () => (map.getCanvas().style.cursor = 'pointer'));
+  map.on('mouseleave', 'nogo-areas-center', () => (map.getCanvas().style.cursor = ''));
 
   btnClearRoute.addEventListener('click', () => {
+    avoidAreas = [];
+    drawAvoidAreasLayer();
     if (waypoints.length > 0) setWaypoints([]);
+    saveRoute();
   });
   btnUndo.addEventListener('click', undo);
   document.addEventListener('keydown', (e) => {
@@ -998,17 +1570,26 @@ export function initRoute(d: Deps) {
     if (waypoints.length >= 2) requestRoute();
   });
 
+  (window as any).getAvoidAreas = getAvoidAreas;
+  (window as any).addAvoidArea = addAvoidArea;
+  (window as any).removeAvoidArea = removeAvoidArea;
+
   // A route in the link wins over the one saved from the last visit.
   // If the link has a route that is invalid, start empty rather than show an unrelated route.
-  const fromLink = /(?:^#|&)r=/.test(location.hash);
+  const fromLink = /(?:^#|&)(?:r|nogos)=/.test(location.hash);
   const initial = fromLink ? parseHash() : loadSavedRoute();
   if (initial) {
     if (initial.profile && [...profileSelect.options].some((o) => o.value === initial.profile)) {
       profileSelect.value = initial.profile;
     }
+    if (initial.avoidAreas) {
+      avoidAreas = initial.avoidAreas;
+    }
     setWaypoints(initial.waypoints, false);
+    drawAvoidAreasLayer();
     fitToWaypoints();
   } else {
     renderWaypoints();
+    drawAvoidAreasLayer();
   }
 }
