@@ -50,21 +50,20 @@ const offlineCardDesc = document.getElementById('offline-card-desc') as HTMLPara
 const progressBarContainer = document.getElementById('offline-progress-bar-container') as HTMLDivElement;
 const progressBar = document.getElementById('offline-progress-bar') as HTMLDivElement;
 const btnDownloadOffline = document.getElementById('btn-download-offline') as HTMLButtonElement;
+const btnUpdateOffline = document.getElementById('btn-update-offline') as HTMLButtonElement | null;
 const btnDeleteOffline = document.getElementById('btn-delete-offline') as HTMLButtonElement;
+const offlineDataDate = document.getElementById('offline-data-date') as HTMLSpanElement | null;
 
-// 5°×5° segments covering the UK and Ireland. Used for both routing data (.rd5) and map tiles (.pmtiles).
-const UK_SEGMENTS = [
-  'W15_N50', // Ireland, far west coast
-  'W10_N50', // Ireland, Northern Ireland, Cornwall west tip
-  'W10_N55', // Donegal, Outer Hebrides
-  'W5_N50', // England, Wales, southern Scotland
-  'W5_N55', // Scotland, Orkney
-  'W5_N60', // Shetland
-  'E0_N50', // East England
-];
-const SEGMENT_CACHE_NAME = 'rsrouter-segments-v2';
-const MAP_TILES_CACHE_NAME = 'rsrouter-map-tiles-v1';
-const MIN_RD5_BYTES = 50000;
+import {
+  SEGMENT_CACHE_NAME,
+  MAP_TILES_CACHE_NAME,
+  MIN_RD5_BYTES,
+  UK_SEGMENTS,
+  fetchAndCacheSegment,
+  getLatestCachedSegmentDate,
+  getCachedSegmentSize,
+  clearAllCachedSegments,
+} from './segment-cache.ts';
 const FONT_BASE_URL = 'https://cdn.protomaps.com/fonts/pbf/';
 const FONT_NAMES = ['Noto Sans Regular', 'Noto Sans Medium', 'Noto Sans Italic'];
 // Basic Latin plus Latin-1 and Latin Extended-A, which covers Welsh (ŵ, ŷ) and Irish names.
@@ -90,8 +89,17 @@ const UK_BOUNDS: [[number, number], [number, number]] = [
 let isOfflineMode = localStorage.getItem('rsrouter_offline_mode') === 'true';
 
 // Collapsible panel toggle
-btnToggleCollapse.addEventListener('click', () => {
+btnToggleCollapse.addEventListener('click', (e) => {
+  e.stopPropagation();
   controlsEl.classList.toggle('collapsed');
+});
+
+// Expand when clicking the collapsed header
+const headerEl = controlsEl.querySelector('.header');
+headerEl?.addEventListener('click', () => {
+  if (controlsEl.classList.contains('collapsed')) {
+    controlsEl.classList.remove('collapsed');
+  }
 });
 
 // PMTiles in-memory map for cached archives
@@ -324,8 +332,18 @@ function applyMapStyle(offline: boolean) {
 
 onBasemapChange(() => applyMapStyle(isOfflineMode));
 
-map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
-map.addControl(new maplibregl.AttributionControl({ compact: false }), 'bottom-right');
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+const attribControl = new maplibregl.AttributionControl({ compact: false });
+map.addControl(attribControl, 'bottom-right');
+const attribEl = map.getContainer().querySelector('.maplibregl-ctrl-attrib');
+if (attribEl) {
+  attribEl.setAttribute('open', '');
+  new MutationObserver(() => {
+    if (!attribEl.hasAttribute('open')) {
+      attribEl.setAttribute('open', '');
+    }
+  }).observe(attribEl, { attributes: true, attributeFilter: ['open'] });
+}
 (window as any).map = map;
 (window as any).maplibregl = maplibregl;
 
@@ -439,40 +457,67 @@ async function initCachedMapTiles() {
 
 const archivesReady = initCachedMapTiles();
 
-// Size of a cached routing segment, read from headers so the file is not loaded into memory.
-async function getCachedSegmentSize(cache: Cache, segmentId: string): Promise<number> {
-  const match = await cache.match(`/segments4/${segmentId}.rd5`);
-  return Number(match?.headers.get('content-length')) || 0;
-}
-
 // Verification: Check if all offline components are present
-async function checkOfflineBundleStatus(): Promise<{ ready: boolean; totalBytes: number }> {
+async function checkOfflineBundleStatus(): Promise<{ ready: boolean; totalBytes: number; hasAny: boolean }> {
   let totalBytes = 0;
+  let allTilesReady = true;
+  let hasAny = false;
 
   for (const id of UK_SEGMENTS) {
     const file = await getTileFile(id);
-    if (!file) return { ready: false, totalBytes: 0 };
-    totalBytes += file.size;
+    if (file) {
+      totalBytes += file.size;
+      hasAny = true;
+    } else {
+      allTilesReady = false;
+    }
   }
 
   const cache = await caches.open(SEGMENT_CACHE_NAME);
+  let allSegmentsReady = true;
   for (const id of UK_SEGMENTS) {
     const size = await getCachedSegmentSize(cache, id);
-    if (size < MIN_RD5_BYTES) return { ready: false, totalBytes: 0 };
-    totalBytes += size;
+    if (size >= MIN_RD5_BYTES) {
+      totalBytes += size;
+      hasAny = true;
+    } else {
+      allSegmentsReady = false;
+    }
   }
 
-  // The router cannot start offline without lookups and profiles.
+  let allProfilesReady = true;
   for (const url of ROUTING_FILES) {
-    if (!(await cache.match(url))) return { ready: false, totalBytes: 0 };
+    if (await cache.match(url)) {
+      hasAny = true;
+    } else {
+      allProfilesReady = false;
+    }
   }
 
-  return { ready: true, totalBytes };
+  const ready = allTilesReady && allSegmentsReady && allProfilesReady;
+  return { ready, totalBytes, hasAny };
 }
 
 // UI State Updater
-async function updateOfflineUI(bundleStatus?: { ready: boolean; totalBytes: number }) {
+async function updateOfflineUI(bundleStatus?: { ready: boolean; totalBytes: number; hasAny?: boolean }) {
   const status = bundleStatus || (await checkOfflineBundleStatus());
+
+  // Update snapshot date display
+  if (offlineDataDate) {
+    const cache = await caches.open(SEGMENT_CACHE_NAME);
+    const segmentDate = await getLatestCachedSegmentDate(cache);
+    if (segmentDate) {
+      offlineDataDate.textContent = segmentDate.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      offlineDataDate.title = segmentDate.toISOString();
+    } else {
+      offlineDataDate.textContent = 'Not cached';
+      offlineDataDate.title = '';
+    }
+  }
 
   if (status.ready) {
     checkOfflineMode.disabled = false;
@@ -481,6 +526,7 @@ async function updateOfflineUI(bundleStatus?: { ready: boolean; totalBytes: numb
     const mb = Math.round(status.totalBytes / (1024 * 1024));
     offlineCardDesc.textContent = `UK and Ireland offline data ready: ${mb} MB.`;
     btnDownloadOffline.style.display = 'none';
+    if (btnUpdateOffline) btnUpdateOffline.style.display = 'inline-flex';
     btnDeleteOffline.style.display = 'inline-flex';
     progressBarContainer.style.display = 'none';
   } else {
@@ -494,8 +540,9 @@ async function updateOfflineUI(bundleStatus?: { ready: boolean; totalBytes: numb
     offlineCardDesc.textContent = 'Download UK routing data and map tiles to enable offline mode.';
     btnDownloadOffline.style.display = 'inline-flex';
     btnDownloadOffline.disabled = false;
-    btnDownloadOffline.textContent = 'Download UK Data';
-    btnDeleteOffline.style.display = 'none';
+    btnDownloadOffline.textContent = status.hasAny ? 'Resume Download' : 'Download UK Data';
+    if (btnUpdateOffline) btnUpdateOffline.style.display = 'none';
+    btnDeleteOffline.style.display = status.hasAny ? 'inline-flex' : 'none';
     progressBarContainer.style.display = 'none';
   }
 }
@@ -562,10 +609,10 @@ async function cacheMapFonts(onProgress: (msg: string) => void) {
   }
 }
 
-async function cacheRoutingProfiles(onProgress: (msg: string) => void) {
+async function cacheRoutingProfiles(onProgress: (msg: string) => void, force = false) {
   const cache = await caches.open(SEGMENT_CACHE_NAME);
   for (const url of ROUTING_FILES) {
-    if (await cache.match(url)) continue;
+    if (!force && (await cache.match(url))) continue;
     onProgress(`Downloading profile ${url.split('/').pop()}...`);
     const res = await fetch(url);
     if (!res.ok || (res.headers.get('content-type') || '').includes('text/html')) {
@@ -575,78 +622,17 @@ async function cacheRoutingProfiles(onProgress: (msg: string) => void) {
   }
 }
 
-// Fails early with a clear message if the browser cannot store another `bytes` bytes.
-async function ensureStorageFor(bytes: number, what: string) {
-  const { quota = 0, usage = 0 } = await navigator.storage.estimate();
-  const free = quota - usage;
-  if (bytes > free) {
-    const needMb = Math.round(bytes / (1024 * 1024));
-    const freeMb = Math.round(free / (1024 * 1024));
-    throw new Error(`Not enough browser storage for ${what}: needs ${needMb} MB, ${freeMb} MB free`);
-  }
-}
-
-// Streams a routing segment into CacheStorage without holding the whole file in memory.
+// Streams a routing segment into CacheStorage using the centralized fetcher.
 async function cacheSegmentRd5(
   segmentId: string,
   onProgress: (received: number, total: number) => void,
+  force = false,
 ) {
   const cache = await caches.open(SEGMENT_CACHE_NAME);
-  const localUrl = `/segments4/${segmentId}.rd5`;
-  if ((await getCachedSegmentSize(cache, segmentId)) >= MIN_RD5_BYTES) {
+  if (!force && (await getCachedSegmentSize(cache, segmentId)) >= MIN_RD5_BYTES) {
     return;
   }
-
-  // Bundled locally for some segments, otherwise proxied from brouter.de.
-  // Static hosts answer missing files with index.html and HTTP 200, so treat HTML as missing.
-  const isHtml = (r: Response) => (r.headers.get('content-type') || '').includes('text/html');
-  let res = await fetch(localUrl);
-  if (!res.ok || isHtml(res)) {
-    res = await fetch(`/remote-segments/${segmentId}.rd5`);
-  }
-  if (!res.ok || !res.body || isHtml(res)) {
-    throw new Error(`Failed to fetch routing segment ${segmentId}: HTTP ${res.status}`);
-  }
-  // Servers that compress on the fly send no content-length. Then the size is only known at the end.
-  const total = Number(res.headers.get('content-length')) || 0;
-  if (total) {
-    if (total < MIN_RD5_BYTES) {
-      throw new Error(`Routing segment ${segmentId} is too small (${total} bytes)`);
-    }
-    await ensureStorageFor(total, `${segmentId}.rd5`);
-  }
-
-  let received = 0;
-  const counter = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      received += chunk.byteLength;
-      onProgress(received, total);
-      controller.enqueue(chunk);
-    },
-    flush() {
-      if (total ? received !== total : received < MIN_RD5_BYTES) {
-        throw new Error(`Incomplete download of ${segmentId}.rd5: ${received} of ${total || '?'} bytes`);
-      }
-    },
-  });
-
-  const headers = { 'content-type': 'application/octet-stream' };
-  await cache.put(
-    localUrl,
-    new Response(res.body.pipeThrough(counter), {
-      headers: total ? { ...headers, 'content-length': String(total) } : headers,
-    }),
-  );
-
-  if (!total) {
-    // getCachedSegmentSize reads the size from this header. Copy the entry once, disk to disk, to set it.
-    const stored = await cache.match(localUrl);
-    if (!stored?.body) throw new Error(`Routing segment ${segmentId} was not stored`);
-    await cache.put(
-      localUrl,
-      new Response(stored.body, { headers: { ...headers, 'content-length': String(received) } }),
-    );
-  }
+  await fetchAndCacheSegment(segmentId, onProgress);
 }
 
 // Streams a map tile archive to OPFS in a worker, then opens it from disk.
@@ -694,9 +680,10 @@ function formatMb(bytes: number): string {
 }
 
 // Single-Button Download: Downloads routing data, profiles, and map tiles
-async function downloadUkOfflineBundle() {
+async function downloadUkOfflineBundle(forceRouting = false) {
   btnDownloadOffline.disabled = true;
   btnDownloadOffline.textContent = 'Downloading...';
+  if (btnUpdateOffline) btnUpdateOffline.disabled = true;
   progressBarContainer.style.display = 'block';
   progressBar.style.width = '2%';
 
@@ -713,19 +700,23 @@ async function downloadUkOfflineBundle() {
     statusEl.textContent = 'Downloading routing profiles...';
     await cacheRoutingProfiles((msg) => {
       statusEl.textContent = msg;
-    });
+    }, forceRouting);
     progressBar.style.width = '10%';
 
     // Routing data is about 10% of the total size, map tiles the rest.
     const n = UK_SEGMENTS.length;
     for (let i = 0; i < n; i++) {
       const segId = UK_SEGMENTS[i];
-      await cacheSegmentRd5(segId, (done, total) => {
-        const frac = total > 0 ? done / total : 0;
-        progressBar.style.width = `${Math.round(10 + ((i + frac) / n) * 10)}%`;
-        const totalLabel = total > 0 ? formatMb(total) : '?';
-        statusEl.textContent = `Routing data ${i + 1}/${n}: ${segId} (${formatMb(done)} / ${totalLabel} MB)`;
-      });
+      await cacheSegmentRd5(
+        segId,
+        (done, total) => {
+          const frac = total > 0 ? done / total : 0;
+          progressBar.style.width = `${Math.round(10 + ((i + frac) / n) * 10)}%`;
+          const totalLabel = total > 0 ? formatMb(total) : '?';
+          statusEl.textContent = `Routing data ${i + 1}/${n}: ${segId} (${formatMb(done)} / ${totalLabel} MB)`;
+        },
+        forceRouting,
+      );
     }
 
     for (let i = 0; i < n; i++) {
@@ -741,11 +732,42 @@ async function downloadUkOfflineBundle() {
 
     progressBar.style.width = '100%';
     await updateOfflineUI(await checkOfflineBundleStatus());
-    statusEl.textContent = 'Offline data downloaded. You can now enable Offline Mode.';
+    statusEl.textContent = forceRouting
+      ? 'Offline data updated successfully.'
+      : 'Offline data downloaded. You can now enable Offline Mode.';
   } catch (err) {
     console.error('Offline download failed:', err);
     await updateOfflineUI(await checkOfflineBundleStatus());
     statusEl.textContent = `Download failed: ${err instanceof Error ? err.message : String(err)}. Press Download to resume.`;
+    throw err;
+  } finally {
+    if (btnUpdateOffline) btnUpdateOffline.disabled = false;
+  }
+}
+
+async function updateUkOfflineBundle() {
+  if (btnUpdateOffline) {
+    btnUpdateOffline.disabled = true;
+    btnUpdateOffline.textContent = 'Updating...';
+  }
+  btnDeleteOffline.disabled = true;
+  progressBarContainer.style.display = 'block';
+  progressBar.style.width = '2%';
+  statusEl.textContent = 'Invalidating cached routing data...';
+
+  try {
+    await clearAllCachedSegments();
+    worker.postMessage({ type: 'CLEAR_GRAPH' } satisfies WorkerMessage);
+    await downloadUkOfflineBundle(true);
+  } catch (err) {
+    console.error('Offline update failed:', err);
+  } finally {
+    if (btnUpdateOffline) {
+      btnUpdateOffline.disabled = false;
+      btnUpdateOffline.textContent = 'Update';
+    }
+    btnDeleteOffline.disabled = false;
+    await updateOfflineUI();
   }
 }
 
@@ -759,18 +781,17 @@ async function deleteUkOfflineBundle() {
     await deleteTileFile(segId);
   }
 
-  const cache = await caches.open(SEGMENT_CACHE_NAME);
-  for (const segId of UK_SEGMENTS) {
-    await cache.delete(`/segments4/${segId}.rd5`);
-    await cache.delete(`/remote-segments/${segId}.rd5`);
-  }
+  await clearAllCachedSegments();
   worker.postMessage({ type: 'CLEAR_GRAPH' } satisfies WorkerMessage);
 
   await updateOfflineUI(await checkOfflineBundleStatus());
   statusEl.textContent = 'Offline data removed from local storage.';
 }
 
-btnDownloadOffline.addEventListener('click', downloadUkOfflineBundle);
+btnDownloadOffline.addEventListener('click', () => downloadUkOfflineBundle(false));
+if (btnUpdateOffline) {
+  btnUpdateOffline.addEventListener('click', updateUkOfflineBundle);
+}
 btnDeleteOffline.addEventListener('click', deleteUkOfflineBundle);
 
 // Initialization: wait for stored archives, check offline bundle status, enforce rules

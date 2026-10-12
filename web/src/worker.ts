@@ -1,11 +1,10 @@
 import type { RouteResponse, WorkerMessage, LatLon } from './types.ts';
 import init, { WasmRouter } from './pkg/rsrouter_wasm.js';
+import { SEGMENT_CACHE_NAME, MIN_RD5_BYTES, fetchAndCacheSegment, isHtml } from './segment-cache.ts';
 
 // Dedicated Web Worker running rsrouter WebAssembly off the main UI thread.
 // Messages are handled one at a time, so a route request never sees a half-loaded graph.
 
-const CACHE_NAME = 'rsrouter-segments-v2';
-const MIN_RD5_BYTES = 50000;
 const PROFILES = ['fastbike-lowtraffic', 'fastbike', 'fastbike-verylowtraffic', 'gabis-lite-gravel', 'gabis-safe-road', 'gravel', 'trekking'];
 
 let router: WasmRouter | null = null;
@@ -33,16 +32,11 @@ function status(message: string) {
   postMessage({ type: 'STATUS', message } satisfies WorkerMessage);
 }
 
-// Vite and static hosts answer unknown paths with index.html and HTTP 200.
-function isHtml(res: Response): boolean {
-  return (res.headers.get('content-type') || '').includes('text/html');
-}
-
 /**
  * Network-first fetch for small text files (lookups and profiles) with cache fallback.
  */
 async function fetchText(url: string): Promise<string> {
-  const cache = await caches.open(CACHE_NAME);
+  const cache = await caches.open(SEGMENT_CACHE_NAME);
   if (!isOfflineMode && navigator.onLine) {
     try {
       const res = await fetch(url);
@@ -66,33 +60,6 @@ async function fetchText(url: string): Promise<string> {
   return res.text();
 }
 
-async function readWithProgress(res: Response, fileName: string): Promise<Uint8Array<ArrayBuffer>> {
-  const total = Number(res.headers.get('content-length')) || 0;
-  const reader = res.body!.getReader();
-  const chunks: Uint8Array[] = [];
-  let received = 0;
-  let lastReport = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.byteLength;
-    const now = Date.now();
-    if (now - lastReport > 250) {
-      lastReport = now;
-      const recMb = (received / (1024 * 1024)).toFixed(1);
-      const totMb = total > 0 ? (total / (1024 * 1024)).toFixed(1) : '?';
-      status(`Downloading ${fileName}: ${recMb} / ${totMb} MB...`);
-    }
-  }
-  const out = new Uint8Array(received);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
-}
 
 /**
  * Returns the raw RD5 segment bytes. Every segment is cached under /segments4/<name>.rd5,
@@ -100,7 +67,7 @@ async function readWithProgress(res: Response, fileName: string): Promise<Uint8A
  */
 async function getSegmentBytes(segmentName: string): Promise<Uint8Array> {
   const key = `/segments4/${segmentName}.rd5`;
-  const cache = await caches.open(CACHE_NAME);
+  const cache = await caches.open(SEGMENT_CACHE_NAME);
   const cached = await cache.match(key);
   if (cached) {
     const buf = await cached.arrayBuffer();
@@ -114,29 +81,12 @@ async function getSegmentBytes(segmentName: string): Promise<Uint8Array> {
     throw new Error(`Routing data ${segmentName} is not downloaded for offline use`);
   }
 
-  let res = await fetch(key);
-  if (!res.ok || isHtml(res)) {
-    status(`Fetching ${segmentName}.rd5 from brouter.de...`);
-    res = await fetch(`/remote-segments/${segmentName}.rd5`);
-  }
-  if (!res.ok || isHtml(res)) {
-    throw new Error(`Routing data ${segmentName} is not available: HTTP ${res.status}`);
-  }
-
-  const bytes = await readWithProgress(res, `${segmentName}.rd5`);
-  if (bytes.byteLength < MIN_RD5_BYTES) {
-    throw new Error(`Routing data ${segmentName} is too small (${bytes.byteLength} bytes)`);
-  }
-  await cache.put(
-    key,
-    new Response(bytes, {
-      headers: {
-        'content-type': 'application/octet-stream',
-        'content-length': String(bytes.byteLength),
-      },
-    }),
-  );
-  return bytes;
+  status(`Fetching ${segmentName}.rd5...`);
+  return fetchAndCacheSegment(segmentName, (received, total) => {
+    const mb = (received / (1024 * 1024)).toFixed(1);
+    const totMb = total > 0 ? (total / (1024 * 1024)).toFixed(1) : '?';
+    status(`Downloading ${segmentName}.rd5 (${mb} / ${totMb} MB)...`);
+  });
 }
 
 function segmentName(lon: number, lat: number): string {

@@ -55,22 +55,50 @@
         position: absolute;
         top: calc(16px + env(safe-area-inset-top));
         left: calc(16px + env(safe-area-inset-left));
-        z-index: 10;
+        bottom: calc(16px + env(safe-area-inset-bottom));
+        z-index: 15;
         background: var(--panel);
-        backdrop-filter: blur(10px);
-        padding: 14px 16px;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
-        max-width: 360px;
-        width: calc(100% - 32px);
-        max-height: calc(100% - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-        overflow-y: auto;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        padding: 0;
+        border-radius: 16px;
+        border: 1px solid var(--border-2);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.05);
+        width: 380px;
+        max-width: 380px;
+        max-height: calc(100vh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
         display: flex;
         flex-direction: column;
-        transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.2s ease;
+        overflow: hidden;
+        transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                    max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                    border-radius 0.2s ease,
+                    box-shadow 0.2s ease;
+      }
+      #controls::-webkit-scrollbar,
+      .route-section::-webkit-scrollbar,
+      #waypoint-list::-webkit-scrollbar,
+      #route-info-body::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      #controls::-webkit-scrollbar-thumb,
+      .route-section::-webkit-scrollbar-thumb,
+      #waypoint-list::-webkit-scrollbar-thumb,
+      #route-info-body::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+      #map .maplibregl-ctrl-top-right {
+        top: calc(16px + env(safe-area-inset-top));
+        right: calc(16px + env(safe-area-inset-right));
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
       #map .maplibregl-ctrl-bottom-right {
-        bottom: calc(28px + env(safe-area-inset-bottom));
+        bottom: calc(12px + env(safe-area-inset-bottom));
         right: env(safe-area-inset-right);
         z-index: 3;
       }
@@ -82,12 +110,13 @@
         position: fixed;
         bottom: env(safe-area-inset-bottom);
         right: env(safe-area-inset-right);
-        z-index: 2;
+        z-index: 10;
         display: block !important;
         margin: 0 !important;
         padding: 2px 8px !important;
         background: var(--panel) !important;
         backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
         font-size: 11px !important;
         line-height: 1.4 !important;
         color: var(--muted) !important;
@@ -103,7 +132,8 @@
         text-decoration: underline;
         color: var(--text) !important;
       }
-      #map .maplibregl-ctrl-attrib-button {
+      #map .maplibregl-ctrl-attrib-button,
+      #map .maplibregl-ctrl-attrib summary {
         display: none !important;
       }
       #map .maplibregl-ctrl-attrib-inner {
@@ -117,29 +147,56 @@
         border-radius: 6px 0 0 0 !important;
       }
       .header {
-        margin-bottom: 10px;
+        flex-shrink: 0;
+        padding: 14px 16px 10px;
+        border-bottom: 1px solid var(--border-2);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
       }
       .header-top {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 8px;
+      }
+      .header-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
       }
       .header h1 {
         font-size: 1.15rem;
         color: var(--text);
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 7px;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+      }
+      .header-profile-badge {
+        display: none;
+        font-size: 0.72rem;
+        font-weight: 500;
+        color: var(--text-2);
+        background: var(--surface-2);
+        border: 1px solid var(--border-2);
+        border-radius: 9999px;
+        padding: 2px 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 140px;
       }
       .header p {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         color: var(--muted);
-        margin-top: 2px;
       }
       .collapse-btn {
         background: var(--surface-2);
         border: 1px solid var(--border);
-        border-radius: 6px;
+        border-radius: 8px;
         width: 30px;
         height: 30px;
         display: flex;
@@ -147,7 +204,8 @@
         justify-content: center;
         cursor: pointer;
         color: var(--text-2);
-        transition: all 0.2s ease;
+        flex-shrink: 0;
+        transition: all 0.15s ease;
       }
       .collapse-btn:hover {
         background: var(--border-2);
@@ -157,9 +215,21 @@
         transition: transform 0.25s ease;
       }
       #controls.collapsed {
-        max-height: 50px;
-        padding: 10px 14px;
-        overflow: hidden;
+        bottom: auto;
+        width: auto;
+        min-width: 150px;
+        max-width: 280px;
+        max-height: 48px;
+        border-radius: 24px;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+      }
+      #controls.collapsed .header {
+        padding: 9px 14px;
+        border-bottom: none;
+      }
+      #controls.collapsed .header-profile-badge {
+        display: inline-flex;
       }
       #controls.collapsed .offline-section,
       #controls.collapsed .route-section,
@@ -311,22 +381,11 @@
         background: #2563eb;
         transition: width 0.15s ease;
       }
-      @media (max-width: 640px) {
-        #controls {
-          top: calc(12px + env(safe-area-inset-top));
-          bottom: auto;
-          left: calc(12px + env(safe-area-inset-left));
-          right: calc(12px + env(safe-area-inset-right));
-          width: auto;
-          max-width: none;
-          max-height: 60vh;
-          border-radius: 14px;
-        }
-        #controls.collapsed {
-          max-height: 48px;
-        }
-      }
       .route-section {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 12px 16px 16px;
         display: flex;
         flex-direction: column;
       }
@@ -399,6 +458,9 @@
         color: var(--text-2);
         margin-top: 10px;
         line-height: 1.4;
+      }
+      #status:empty {
+        display: none;
       }
       #waypoint-list {
         margin-bottom: 10px;
@@ -673,37 +735,47 @@
       }
       #route-info {
         position: absolute;
-        z-index: 11;
-        left: calc(392px + env(safe-area-inset-left));
-        right: calc(64px + env(safe-area-inset-right));
-        bottom: calc(26px + env(safe-area-inset-bottom));
-        max-width: 640px;
-        padding: 10px 14px 6px;
+        z-index: 12;
+        left: calc(412px + env(safe-area-inset-left));
+        right: calc(16px + env(safe-area-inset-right));
+        bottom: calc(16px + env(safe-area-inset-bottom));
+        max-width: 960px;
         background: var(--panel);
-        backdrop-filter: blur(10px);
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
-        transition: padding 0.2s ease;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border: 1px solid var(--border-2);
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.05);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                    max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                    box-shadow 0.2s ease;
       }
       #route-info[hidden] {
-        display: none;
-      }
-      #route-info.collapsed {
-        padding-bottom: 10px;
-      }
-      #route-info.collapsed #route-info-body {
         display: none !important;
       }
-      #route-info.collapsed #ri-collapse-icon {
-        transform: rotate(180deg);
-      }
-      #ri-collapse-icon {
-        transition: transform 0.25s ease;
+      #controls.collapsed ~ #route-info {
+        left: calc(16px + env(safe-area-inset-left));
+        max-width: 1040px;
       }
       .ri-stats {
         display: flex;
+        align-items: center;
+        justify-content: space-between;
         gap: 16px;
-        align-items: flex-end;
+        padding: 10px 16px;
+        user-select: none;
+      }
+      #route-info.collapsed .ri-stats {
+        padding: 9px 16px;
+        cursor: pointer;
+      }
+      .ri-stat-group {
+        display: flex;
+        align-items: center;
+        gap: 20px;
         flex-wrap: wrap;
       }
       .ri-stat {
@@ -714,40 +786,35 @@
         font-size: 1.05rem;
         font-weight: 700;
         color: var(--text);
+        line-height: 1.15;
       }
       .ri-stat small {
         font-size: 0.68rem;
+        font-weight: 600;
         color: var(--muted);
         text-transform: uppercase;
         letter-spacing: 0.04em;
       }
       .ri-actions {
-        margin-left: auto;
         display: flex;
         align-items: center;
         gap: 8px;
+        flex-shrink: 0;
       }
-      .ri-alts {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        font-size: 0.72rem;
-        color: var(--muted);
+      #route-info-body {
+        padding: 0 16px 14px;
+        border-top: 1px solid var(--border-2);
+        max-height: calc(50vh - 40px);
+        overflow-y: auto;
       }
-      .ri-alts button {
-        width: 28px;
-        height: 28px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--field);
-        color: var(--text-2);
-        font-weight: 600;
-        cursor: pointer;
+      #route-info.collapsed #route-info-body {
+        display: none !important;
       }
-      .ri-alts button.active {
-        background: #2563eb;
-        border-color: #2563eb;
-        color: #fff;
+      #ri-collapse-icon {
+        transition: transform 0.25s ease;
+      }
+      #route-info.collapsed #ri-collapse-icon {
+        transform: rotate(180deg);
       }
       .ri-details {
         margin-top: 6px;
@@ -920,19 +987,93 @@
         box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
         pointer-events: none;
       }
-      @media (max-width: 640px) {
-        #map .maplibregl-ctrl-bottom-right {
-          bottom: calc(38px + env(safe-area-inset-bottom));
-          right: env(safe-area-inset-right);
-          transition: bottom 0.2s ease;
+      @media (max-width: 860px) {
+        #controls {
+          top: calc(8px + env(safe-area-inset-top));
+          left: calc(8px + env(safe-area-inset-left));
+          right: calc(8px + env(safe-area-inset-right));
+          bottom: auto;
+          width: auto;
+          max-width: none;
+          border-radius: 14px;
+          z-index: 30;
         }
-        #route-info:not([hidden]) ~ #map .maplibregl-ctrl-bottom-right {
-          bottom: calc(148px + env(safe-area-inset-bottom));
+        #controls.collapsed {
+          height: 44px;
+          max-height: 44px;
+          padding: 0;
+          border-radius: 12px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+        }
+        #controls.collapsed .header {
+          padding: 8px 12px;
+          height: 100%;
+        }
+        #controls:not(.collapsed) {
+          max-height: calc(82vh - env(safe-area-inset-top));
+          overflow-y: auto;
+          box-shadow: 0 16px 44px rgba(0, 0, 0, 0.28);
+        }
+        #controls:not(.collapsed) .header {
+          padding: 12px 14px 8px;
+        }
+        #controls:not(.collapsed) .route-section {
+          padding: 10px 14px 14px;
+        }
+        /* When controls are expanded on mobile, hide route-info so they never overlap */
+        #controls:not(.collapsed) ~ #route-info {
+          display: none !important;
+        }
+        #map .maplibregl-ctrl-top-right {
+          top: calc(58px + env(safe-area-inset-top));
+          right: calc(8px + env(safe-area-inset-right));
         }
         #route-info {
-          left: calc(12px + env(safe-area-inset-left));
-          right: calc(12px + env(safe-area-inset-right));
-          bottom: calc(38px + env(safe-area-inset-bottom));
+          left: calc(8px + env(safe-area-inset-left));
+          right: calc(8px + env(safe-area-inset-right));
+          bottom: calc(8px + env(safe-area-inset-bottom));
+          width: auto;
+          max-width: none;
+          border-radius: 14px;
+          z-index: 20;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.16);
+        }
+        #route-info.collapsed .ri-stats {
+          padding: 8px 12px;
+          gap: 10px;
+        }
+        .ri-stat-group {
+          gap: 12px;
+        }
+        .ri-stat span {
+          font-size: 0.95rem;
+        }
+        .ri-stat small {
+          font-size: 0.65rem;
+        }
+        #route-info:not(.collapsed) {
+          max-height: calc(65vh - env(safe-area-inset-bottom));
+          overflow-y: auto;
+        }
+        #route-info:not(.collapsed) #route-info-body {
+          max-height: calc(65vh - 65px);
+          padding: 0 12px 12px;
+        }
+        #map .maplibregl-ctrl-attrib {
+          font-size: 10px !important;
+          padding: 2px 6px !important;
+          z-index: 25;
+          transition: bottom 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #route-info:not([hidden]) ~ #map .maplibregl-ctrl-attrib {
+          bottom: calc(64px + env(safe-area-inset-bottom)) !important;
+          border-radius: 6px 0 0 6px !important;
+        }
+        #route-info:not(.collapsed):not([hidden]) ~ #map .maplibregl-ctrl-attrib {
+          bottom: calc(65vh + 10px) !important;
+        }
+        #controls:not(.collapsed) ~ #map .maplibregl-ctrl-attrib {
+          bottom: env(safe-area-inset-bottom) !important;
         }
       }
       .settings {
@@ -1070,7 +1211,7 @@
       .tile-picker-menu {
         position: absolute;
         right: calc(100% + 8px);
-        bottom: 0;
+        top: 0;
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 10px;
@@ -1149,7 +1290,10 @@
     <div id="controls">
       <div class="header">
         <div class="header-top">
-          <h1>rsrouter</h1>
+          <div class="header-title-wrap">
+            <h1>rsrouter</h1>
+            <span id="header-profile-badge" class="header-profile-badge">Fastbike Low Traffic</span>
+          </div>
           <button id="btn-toggle-collapse" class="collapse-btn" title="Collapse or expand panel" aria-label="Collapse panel">
             <svg id="collapse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="18 15 12 9 6 15"></polyline>
@@ -1274,12 +1418,19 @@
               <p id="offline-card-desc" class="offline-card-desc">
                 Download UK routing and map tiles for offline usage.
               </p>
+              <div id="offline-data-date-row" style="font-size: 0.75rem; color: var(--muted); margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+                <span>Snapshot date:</span>
+                <span id="offline-data-date" style="font-weight: 500; color: var(--text-2);">-</span>
+              </div>
               <div id="offline-progress-bar-container" class="progress-container" style="display: none;">
                 <div id="offline-progress-bar" class="progress-bar"></div>
               </div>
               <div style="display: flex; gap: 8px; margin-top: 8px;">
                 <button id="btn-download-offline" class="btn btn-primary" style="flex: 1;">
                   Download UK Data
+                </button>
+                <button id="btn-update-offline" class="btn btn-secondary" style="display: none; flex: 1;">
+                  Update
                 </button>
                 <button id="btn-delete-offline" class="btn btn-danger" style="display: none;">
                   Delete
@@ -1300,21 +1451,16 @@
 
     <div id="route-info" class="collapsed" hidden>
       <div class="ri-stats">
-        <div class="ri-stat"><span id="ri-distance"></span><small>Distance</small></div>
-        <div class="ri-stat"><span id="ri-time"></span><small>Time</small></div>
-        <div class="ri-stat"><span id="ri-ascent"></span><small>Ascent</small></div>
-        <div class="ri-stat"><span id="ri-descent"></span><small>Descent</small></div>
+        <div class="ri-stat-group">
+          <div class="ri-stat"><span id="ri-distance"></span><small>Distance</small></div>
+          <div class="ri-stat"><span id="ri-time"></span><small>Time</small></div>
+          <div class="ri-stat"><span id="ri-ascent"></span><small>Ascent</small></div>
+          <div class="ri-stat"><span id="ri-descent"></span><small>Descent</small></div>
+        </div>
         <div class="ri-actions">
-          <div id="ri-alternatives" class="ri-alts" role="group" aria-label="Route alternatives">
-            Route
-            <button data-alt="0" aria-label="Best route">1</button>
-            <button data-alt="1" aria-label="Alternative route 2">2</button>
-            <button data-alt="2" aria-label="Alternative route 3">3</button>
-            <button data-alt="3" aria-label="Alternative route 4">4</button>
-          </div>
-          <button id="btn-toggle-ri-collapse" class="collapse-btn" title="Collapse details" aria-label="Collapse details" aria-expanded="true">
+          <button id="btn-toggle-ri-collapse" class="collapse-btn" title="Toggle details" aria-label="Toggle details" aria-expanded="false">
             <svg id="ri-collapse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 9 12 15 18 9"></polyline>
+              <polyline points="18 15 12 9 6 15"></polyline>
             </svg>
           </button>
         </div>

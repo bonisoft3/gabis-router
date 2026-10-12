@@ -10,7 +10,6 @@ const APP_CACHE_VERSION = 'dev';
 const PRECACHE_URLS = [];
 
 const APP_CACHE = `rsrouter-app-${APP_CACHE_VERSION}`;
-const VALID_CACHES = new Set([APP_CACHE, 'rsrouter-segments-v2', 'rsrouter-map-tiles-v1']);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -25,7 +24,13 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => !VALID_CACHES.has(k)).map((k) => caches.delete(k))))
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((k) => k === 'rsrouter-segments-v2' || (k.startsWith('rsrouter-app-') && k !== APP_CACHE))
+            .map((k) => caches.delete(k)),
+        ),
+      )
       .then(() => self.clients.claim()),
   );
 });
