@@ -55,6 +55,16 @@ Test a routing query:
 curl "http://localhost:17777/brouter?lonlats=-0.143613,51.462414|-0.055296,51.544998&profile=fastbike&format=geojson"
 ```
 
+### Update Data and Fixtures
+
+Download the latest upstream `.rd5` segments and refresh parity test fixtures:
+
+```bash
+python3 tools/update_data.py --update-tests --check
+```
+
+See [tools/README.md](tools/README.md) for individual component flags.
+
 ## Graph Loading Modes
 
 | Mode | Memory | Graph Load Time | Use Case |

@@ -1,4 +1,5 @@
 import { defineConfig, type Connect } from 'vite';
+import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
@@ -152,6 +153,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    react(),
     {
       // Fill the service worker precache list with the built files so the app opens offline.
       name: 'sw-precache',

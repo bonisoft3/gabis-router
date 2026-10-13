@@ -156,6 +156,6 @@ fn test_rd5_slice_in_memory_parity() {
         elapsed.as_secs_f64() * 1000.0
     );
 
-    assert_eq!(total_nodes, 857516);
-    assert_eq!(total_links, 1080064);
+    assert_eq!(total_nodes, 859408);
+    assert_eq!(total_links, 1082364);
 }

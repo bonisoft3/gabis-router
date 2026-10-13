@@ -1,13 +1,13 @@
 {
-  "name": "rsrouter",
-  "short_name": "rsrouter",
+  "name": "GBRouter",
+  "short_name": "GBRouter",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#1e293b",
-  "description": "Offline WebAssembly bicycle routing.",
+  "description": "Bike routing on your terms.",
   "icons": [
     {
       "src": "/favicon.svg",

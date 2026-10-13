@@ -13,9 +13,14 @@
   "dependencies": {
     "maplibre-gl": "^4.7.1",
     "pmtiles": "^4.5.0",
-    "protomaps-themes-base": "^4.5.0"
+    "protomaps-themes-base": "^4.5.0",
+    "react": "^0.0.0-experimental-e9db3cc2-20250501",
+    "react-dom": "^0.0.0-experimental-e9db3cc2-20250501"
   },
   "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "vite-plugin-pwa": "^0.20.5"

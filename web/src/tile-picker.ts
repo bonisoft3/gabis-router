@@ -50,6 +50,8 @@ export class TilePickerControl implements maplibregl.IControl {
   onRemove(): void {
     document.removeEventListener('click', this.onDocClick);
     document.removeEventListener('keydown', this.onKeyDown);
+    this.button = undefined;
+    this.menu = undefined;
     this.container?.remove();
   }
 

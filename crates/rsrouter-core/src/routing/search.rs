@@ -57,6 +57,7 @@ pub struct RouteSegment {
     pub highway: String,
     pub noise_class: u8,
     pub traffic_class: u8,
+    pub maxspeed: u32,
 }
 
 /// The final computed route with full metrics.
@@ -124,6 +125,7 @@ impl RouteResult {
                     && last.highway == seg.highway
                     && last.noise_class == seg.noise_class
                     && last.traffic_class == seg.traffic_class
+                    && last.maxspeed == seg.maxspeed
                 {
                     last.to_dist_m = seg.to_dist_m;
                     continue;
@@ -159,8 +161,8 @@ impl RouteResult {
                 seg_json.push_str(",\n          ");
             }
             seg_json.push_str(&format!(
-                r#"{{"from": {:.1}, "to": {:.1}, "surface": "{}", "highway": "{}", "noise": {}, "traffic": {}}}"#,
-                seg.from_dist_m, seg.to_dist_m, seg.surface, seg.highway, seg.noise_class, seg.traffic_class
+                r#"{{"from": {:.1}, "to": {:.1}, "surface": "{}", "highway": "{}", "noise": {}, "traffic": {}, "maxspeed": {}}}"#,
+                seg.from_dist_m, seg.to_dist_m, seg.surface, seg.highway, seg.noise_class, seg.traffic_class, seg.maxspeed
             ));
         }
 
@@ -651,10 +653,14 @@ impl AStarRouter {
         let highway_idx = lookups.way.get_name_idx("highway");
         let noise_idx = lookups.way.get_name_idx("estimated_noise_class");
         let traffic_idx = lookups.way.get_name_idx("estimated_traffic_class");
+        let maxspeed_idx = lookups.way.get_name_idx("maxspeed");
+        let maxspeed_fwd_idx = lookups.way.get_name_idx("maxspeed:forward");
+        let maxspeed_bwd_idx = lookups.way.get_name_idx("maxspeed:backward");
+        let zone_maxspeed_idx = lookups.way.get_name_idx("zone:maxspeed");
 
         for (s_i, step) in steps.iter().enumerate() {
             let start_step_dist = cum_dist;
-            let (surface_str, highway_str, noise_val, traffic_val) = {
+            let (surface_str, highway_str, noise_val, traffic_val, maxspeed_val) = {
                 let edges = graph.get_edges(step.from_node_id);
                 let edge = if (step.edge_idx as usize) < edges.len()
                     && (step.node_id == 0 || edges[step.edge_idx as usize].target_id == step.node_id)
@@ -695,12 +701,59 @@ impl AStarRouter {
                         } else {
                             0
                         };
-                        (s, h, n, t)
+
+                        let dir_maxspeed_idx = if e.is_reverse {
+                            maxspeed_bwd_idx
+                        } else {
+                            maxspeed_fwd_idx
+                        };
+
+                        let (speed_idx, m_val) = match dir_maxspeed_idx.and_then(|idx| {
+                            let v = way_buf[idx];
+                            if v > 0 { Some((idx, v)) } else { None }
+                        }) {
+                            Some(res) => (Some(res.0), res.1),
+                            None => match maxspeed_idx.and_then(|idx| {
+                                let v = way_buf[idx];
+                                if v > 0 { Some((idx, v)) } else { None }
+                            }) {
+                                Some(res) => (Some(res.0), res.1),
+                                None => match zone_maxspeed_idx.and_then(|idx| {
+                                    let v = way_buf[idx];
+                                    if v > 0 { Some((idx, v)) } else { None }
+                                }) {
+                                    Some(res) => (Some(res.0), res.1),
+                                    None => (None, 0),
+                                },
+                            },
+                        };
+
+                        let m = if m_val > 0 && speed_idx.is_some() {
+                            let idx = speed_idx.unwrap();
+                            if m_val < 900 && (m_val as usize) < lookups.way.values[idx].len() {
+                                let val_str = &lookups.way.values[idx][m_val as usize].value;
+                                if val_str == "urban" {
+                                    50
+                                } else if val_str == "rural" {
+                                    100
+                                } else {
+                                    val_str.parse::<u32>().unwrap_or(0)
+                                }
+                            } else if m_val >= 900 {
+                                ((m_val - 1000) / 100) as u32
+                            } else {
+                                0
+                            }
+                        } else {
+                            0
+                        };
+
+                        (s, h, n, t, m)
                     } else {
-                        (String::new(), String::new(), 0, 0)
+                        (String::new(), String::new(), 0, 0, 0)
                     }
                 } else {
-                    (String::new(), String::new(), 0, 0)
+                    (String::new(), String::new(), 0, 0, 0)
                 }
             };
 
@@ -819,6 +872,7 @@ impl AStarRouter {
                         && last.highway == highway_str
                         && last.noise_class == noise_val
                         && last.traffic_class == traffic_val
+                        && last.maxspeed == maxspeed_val
                     {
                         last.to_dist_m = end_step_dist;
                     } else {
@@ -829,6 +883,7 @@ impl AStarRouter {
                             highway: highway_str,
                             noise_class: noise_val,
                             traffic_class: traffic_val,
+                            maxspeed: maxspeed_val,
                         });
                     }
                 } else {
@@ -839,6 +894,7 @@ impl AStarRouter {
                         highway: highway_str,
                         noise_class: noise_val,
                         traffic_class: traffic_val,
+                        maxspeed: maxspeed_val,
                     });
                 }
             }
