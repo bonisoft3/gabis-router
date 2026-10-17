@@ -139,9 +139,30 @@ pub fn distance(p1: Point2D, p2: Point2D) -> Distance {
     (dlat * dlat + dlon * dlon).sqrt()
 }
 
+/// Calculate cosine of turn angle for three consecutive points without computing angle in degrees.
+#[inline(always)]
+pub fn calc_cos_angle(p0: Point2D, p1: Point2D, p2: Point2D) -> f64 {
+    let kxky = get_lon_lat_to_meter_scales(p1.lat);
+    let lon2m = kxky[0];
+    let lat2m = kxky[1];
+
+    let dx10 = (p1.lon - p0.lon) as f64 * lon2m;
+    let dy10 = (p1.lat - p0.lat) as f64 * lat2m;
+    let dx21 = (p2.lon - p1.lon) as f64 * lon2m;
+    let dy21 = (p2.lat - p1.lat) as f64 * lat2m;
+
+    let dd = ((dx10 * dx10 + dy10 * dy10) * (dx21 * dx21 + dy21 * dy21)).sqrt();
+    if dd == 0.0 {
+        1.0
+    } else {
+        (dy10 * dy21 + dx10 * dx21) / dd
+    }
+}
+
 /// Calculate turn angle and its cosine for three consecutive points.
 ///
 /// Returns `(angle_degrees, cos_angle)`.
+#[inline]
 pub fn calc_angle(p0: Point2D, p1: Point2D, p2: Point2D) -> (f64, f64) {
     let kxky = get_lon_lat_to_meter_scales(p1.lat);
     let lon2m = kxky[0];

@@ -269,3 +269,137 @@ async fn test_brouter_endpoint_with_nogos() {
 
     assert_ne!(base_cost, nogo_cost);
 }
+
+#[tokio::test]
+async fn test_brouter_kml_voicehints_beeline_and_custom_profile() {
+    let Some(app) = get_test_app() else {
+        return;
+    };
+
+    // 1. KML format
+    let uri_kml =
+        "/brouter?lonlats=-0.143613,51.462414|-0.055296,51.544998&profile=fastbike&format=kml&timode=4";
+    let resp_kml = app
+        .clone()
+        .oneshot(Request::builder().uri(uri_kml).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp_kml.status(), StatusCode::OK);
+    assert_eq!(
+        resp_kml.headers().get("content-type").unwrap(),
+        "application/vnd.google-earth.kml+xml"
+    );
+    let body_kml = resp_kml.into_body().collect().await.unwrap().to_bytes();
+    let kml_str = String::from_utf8_lossy(&body_kml);
+    assert!(kml_str.contains("<kml xmlns=\"http://earth.google.com/kml/2.0\">"));
+    assert!(kml_str.contains("<LineString>"));
+    assert!(kml_str.contains("<name>Paths</name>"));
+
+    // 2. GeoJSON voicehints, messages, and times
+    let uri_json =
+        "/brouter?lonlats=-0.143613,51.462414;-0.055296,51.544998&profile=fastbike&format=geojson&timode=2";
+    let resp_json = app
+        .clone()
+        .oneshot(Request::builder().uri(uri_json).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp_json.status(), StatusCode::OK);
+    let body_json = resp_json.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body_json).unwrap();
+    let props = &json["features"][0]["properties"];
+    assert!(props["voicehints"].as_array().unwrap().len() > 0);
+    assert!(props["messages"].as_array().unwrap().len() > 1);
+    assert!(props["times"].as_array().unwrap().len() > 2);
+
+    // 3. Beeline (,d suffix and straight=0)
+    let uri_beeline =
+        "/brouter?lonlats=-0.143613,51.462414,d|-0.055296,51.544998&profile=fastbike&format=geojson";
+    let resp_beeline = app
+        .clone()
+        .oneshot(Request::builder().uri(uri_beeline).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp_beeline.status(), StatusCode::OK);
+    let body_beeline = resp_beeline.into_body().collect().await.unwrap().to_bytes();
+    let json_beeline: serde_json::Value = serde_json::from_slice(&body_beeline).unwrap();
+    assert_eq!(
+        json_beeline["features"][0]["properties"]["cost"]
+            .as_str()
+            .unwrap(),
+        json_beeline["features"][0]["properties"]["track-length"]
+            .as_str()
+            .unwrap()
+    );
+    assert_eq!(
+        json_beeline["features"][0]["geometry"]["coordinates"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    // 4. POST /brouter/profile/:id upload + routing with custom profile
+    let custom_brf = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../profiles/fastbike.brf"),
+    )
+    .unwrap();
+    let resp_upload = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/brouter/profile/my_fastbike")
+                .body(Body::from(custom_brf))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_upload.status(), StatusCode::OK);
+    let body_upload = resp_upload.into_body().collect().await.unwrap().to_bytes();
+    let json_upload: serde_json::Value = serde_json::from_slice(&body_upload).unwrap();
+    assert_eq!(
+        json_upload["profileid"].as_str().unwrap(),
+        "custom_my_fastbike"
+    );
+    assert!(json_upload.get("error").is_none());
+
+    let uri_custom =
+        "/brouter?lonlats=-0.143613,51.462414|-0.055296,51.544998&profile=custom_my_fastbike&format=geojson";
+    let resp_custom = app
+        .clone()
+        .oneshot(Request::builder().uri(uri_custom).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp_custom.status(), StatusCode::OK);
+
+    // 5. POST /brouter/mapmatch with GPX XML body
+    let sample_gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1">
+  <trk><trkseg>
+    <trkpt lat="51.462414" lon="-0.143613"></trkpt>
+    <trkpt lat="51.465500" lon="-0.139000"></trkpt>
+    <trkpt lat="51.468000" lon="-0.135000"></trkpt>
+  </trkseg></trk>
+</gpx>"#;
+    let resp_mm = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/brouter/mapmatch?profile=fastbike&format=geojson")
+                .body(Body::from(sample_gpx))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_mm.status(), StatusCode::OK);
+    let body_mm = resp_mm.into_body().collect().await.unwrap().to_bytes();
+    let json_mm: serde_json::Value = serde_json::from_slice(&body_mm).unwrap();
+    assert!(
+        json_mm["features"][0]["geometry"]["coordinates"]
+            .as_array()
+            .unwrap()
+            .len()
+            > 5
+    );
+}
+

@@ -12,6 +12,7 @@ export const ROUTING_FILES = [
   '/profiles/fastbike.brf',
   '/profiles/fastbike-lowtraffic.brf',
   '/profiles/fastbike-verylowtraffic.brf',
+  '/profiles/gabis-fast-city.brf',
   '/profiles/gabis-lite-gravel.brf',
   '/profiles/gabis-safe-road.brf',
   '/profiles/gravel.brf',

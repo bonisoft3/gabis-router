@@ -244,6 +244,16 @@ pub async fn assert_route_parity(
         b_time
     );
 
+    assert_eq!(
+        ascend as i32,
+        b_asc as i32,
+        "{} [{}]: Ascend mismatch (rsrouter: {:.0}m, brouter.de: {:.0}m)",
+        corridor,
+        profile,
+        ascend,
+        b_asc
+    );
+
     if min_coord_overlap_pct >= 99.99 {
         assert_eq!(
             rs_coords.len(),

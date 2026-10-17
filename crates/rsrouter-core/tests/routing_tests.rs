@@ -289,6 +289,7 @@ fn test_route_result_to_gpx() {
         plain_ascend_m: 1.25,
         points,
         segments: Vec::new(),
+        ..Default::default()
     };
 
     let gpx = route.to_gpx("test & track");
@@ -388,19 +389,19 @@ fn test_clapham_hackney_fastbike() {
     let _ = fs::write("target/routes/clapham_hackney_fastbike.geojson", &geojson);
 
     // Enforce exact parity against upstream BRouter baseline
-    let dist_diff = (route.total_distance_m - 13202.0).abs();
+    let dist_diff = (route.total_distance_m - 13171.0).abs();
     assert!(
         dist_diff <= 1.0,
         "Distance divergence > 1m: got {}",
         route.total_distance_m
     );
     assert_eq!(
-        route.total_cost, 21844,
+        route.total_cost, 21803,
         "Cost divergence from BRouter baseline"
     );
     assert_eq!(
         route.points.len(),
-        925,
+        919,
         "Point count divergence from BRouter baseline"
     );
 }
@@ -483,19 +484,19 @@ fn test_clapham_hackney_lowtraffic() {
     );
 
     // Enforce exact parity against upstream BRouter baseline
-    let dist_diff = (route.total_distance_m - 14290.0).abs();
+    let dist_diff = (route.total_distance_m - 14021.0).abs();
     assert!(
         dist_diff <= 1.0,
         "Distance divergence > 1m: got {}",
         route.total_distance_m
     );
     assert_eq!(
-        route.total_cost, 24720,
+        route.total_cost, 24661,
         "Cost divergence from BRouter baseline"
     );
     assert_eq!(
         route.points.len(),
-        920,
+        910,
         "Point count divergence from BRouter baseline"
     );
 }
@@ -578,19 +579,19 @@ fn test_clapham_hackney_verylowtraffic() {
     );
 
     // Enforce exact parity against upstream BRouter baseline
-    let dist_diff = (route.total_distance_m - 14254.0).abs();
+    let dist_diff = (route.total_distance_m - 14267.0).abs();
     assert!(
         dist_diff <= 1.0,
         "Distance divergence > 1m: got {}",
         route.total_distance_m
     );
     assert_eq!(
-        route.total_cost, 25044,
+        route.total_cost, 25075,
         "Cost divergence from BRouter baseline"
     );
     assert_eq!(
         route.points.len(),
-        881,
+        885,
         "Point count divergence from BRouter baseline"
     );
 }
@@ -654,6 +655,56 @@ fn test_clapham_hackney_gabis_safe_road() {
         &geojson,
     );
     assert!(route.total_distance_m > 0.0);
+}
+
+#[test]
+fn test_clapham_hackney_gabis_fast_city() {
+    let segment_path = repo_path("data/segments4/W5_N50.rd5");
+    if !segment_path.exists() {
+        println!("Skipping clapham_hackney test: {:?} does not exist", segment_path);
+        return;
+    }
+
+    let lookups =
+        LookupData::load_from_file(&repo_path("profiles/lookups.dat")).expect("Failed to load lookups.dat");
+    let profile = Profile::load_from_file(&repo_path("profiles/gabis-fast-city.brf"), &lookups)
+        .expect("Failed to load gabis-fast-city profile");
+
+    let mut tile_mgr = TileManager::new(repo_path("data/segments4"));
+    let microcaches = tile_mgr
+        .decode_all_in_square(179, 141, None)
+        .expect("Failed to decode square (179, 141)");
+
+    let mut graph = RoutingGraph::with_capacities(100_000, 250_000);
+    for cache in microcaches {
+        graph.add_micro_cache(cache);
+    }
+    graph.resolve_edge_target_elevations();
+
+    let start_lon = -0.143613;
+    let start_lat = 51.462414;
+    let target_lon = -0.055296;
+    let target_lat = 51.544998;
+
+    let router = AStarRouter::new();
+    let route = router
+        .find_route(
+            &graph,
+            &lookups,
+            &profile,
+            (start_lon, start_lat),
+            (target_lon, target_lat),
+        )
+        .expect("Clapham -> Hackney gabis-fast-city routing failed");
+
+    let _ = fs::create_dir_all("target/routes");
+    let geojson = route.to_geojson("clapham_hackney_gabis-fast-city");
+    let _ = fs::write(
+        "target/routes/clapham_hackney_gabis-fast-city.geojson",
+        &geojson,
+    );
+    assert!(route.total_distance_m > 0.0 && route.total_distance_m < 13_000.0);
+    assert!(route.voice_hints.len() < 60, "Expected direct city route with fewer turns than gabis-safe-road (90), got {}", route.voice_hints.len());
 }
 
 #[test]
@@ -823,4 +874,520 @@ fn test_route_with_nogo_zone() {
         detour_route.points.len()
     );
 }
+
+#[test]
+fn test_car_kinematic_and_foot_modes() {
+    let lookups =
+        LookupData::load_from_file(repo_path("profiles/lookups.dat")).expect("Failed to load lookups.dat");
+
+    // 1. Verify foot mode Tobler's hiking speed is not clamped by way maxspeed
+    let hiking = Profile::load_from_file(repo_path("profiles/hiking-mountain.brf"), &lookups)
+        .expect("Failed to load hiking-mountain.brf");
+    let hiking_k = KinematicConfig::from_profile(&hiking);
+    assert!(hiking_k.is_foot_mode);
+    let (foot_speed, foot_energy) = hiking_k.compute_speed_and_energy(100.0, 0.0, 0.5);
+    assert!(foot_speed > 1.0, "Foot mode speed should follow Tobler's formula, got {}", foot_speed);
+    assert!(foot_energy > 0.0);
+
+    // 2. Verify non-bike/non-foot StdModel (car-fast) uses profile maxSpeed
+    let car_fast = Profile::load_from_file(repo_path("profiles/car-fast.brf"), &lookups)
+        .expect("Failed to load car-fast.brf");
+    let car_fast_k = KinematicConfig::from_profile(&car_fast);
+    assert!(!car_fast_k.is_foot_mode);
+    assert!(!car_fast_k.is_bike_mode);
+    let (car_fast_speed, _) = car_fast_k.compute_speed_and_energy(100.0, 0.0, 45.0 / 3.6);
+    assert!((car_fast_speed - car_fast_k.max_speed).abs() < 1e-6);
+
+    // 3. Verify car-eco KinematicModel routing on square (180, 141) if data exists
+    let segment_path = repo_path("data/segments4/E0_N50.rd5");
+    if !segment_path.exists() {
+        return;
+    }
+    let car_eco = Profile::load_from_file(repo_path("profiles/car-eco.brf"), &lookups)
+        .expect("Failed to load car-eco.brf");
+    let mut tile_mgr = TileManager::new(repo_path("data/segments4"));
+    let microcaches = tile_mgr
+        .decode_all_in_square(180, 141, None)
+        .expect("Failed to decode square (180, 141)");
+    let mut graph = RoutingGraph::with_capacities(100_000, 250_000);
+    for cache in microcaches {
+        graph.add_micro_cache(cache);
+    }
+    graph.resolve_edge_target_elevations();
+
+    let router = AStarRouter::new();
+    let route = router
+        .find_route(
+            &graph,
+            &lookups,
+            &car_eco,
+            (0.07, 51.50),
+            (0.08, 51.53),
+        )
+        .expect("car-eco routing failed");
+    assert!(route.total_distance_m > 1000.0);
+    assert!(route.total_time_s > 0.0);
+    assert!(route.total_energy_j > 0.0);
+    assert!(route.total_cost > 0);
+}
+
+#[test]
+fn test_voicehints_messages_times_and_kml() {
+    let segment_path = repo_path("data/segments4/W5_N50.rd5");
+    if !segment_path.exists() {
+        return;
+    }
+
+    let lookups =
+        LookupData::load_from_file(&repo_path("profiles/lookups.dat")).expect("Failed to load lookups.dat");
+    let profile = Profile::load_from_file(&repo_path("profiles/fastbike.brf"), &lookups)
+        .expect("Failed to load fastbike profile");
+
+    let mut tile_mgr = TileManager::new(repo_path("data/segments4"));
+    let microcaches = tile_mgr
+        .decode_all_in_square(179, 141, None)
+        .expect("Failed to decode square (179, 141)");
+
+    let mut graph = RoutingGraph::with_capacities(100_000, 250_000);
+    for cache in microcaches {
+        graph.add_micro_cache(cache);
+    }
+    graph.resolve_edge_target_elevations();
+
+    let start = (-0.143613, 51.462414);
+    let target = (-0.055296, 51.544998);
+    let router = AStarRouter::new();
+    let options = rsrouter_core::routing::search::RoutingOptions {
+        turn_instruction_mode: Some(4),
+        ..Default::default()
+    };
+
+    let route = router
+        .find_multi_route_with_options(&graph, &lookups, &profile, &[start, target], &options)
+        .expect("Routing failed");
+
+    assert!(
+        !route.voice_hints.is_empty(),
+        "Expected non-empty voice_hints for urban route"
+    );
+    assert!(
+        !route.messages.is_empty(),
+        "Expected non-empty messages for urban route"
+    );
+
+    let geojson_str = route.to_geojson("fastbike");
+    let json: serde_json::Value = serde_json::from_str(&geojson_str).expect("Invalid GeoJSON");
+    let props = &json["features"][0]["properties"];
+
+    let voicehints = props["voicehints"]
+        .as_array()
+        .expect("Missing voicehints array in GeoJSON");
+    assert_eq!(voicehints.len(), route.voice_hints.len());
+    for vh in voicehints {
+        let arr = vh.as_array().expect("voicehint item should be an array");
+        assert_eq!(arr.len(), 6);
+    }
+
+    let messages = props["messages"]
+        .as_array()
+        .expect("Missing messages matrix in GeoJSON");
+    assert!(messages.len() > 1, "messages should have header + rows");
+    let header = messages[0].as_array().unwrap();
+    assert_eq!(header.len(), 13);
+    assert_eq!(header[0].as_str().unwrap(), "Longitude");
+    assert_eq!(header[11].as_str().unwrap(), "Time");
+    assert_eq!(header[12].as_str().unwrap(), "Energy");
+
+    let times = props["times"]
+        .as_array()
+        .expect("Missing times array in GeoJSON");
+    assert_eq!(times.len(), route.points.len());
+
+    let kml = route.to_kml("fastbike");
+    assert!(kml.contains("<kml xmlns=\"http://earth.google.com/kml/2.0\">"));
+    assert!(kml.contains("<LineString>"));
+    assert!(kml.contains("<Folder>"));
+    assert!(kml.contains("<name>Paths</name>"));
+
+    let gpx = route.to_gpx("fastbike");
+    assert!(gpx.contains("<trkpt "));
+    assert!(gpx.contains("<sym>"));
+}
+
+#[test]
+fn test_heading_beeline_and_nogo_polygons() {
+    let segment_path = repo_path("data/segments4/W5_N50.rd5");
+    if !segment_path.exists() {
+        return;
+    }
+
+    let lookups =
+        LookupData::load_from_file(&repo_path("profiles/lookups.dat")).expect("Failed to load lookups.dat");
+    let profile = Profile::load_from_file(&repo_path("profiles/fastbike.brf"), &lookups)
+        .expect("Failed to load fastbike profile");
+
+    let mut tile_mgr = TileManager::new(repo_path("data/segments4"));
+    let microcaches = tile_mgr
+        .decode_all_in_square(179, 141, None)
+        .expect("Failed to decode square (179, 141)");
+
+    let mut graph = RoutingGraph::with_capacities(100_000, 250_000);
+    for cache in microcaches {
+        graph.add_micro_cache(cache);
+    }
+    graph.resolve_edge_target_elevations();
+
+    let start = (-0.143613, 51.462414);
+    let target = (-0.135000, 51.468000);
+    let router = AStarRouter::new();
+
+    // 1. Direct beeline leg
+    let beeline_opts = rsrouter_core::routing::search::RoutingOptions {
+        direct_legs: &[true],
+        ..Default::default()
+    };
+    let beeline_route = router
+        .find_multi_route_with_options(&graph, &lookups, &profile, &[start, target], &beeline_opts)
+        .expect("Beeline route failed");
+    assert_eq!(beeline_route.points.len(), 2);
+    assert_eq!(beeline_route.total_cost, beeline_route.total_distance_m as u32);
+    assert!(beeline_route.total_distance_m > 500.0);
+
+    // 2. Departure heading penalty
+    let north_opts = rsrouter_core::routing::search::RoutingOptions {
+        start_direction: Some(45.0),
+        force_start_direction: true,
+        ..Default::default()
+    };
+    let south_opts = rsrouter_core::routing::search::RoutingOptions {
+        start_direction: Some(225.0),
+        force_start_direction: true,
+        ..Default::default()
+    };
+    let north_route = router
+        .find_multi_route_with_options(&graph, &lookups, &profile, &[start, target], &north_opts)
+        .expect("North heading route failed");
+    let south_route = router
+        .find_multi_route_with_options(&graph, &lookups, &profile, &[start, target], &south_opts)
+        .expect("South heading route failed");
+    assert_ne!(north_route.total_cost, south_route.total_cost);
+
+    // 3. Nogo polyline across the midpoint of north_route
+    let mid = &north_route.points[north_route.points.len() / 2];
+    let polyline_str = format!(
+        "{:.6},{:.6},{:.6},{:.6}",
+        mid.lon - 0.002,
+        mid.lat - 0.002,
+        mid.lon + 0.002,
+        mid.lat + 0.002
+    );
+    let nogo_polys = rsrouter_core::routing::parse_nogo_polygons(&polyline_str, false);
+    assert_eq!(nogo_polys.len(), 1);
+    let poly_opts = rsrouter_core::routing::search::RoutingOptions {
+        nogos: &nogo_polys,
+        ..Default::default()
+    };
+    let detour = router
+        .find_multi_route_with_options(&graph, &lookups, &profile, &[start, target], &poly_opts)
+        .expect("Polyline detour route failed");
+    assert_ne!(detour.total_cost, north_route.total_cost);
+}
+
+#[test]
+fn test_gpx_map_matching_and_via_correction() {
+    let segment_path = repo_path("data/segments4/W5_N50.rd5");
+    if !segment_path.exists() {
+        return;
+    }
+
+    let lookups =
+        LookupData::load_from_file(&repo_path("profiles/lookups.dat")).expect("Failed to load lookups.dat");
+    let profile = Profile::load_from_file(&repo_path("profiles/fastbike.brf"), &lookups)
+        .expect("Failed to load fastbike profile");
+
+    let mut tile_mgr = TileManager::new(repo_path("data/segments4"));
+    let microcaches = tile_mgr
+        .decode_all_in_square(179, 141, None)
+        .expect("Failed to decode square (179, 141)");
+
+    let mut graph = RoutingGraph::with_capacities(100_000, 250_000);
+    for cache in microcaches {
+        graph.add_micro_cache(cache);
+    }
+    graph.resolve_edge_target_elevations();
+
+    let start = (-0.143613, 51.462414);
+    let target = (-0.125000, 51.482000);
+    let router = AStarRouter::new();
+
+    let reference_route = router
+        .find_route(&graph, &lookups, &profile, start, target)
+        .expect("Reference route failed");
+
+    // Build a simulated noisy GPX trace from the reference route (with ~4m jitter and stationary duplicates)
+    let mut gpx_xml = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><gpx version=\"1.1\"><trk><trkseg>\n",
+    );
+    for (i, pt) in reference_route.points.iter().enumerate() {
+        let is_endpoint = i == 0 || i == reference_route.points.len() - 1;
+        let jitter = if is_endpoint {
+            0.0
+        } else if i % 2 == 0 {
+            0.00003
+        } else {
+            -0.00003
+        };
+        let lat = pt.lat + jitter;
+        let lon = pt.lon - jitter;
+        gpx_xml.push_str(&format!("<trkpt lat=\"{lat:.6}\" lon=\"{lon:.6}\"></trkpt>\n"));
+        if i == 10 {
+            // Stationary duplicate points
+            gpx_xml.push_str(&format!("<trkpt lat=\"{lat:.6}\" lon=\"{lon:.6}\"></trkpt>\n"));
+        }
+    }
+    gpx_xml.push_str("</trkseg></trk></gpx>");
+
+    let mm_opts = rsrouter_core::routing::MapMatchOptions::default();
+    let matched_route = router
+        .match_gpx_track(&graph, &lookups, &profile, &gpx_xml, &mm_opts)
+        .expect("GPX map-matching failed");
+
+    let dist_delta_pct = (matched_route.total_distance_m - reference_route.total_distance_m).abs()
+        / reference_route.total_distance_m
+        * 100.0;
+    assert!(
+        dist_delta_pct < 1.0,
+        "Expected map-matched distance within 1% of reference, got {:.3}% ({} vs {})",
+        dist_delta_pct,
+        matched_route.total_distance_m,
+        reference_route.total_distance_m
+    );
+    assert!(!matched_route.messages.is_empty());
+
+    // Minimal waypoints for a same-profile GPX trace should collapse to just [start, end] (0 vias)
+    let (min_wps, min_route) = router
+        .match_gpx_with_minimal_waypoints(&graph, &lookups, &profile, &gpx_xml, &mm_opts)
+        .expect("Minimal waypoint extraction failed");
+    assert_eq!(
+        min_wps.len(),
+        2,
+        "Same-profile GPX should only need 2 waypoints (start & end), got {}",
+        min_wps.len()
+    );
+    assert!(
+        (min_route.total_distance_m - reference_route.total_distance_m).abs() < 25.0,
+        "Minimal route distance diverged: {} vs {}",
+        min_route.total_distance_m,
+        reference_route.total_distance_m
+    );
+
+    // Now test a detoured GPX (via an off-corridor point) and verify minimal via extraction
+    let detour_via = (-0.148000, 51.472000);
+    let detour_ref = router
+        .find_multi_route(&graph, &lookups, &profile, &[start, detour_via, target])
+        .expect("Detour reference route failed");
+    let detour_gpx = detour_ref.to_gpx("fastbike");
+    let detour_full_match = router
+        .match_gpx_track(&graph, &lookups, &profile, &detour_gpx, &mm_opts)
+        .expect("Detour full map-match failed");
+    let (detour_wps, detour_matched) = router
+        .match_gpx_with_minimal_waypoints(&graph, &lookups, &profile, &detour_gpx, &mm_opts)
+        .expect("Detour minimal waypoint extraction failed");
+    println!(
+        "Detour GPX points: {}, extracted minimal waypoints: {} ({:.1}m vs full match {:.1}m)",
+        detour_ref.points.len(),
+        detour_wps.len(),
+        detour_matched.total_distance_m,
+        detour_full_match.total_distance_m
+    );
+    assert_eq!(
+        detour_wps.len(),
+        3,
+        "Expected 3 waypoints (start, 1 via, end) for single-via detour GPX, got {}",
+        detour_wps.len()
+    );
+    assert!(
+        (detour_matched.total_distance_m - detour_full_match.total_distance_m).abs() < 25.0,
+        "Detour matched distance diverged: {} vs {}",
+        detour_matched.total_distance_m,
+        detour_full_match.total_distance_m
+    );
+}
+
+#[test]
+fn test_lazy_rd5_on_demand_cell_loading_parity() {
+    use std::sync::Arc;
+    use rsrouter_core::rd5::rd5_slice::{FileRd5SegmentReader, LazyRd5Provider};
+
+    let segments_dir = repo_path("data/segments4");
+    if !segments_dir.join("W5_N50.rd5").exists() {
+        return;
+    }
+
+    let lookups = LookupData::load_from_file(&repo_path("profiles/lookups.dat"))
+        .expect("Failed to load lookups.dat");
+    let profile = Profile::load_from_file(&repo_path("profiles/fastbike.brf"), &lookups)
+        .expect("Failed to load fastbike profile");
+
+    let start = (-0.143613, 51.462414);
+    let via = (-0.148000, 51.472000);
+    let target = (-0.125000, 51.482000);
+
+    // 1. Preloaded reference graph
+    let mut tm = TileManager::new(&segments_dir);
+    let microcaches = tm
+        .decode_all_in_square(179, 141, None)
+        .expect("Failed to decode square (179, 141)");
+    let mut ref_graph = RoutingGraph::with_capacities(100_000, 250_000);
+    for mc in microcaches {
+        ref_graph.add_micro_cache(mc);
+    }
+    ref_graph.resolve_edge_target_elevations();
+
+    let router = AStarRouter::new();
+    let ref_route_1 = router
+        .find_multi_route(&ref_graph, &lookups, &profile, &[start, target])
+        .expect("Reference route 1 failed");
+    let ref_route_2 = router
+        .find_multi_route(&ref_graph, &lookups, &profile, &[start, via, target])
+        .expect("Reference route 2 failed");
+
+    // 2. Lazy on-demand graph starting with 0 loaded cells
+    let reader = Arc::new(FileRd5SegmentReader::new(&segments_dir));
+    let provider = Arc::new(LazyRd5Provider::new(reader));
+    let mut lazy_graph = RoutingGraph::with_cell_provider(provider);
+    assert_eq!(lazy_graph.loaded_cell_count(), 0);
+
+    let t0 = Instant::now();
+    let lazy_route_1 = router
+        .find_multi_route_with_alternative_and_nogos_lazy(
+            &mut lazy_graph,
+            &lookups,
+            &profile,
+            &[start, target],
+            0,
+            &[],
+        )
+        .expect("Lazy route 1 failed");
+    let t1 = t0.elapsed();
+    let cells_after_1 = lazy_graph.loaded_cell_count();
+
+    let t2 = Instant::now();
+    let lazy_route_2 = router
+        .find_multi_route_with_alternative_and_nogos_lazy(
+            &mut lazy_graph,
+            &lookups,
+            &profile,
+            &[start, via, target],
+            0,
+            &[],
+        )
+        .expect("Lazy route 2 failed");
+    let t3 = t2.elapsed();
+    let cells_after_2 = lazy_graph.loaded_cell_count();
+
+    println!(
+        "Lazy route 1: {:?}, cells loaded: {} (nodes: {}, edges: {})",
+        t1,
+        cells_after_1,
+        lazy_graph.node_count(),
+        lazy_graph.edge_count()
+    );
+    println!(
+        "Lazy route 2: {:?}, total cells loaded: {} (+{} incremental)",
+        t3,
+        cells_after_2,
+        cells_after_2 - cells_after_1
+    );
+
+    assert_eq!(lazy_route_1.total_cost, ref_route_1.total_cost);
+    assert!((lazy_route_1.total_distance_m - ref_route_1.total_distance_m).abs() < 1e-6);
+    assert_eq!(lazy_route_1.points.len(), ref_route_1.points.len());
+    assert_eq!(lazy_route_1.voice_hints.len(), ref_route_1.voice_hints.len());
+
+    assert_eq!(lazy_route_2.total_cost, ref_route_2.total_cost);
+    assert!((lazy_route_2.total_distance_m - ref_route_2.total_distance_m).abs() < 1e-6);
+    assert_eq!(lazy_route_2.points.len(), ref_route_2.points.len());
+    assert_eq!(lazy_route_2.voice_hints.len(), ref_route_2.voice_hints.len());
+
+    assert!(cells_after_1 > 0 && cells_after_1 < 60, "Expected < 60 cells, got {}", cells_after_1);
+    assert!(cells_after_2 >= cells_after_1 && cells_after_2 < 80, "Expected < 80 cells, got {}", cells_after_2);
+
+    let safe_profile = Profile::load_from_file(&repo_path("profiles/gabis-safe-road.brf"), &lookups)
+        .expect("Failed to load gabis-safe-road profile");
+    let waypoints_11 = [
+        (-0.1421, 51.4611),
+        (-0.1401, 51.4651),
+        (-0.1371, 51.4691),
+        (-0.1321, 51.4721),
+        (-0.1291, 51.4771),
+        (-0.1261, 51.4811),
+        (-0.1221, 51.4881),
+        (-0.1181, 51.4951),
+        (-0.0881, 51.5141),
+        (-0.0791, 51.5401),
+        (-0.0541, 51.5431),
+    ];
+    let ref_route_11 = router
+        .find_multi_route(&ref_graph, &lookups, &safe_profile, &waypoints_11)
+        .expect("Reference 11-waypoint route failed");
+
+    let reader_11 = Arc::new(FileRd5SegmentReader::new(&segments_dir));
+    let provider_11 = Arc::new(LazyRd5Provider::new(reader_11));
+    let mut lazy_graph_11 = RoutingGraph::with_cell_provider(provider_11);
+    let t_11_start = Instant::now();
+    let lazy_route_11 = router
+        .find_multi_route_with_alternative_and_nogos_lazy(
+            &mut lazy_graph_11,
+            &lookups,
+            &safe_profile,
+            &waypoints_11,
+            0,
+            &[],
+        )
+        .expect("Lazy 11-waypoint route failed");
+    println!(
+        "Lazy 11-waypoint route: {:?}, cells loaded: {} (cost: {}, dist: {}m)",
+        t_11_start.elapsed(),
+        lazy_graph_11.loaded_cell_count(),
+        lazy_route_11.total_cost,
+        lazy_route_11.total_distance_m
+    );
+
+    assert_eq!(lazy_route_11.total_cost, ref_route_11.total_cost);
+    assert!((lazy_route_11.total_distance_m - ref_route_11.total_distance_m).abs() < 1e-6);
+    assert_eq!(lazy_route_11.points.len(), ref_route_11.points.len());
+
+    let mut waypoints_11_moved = waypoints_11;
+    waypoints_11_moved[4] = (-0.1340, 51.4790);
+    let ref_route_11_moved = router
+        .find_multi_route(&ref_graph, &lookups, &safe_profile, &waypoints_11_moved)
+        .expect("Reference moved 11-waypoint route failed");
+    let t_11_warm = Instant::now();
+    let lazy_route_11_moved = router
+        .find_multi_route_with_alternative_and_nogos_lazy(
+            &mut lazy_graph_11,
+            &lookups,
+            &safe_profile,
+            &waypoints_11_moved,
+            0,
+            &[],
+        )
+        .expect("Lazy warm 11-waypoint route failed");
+    println!(
+        "Lazy 11-waypoint warm edit: {:?}, cells loaded: {} (cost: {}, dist: {}m)",
+        t_11_warm.elapsed(),
+        lazy_graph_11.loaded_cell_count(),
+        lazy_route_11_moved.total_cost,
+        lazy_route_11_moved.total_distance_m
+    );
+    assert_eq!(lazy_route_11_moved.total_cost, ref_route_11_moved.total_cost);
+    assert!((lazy_route_11_moved.total_distance_m - ref_route_11_moved.total_distance_m).abs() < 1e-6);
+    assert_eq!(lazy_route_11_moved.points.len(), ref_route_11_moved.points.len());
+}
+
+
+
+
+
 

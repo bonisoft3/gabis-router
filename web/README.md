@@ -6,10 +6,11 @@ Progressive Web App (PWA) for browser-based bicycle routing powered by WebAssemb
 
 | Component | Technology | Role |
 | :--- | :--- | :--- |
-| UI & Map | TypeScript, MapLibre GL JS | Renders map view, handles click waypoints, displays GeoJSON routes. |
-| Routing Worker | Web Worker (`worker.ts`) | Runs route calculation off the main thread to prevent UI freezing. |
+| UI & Map | React, TypeScript, MapLibre GL JS | Renders map view, handles click waypoints, displays GeoJSON routes. |
+| Routing Worker | Web Worker (`worker.ts`) | Runs route calculation and GPX map matching off the main thread. |
 | Engine | `rsrouter-wasm` (WebAssembly) | In-memory graph loading and A* path computation. |
 | Offline Cache | Service Worker (`sw.js`) | Caches the app shell (HTML, JS, CSS, `.wasm`, icons) so the app opens offline. Routing data and map tiles are cached by the app code. |
+| MCP Bridge | Vite HMR + `mcp-bridge.ts` | Connects the live browser tab to the MCP server (`tools/mcp-frontend.mjs`). See [tools/README.md](../tools/README.md#frontend-mcp-server-mcp-frontendmjs). |
 
 ## Directory Layout
 
@@ -18,14 +19,15 @@ web/
 ├── index.html              # App entrypoint
 ├── package.json            # Dependencies and scripts
 ├── tsconfig.json           # TypeScript configuration
-├── vite.config.ts          # Vite build configuration
+├── vite.config.ts          # Vite build configuration and /__mcp middleware
 ├── map-tiles/              # .pmtiles archives, extracted on first request (dev server, not copied to dist)
 ├── public/
 │   ├── manifest.json       # PWA metadata
 │   ├── sw.js               # Service Worker
 │   └── favicon.svg
 └── src/
-    ├── main.ts             # Map rendering, UI, offline download
+    ├── App.tsx             # Root React component
+    ├── mcp-bridge.ts       # Browser-side MCP command handler and composite screenshot renderer
     ├── worker.ts           # Routing Web Worker
     ├── download-worker.ts  # Streams map tile archives to browser storage (OPFS)
     └── types.ts            # Data contracts and messages

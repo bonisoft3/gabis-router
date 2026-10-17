@@ -25,9 +25,13 @@ export function setUnits(next: Units) {
   listeners.forEach((fn) => fn());
 }
 
-/** Calls `fn` after the units change. */
-export function onUnitsChange(fn: () => void) {
+/** Calls `fn` after the units change. Returns an unsubscribe function. */
+export function onUnitsChange(fn: () => void): () => void {
   listeners.push(fn);
+  return () => {
+    const idx = listeners.indexOf(fn);
+    if (idx !== -1) listeners.splice(idx, 1);
+  };
 }
 
 export function formatDistance(meters: number): string {
@@ -47,3 +51,15 @@ export function formatDuration(seconds: number): string {
   if (minutes < 60) return `${minutes} min`;
   return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
 }
+
+export function formatSpeed(meters: number, seconds: number): string {
+  if (seconds <= 0 || meters <= 0) return units === 'imperial' ? '0.0 mph' : '0.0 km/h';
+  const hours = seconds / 3600;
+  if (units === 'imperial') {
+    const mph = meters / M_PER_MILE / hours;
+    return `${mph.toFixed(1)} mph`;
+  }
+  const kmh = meters / 1000 / hours;
+  return `${kmh.toFixed(1)} km/h`;
+}
+

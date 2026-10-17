@@ -15,6 +15,26 @@ export interface ComparedRoute {
   geojson: GeoJSON.FeatureCollection;
 }
 
+export function computeFilteredElevation(ele: number[]): { ascentM: number; descentM: number } {
+  if (ele.length < 2) return { ascentM: 0, descentM: 0 };
+  let ascentM = 0;
+  let ehb = 0;
+  const ELEVATION_FILTER_M = -5;
+  for (let i = 1; i < ele.length; i++) {
+    const dh = ele[i] - ele[i - 1];
+    ehb += dh;
+    if (ehb > 0) {
+      ascentM += ehb;
+      ehb = 0;
+    } else if (ehb < ELEVATION_FILTER_M) {
+      ehb = ELEVATION_FILTER_M;
+    }
+  }
+  const netM = ele[ele.length - 1] - ele[0];
+  const descentM = Math.max(0, ascentM - netM);
+  return { ascentM, descentM };
+}
+
 export function parseGpx(xmlText: string): ComparedRoute {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'text/xml');
@@ -54,7 +74,7 @@ export function parseGpx(xmlText: string): ComparedRoute {
       ele.push(altitude);
     } else {
       coordinates.push([lon, lat]);
-      ele.push(0);
+      ele.push(ele.length > 0 ? ele[ele.length - 1] : 0);
     }
 
     if (!isNaN(timeMs)) {
@@ -74,14 +94,7 @@ export function parseGpx(xmlText: string): ComparedRoute {
   }
 
   const distanceM = dist[dist.length - 1] || 0;
-
-  let ascentM = 0;
-  let descentM = 0;
-  for (let i = 1; i < ele.length; i++) {
-    const diff = ele[i] - ele[i - 1];
-    if (diff > 0.5) ascentM += diff;
-    else if (diff < -0.5) descentM += Math.abs(diff);
-  }
+  const { ascentM, descentM } = computeFilteredElevation(ele);
 
   let durationS: number | undefined;
   if (timestamps.length >= 2) {

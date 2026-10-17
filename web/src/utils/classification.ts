@@ -61,24 +61,33 @@ export function classifySurface(surface?: string, highway?: string): SurfaceCate
   return 'unknown';
 }
 
-export type RoadCategory = 'cycleway' | 'quiet' | 'minor' | 'major' | 'path' | 'unknown';
+export type RoadCategory =
+  | 'cycleway'
+  | 'residential'
+  | 'tertiary'
+  | 'secondary'
+  | 'primary'
+  | 'path'
+  | 'unknown';
 
 export const ROAD_META: Record<RoadCategory, { label: string; color: string }> = {
   cycleway: { label: 'Cycleway', color: '#06b6d4' },
-  quiet: { label: 'Quiet street', color: '#10b981' },
-  minor: { label: 'Minor road', color: '#f59e0b' },
-  major: { label: 'Major road', color: '#ef4444' },
-  path: { label: 'Path / Trail', color: '#854d0e' },
+  residential: { label: 'Residential', color: '#10b981' },
+  tertiary: { label: 'Tertiary', color: '#eab308' },
+  secondary: { label: 'Secondary', color: '#f97316' },
+  primary: { label: 'Primary', color: '#ef4444' },
+  path: { label: 'Path', color: '#854d0e' },
   unknown: { label: 'Unknown', color: '#94a3b8' },
 };
 
 export function classifyRoad(highway?: string): RoadCategory {
   const h = (highway || '').toLowerCase().trim();
   if (h === 'cycleway') return 'cycleway';
-  if (['residential', 'living_street', 'service', 'unclassified', 'pedestrian'].includes(h)) return 'quiet';
-  if (['tertiary', 'tertiary_link'].includes(h)) return 'minor';
-  if (['secondary', 'secondary_link', 'primary', 'primary_link', 'trunk', 'trunk_link', 'motorway', 'motorway_link'].includes(h)) return 'major';
-  if (['path', 'footway', 'bridleway', 'track', 'steps'].includes(h)) return 'path';
+  if (['residential', 'living_street', 'service', 'unclassified'].includes(h)) return 'residential';
+  if (['tertiary', 'tertiary_link'].includes(h)) return 'tertiary';
+  if (['secondary', 'secondary_link'].includes(h)) return 'secondary';
+  if (['primary', 'primary_link', 'trunk', 'trunk_link', 'motorway', 'motorway_link'].includes(h)) return 'primary';
+  if (['path', 'footway', 'bridleway', 'track', 'steps', 'pedestrian'].includes(h)) return 'path';
   return 'unknown';
 }
 
@@ -124,7 +133,8 @@ export type SpeedLimitCategory =
   | '40mph'
   | '50mph'
   | '60mph'
-  | '70mph';
+  | '70mph'
+  | 'untagged';
 
 export const SPEED_LIMIT_META: Record<SpeedLimitCategory, { label: string; color: string }> = {
   car_free: { label: 'Car-free', color: '#059669' },
@@ -134,6 +144,7 @@ export const SPEED_LIMIT_META: Record<SpeedLimitCategory, { label: string; color
   '50mph': { label: '50 mph', color: '#f97316' },
   '60mph': { label: '60 mph', color: '#ef4444' },
   '70mph': { label: '70 mph', color: '#991b1b' },
+  untagged: { label: 'Untagged', color: '#94a3b8' },
 };
 
 export function classifySpeedLimit(maxspeed?: number, highway?: string): SpeedLimitCategory {
@@ -154,26 +165,7 @@ export function classifySpeedLimit(maxspeed?: number, highway?: string): SpeedLi
     return '70mph';
   }
 
-  // 3. Fallback inference based on highway classification when untagged
-  if (['residential', 'living_street', 'service'].includes(h)) {
-    return '20mph';
-  }
-  if (['tertiary', 'tertiary_link', 'unclassified'].includes(h)) {
-    return '30mph';
-  }
-  if (['secondary', 'secondary_link'].includes(h)) {
-    return '40mph';
-  }
-  if (['primary', 'primary_link'].includes(h)) {
-    return '50mph';
-  }
-  if (['trunk', 'trunk_link'].includes(h)) {
-    return '60mph';
-  }
-  if (['motorway', 'motorway_link'].includes(h)) {
-    return '70mph';
-  }
-
-  return '30mph';
+  return 'untagged';
 }
+
 

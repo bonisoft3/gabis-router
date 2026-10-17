@@ -37,22 +37,60 @@ export function getRd5CreationDate(buffer: ArrayBuffer): Date | null {
   return new Date(ctime);
 }
 
+export const CACHE_CHANNEL_NAME = 'rsrouter-cache-events';
+
+const segmentDateMemo = new Map<string, Date>();
+
+export function notifyCacheUpdated(): void {
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel(CACHE_CHANNEL_NAME);
+      bc.postMessage({ type: 'updated' });
+      bc.close();
+    }
+  } catch {}
+}
+
 /**
  * Reads the creation date of a cached segment without loading full data if headers exist.
  */
 export async function getCachedSegmentDate(cache: Cache, segmentId: string): Promise<Date | null> {
   const match = await cache.match(`/segments4/${segmentId}.rd5`);
-  if (!match) return null;
+  if (!match) {
+    segmentDateMemo.delete(segmentId);
+    return null;
+  }
 
   const headerDate = match.headers.get('x-segment-date');
   if (headerDate) {
     const d = new Date(headerDate);
-    if (!isNaN(d.getTime())) return d;
+    if (!isNaN(d.getTime())) {
+      segmentDateMemo.set(segmentId, d);
+      return d;
+    }
   }
 
-  // Fallback: read trailer from arrayBuffer
-  const buf = await match.arrayBuffer();
-  return getRd5CreationDate(buf);
+  const memo = segmentDateMemo.get(segmentId);
+  if (memo) return memo;
+
+  // Fallback: read only the 8-byte trailer offset and 8-byte creation timestamp via Blob.slice
+  const blob = await match.blob();
+  if (blob.size < 208) return null;
+  const headerTail = await blob.slice(192, 200).arrayBuffer();
+  const hView = new DataView(headerTail);
+  const hi = hView.getUint32(0);
+  const lo = hView.getUint32(4);
+  const pos24 = (hi & 0x0000ffff) * 4294967296 + lo;
+  if (pos24 + 8 > blob.size) return null;
+  const trailerHead = await blob.slice(pos24, pos24 + 8).arrayBuffer();
+  const tView = new DataView(trailerHead);
+  const ctimeHi = tView.getInt32(0);
+  const ctimeLo = tView.getUint32(4);
+  const ctime = ctimeHi * 4294967296 + ctimeLo;
+  if (isNaN(ctime) || ctime <= 0) return null;
+  const d = new Date(ctime);
+  segmentDateMemo.set(segmentId, d);
+  return d;
 }
 
 /**
@@ -77,8 +115,7 @@ export async function ensureStorageFor(bytes: number, what: string) {
 }
 
 /**
- * Downloads a segment, caches it, and returns the byte array.
- * Tries local path first (/segments4/<id>.rd5), falls back to proxy (/remote-segments/<id>.rd5).
+ * Downloads a segment from the BRouter repository (/segments4/<id>.rd5), caches it, and returns the byte array.
  */
 export async function fetchAndCacheSegment(
   segmentId: string,
@@ -87,10 +124,7 @@ export async function fetchAndCacheSegment(
   const cache = await caches.open(SEGMENT_CACHE_NAME);
   const key = `/segments4/${segmentId}.rd5`;
 
-  let res = await fetch(key);
-  if (!res.ok || isHtml(res)) {
-    res = await fetch(`/remote-segments/${segmentId}.rd5`);
-  }
+  const res = await fetch(key, { cache: 'no-cache' });
   if (!res.ok || !res.body || isHtml(res)) {
     throw new Error(`Failed to fetch routing segment ${segmentId}: HTTP ${res.status}`);
   }
@@ -128,60 +162,92 @@ export async function fetchAndCacheSegment(
     offset += chunk.byteLength;
   }
 
-  const creationDate = getRd5CreationDate(bytes.buffer);
+  let creationDate = getRd5CreationDate(bytes.buffer);
+  if (!creationDate) {
+    const lastMod = res.headers.get('last-modified');
+    if (lastMod) {
+      const parsed = new Date(lastMod);
+      if (!isNaN(parsed.getTime())) creationDate = parsed;
+    }
+  }
+  if (!creationDate) {
+    creationDate = new Date();
+  }
+
+  segmentDateMemo.set(segmentId, creationDate);
   const headers: Record<string, string> = {
     'content-type': 'application/octet-stream',
     'content-length': String(received),
+    'x-segment-date': creationDate.toISOString(),
   };
-  if (creationDate) {
-    headers['x-segment-date'] = creationDate.toISOString();
-  }
 
   await cache.put(key, new Response(bytes, { headers }));
+  notifyCacheUpdated();
   return bytes;
+}
+
+/**
+ * Returns IDs of all currently cached routing segments.
+ */
+export async function getCachedSegmentIds(cache: Cache): Promise<string[]> {
+  const ids = new Set<string>();
+  for (const segId of UK_SEGMENTS) {
+    if ((await getCachedSegmentSize(cache, segId)) >= MIN_RD5_BYTES) {
+      ids.add(segId);
+    }
+  }
+  const requests = await cache.keys();
+  for (const req of requests) {
+    const m = req.url.match(/\/segments4\/([A-Z0-9_]+)\.rd5$/i);
+    if (m) {
+      ids.add(m[1]);
+    }
+  }
+  return Array.from(ids);
 }
 
 /**
  * Finds the latest creation date across cached segments.
  */
 export async function getLatestCachedSegmentDate(cache: Cache): Promise<Date | null> {
+  let latest: Date | null = null;
+  const consider = (d: Date | null) => {
+    if (d && (!latest || d.getTime() > latest.getTime())) {
+      latest = d;
+    }
+  };
+
+  const seenIds = new Set<string>(UK_SEGMENTS);
   for (const segId of UK_SEGMENTS) {
-    const d = await getCachedSegmentDate(cache, segId);
-    if (d) return d;
+    consider(await getCachedSegmentDate(cache, segId));
   }
   const requests = await cache.keys();
   for (const req of requests) {
-    if (req.url.includes('.rd5')) {
-      const match = await cache.match(req);
-      if (match) {
-        const headerDate = match.headers.get('x-segment-date');
-        if (headerDate) {
-          const d = new Date(headerDate);
-          if (!isNaN(d.getTime())) return d;
-        }
-        const buf = await match.arrayBuffer();
-        const d = getRd5CreationDate(buf);
-        if (d) return d;
-      }
+    const m = req.url.match(/\/segments4\/([A-Z0-9_]+)\.rd5$/i);
+    if (m && !seenIds.has(m[1])) {
+      seenIds.add(m[1]);
+      consider(await getCachedSegmentDate(cache, m[1]));
     }
   }
-  return null;
+  return latest;
 }
 
 /**
- * Removes all cached segments from storage.
+ * Removes all cached routing segments and profile files from storage.
  */
 export async function clearAllCachedSegments(): Promise<void> {
+  segmentDateMemo.clear();
   const cache = await caches.open(SEGMENT_CACHE_NAME);
   const requests = await cache.keys();
   for (const req of requests) {
-    if (req.url.includes('.rd5')) {
-      await cache.delete(req);
-    }
+    await cache.delete(req);
   }
   for (const segId of UK_SEGMENTS) {
     await cache.delete(`/segments4/${segId}.rd5`);
-    await cache.delete(`/remote-segments/${segId}.rd5`);
   }
+  try {
+    await caches.delete('rsrouter-segments-v2');
+  } catch {}
+  notifyCacheUpdated();
 }
 

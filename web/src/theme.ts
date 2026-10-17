@@ -38,9 +38,13 @@ export function setTheme(next: Theme) {
 
 export const setThemeSetting = setTheme;
 
-/** Calls `fn` after the resolved theme has changed. */
-export function onThemeChange(fn: () => void) {
+/** Calls `fn` after the resolved theme has changed. Returns an unsubscribe function. */
+export function onThemeChange(fn: () => void): () => void {
   listeners.push(fn);
+  return () => {
+    const idx = listeners.indexOf(fn);
+    if (idx !== -1) listeners.splice(idx, 1);
+  };
 }
 
 darkQuery.addEventListener('change', () => {

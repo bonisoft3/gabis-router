@@ -51,7 +51,11 @@ export function setThunderforestKey(key: string) {
   }
 }
 
-/** Calls `fn` after the basemap style or its configuration changes. */
-export function onBasemapChange(fn: () => void) {
+/** Calls `fn` after the basemap style or its configuration changes. Returns an unsubscribe function. */
+export function onBasemapChange(fn: () => void): () => void {
   listeners.push(fn);
+  return () => {
+    const idx = listeners.indexOf(fn);
+    if (idx !== -1) listeners.splice(idx, 1);
+  };
 }

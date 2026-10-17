@@ -59,21 +59,6 @@ function extractSegment(segmentId: string, bbox: number[], outPath: string): Pro
   return promise;
 }
 
-// Missing segments must 404. Otherwise the SPA fallback answers with index.html.
-const segmentsNotFound: Connect.NextHandleFunction = (req, res, next) => {
-  if (req.url && req.url.startsWith('/segments4/') && req.url.endsWith('.rd5')) {
-    const relPath = req.url.split('?')[0];
-    const localPath = path.join(__dirname, 'public', relPath);
-    if (!fs.existsSync(localPath)) {
-      res.statusCode = 404;
-      res.setHeader('Content-Type', 'text/plain');
-      res.end('Segment not found locally');
-      return;
-    }
-  }
-  next();
-};
-
 // Serves /map-tiles/<segment>.pmtiles from web/map-tiles/, extracting it from the
 // Protomaps planet build on first request.
 const serveMapTiles: Connect.NextHandleFunction = async (req, res, next) => {
@@ -128,10 +113,10 @@ export default defineConfig({
         }
       : undefined,
     proxy: {
-      '/remote-segments': {
+      '/segments4': {
         target: 'https://brouter.de/brouter/segments4',
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/remote-segments/, ''),
+        rewrite: (p) => p.replace(/^\/segments4/, ''),
       },
     },
   },
@@ -145,10 +130,10 @@ export default defineConfig({
         }
       : undefined,
     proxy: {
-      '/remote-segments': {
+      '/segments4': {
         target: 'https://brouter.de/brouter/segments4',
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/remote-segments/, ''),
+        rewrite: (p) => p.replace(/^\/segments4/, ''),
       },
     },
   },
@@ -181,15 +166,6 @@ export default defineConfig({
       },
     },
     {
-      name: 'prevent-spa-fallback-on-segments',
-      configureServer(server) {
-        server.middlewares.use(segmentsNotFound);
-      },
-      configurePreviewServer(server) {
-        server.middlewares.use(segmentsNotFound);
-      },
-    },
-    {
       name: 'pmtiles-extractor',
       configureServer(server) {
         server.middlewares.use(serveMapTiles);
@@ -198,7 +174,174 @@ export default defineConfig({
         server.middlewares.use(serveMapTiles);
       },
     },
+    {
+      name: 'mcp-bridge',
+      configureServer(server) {
+        const pending = new Map<
+          string,
+          { resolve: (val: any) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }
+        >();
+        let reqSeq = 0;
+        let bridgeReady = false;
+        const readyWaiters = new Set<() => void>();
+
+        server.ws.on('mcp:ready', () => {
+          bridgeReady = true;
+          for (const resolve of readyWaiters) resolve();
+          readyWaiters.clear();
+        });
+
+        server.ws.on('mcp:result', (data: any) => {
+          if (!data || !data.id) return;
+          const entry = pending.get(data.id);
+          if (!entry) return;
+          clearTimeout(entry.timer);
+          pending.delete(data.id);
+          if (data.ok) {
+            entry.resolve(data.result);
+          } else {
+            entry.reject(new Error(data.error || 'Unknown browser MCP error'));
+          }
+        });
+
+        server.middlewares.use('/__mcp', (req, res) => {
+          if (req.method !== 'POST') {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(
+              JSON.stringify({
+                status: 'ok',
+                bridge: 'vite-mcp',
+                connectedTabs: server.ws.clients.size,
+                bridgeReady,
+              }),
+            );
+            return;
+          }
+
+          if (server.ws.clients.size === 0) {
+            res.statusCode = 503;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error:
+                  'No browser tab is connected to Vite HMR. Open or refresh https://localhost:3000 in your browser.',
+              }),
+            );
+            return;
+          }
+
+          let rawBody = '';
+          req.on('data', (chunk) => {
+            rawBody += chunk;
+          });
+          req.on('end', async () => {
+            try {
+              if (!bridgeReady) {
+                await new Promise<void>((resolve) => {
+                  const t = setTimeout(resolve, 4000);
+                  readyWaiters.add(() => {
+                    clearTimeout(t);
+                    resolve();
+                  });
+                  server.ws.send({ type: 'full-reload', path: '*' });
+                });
+              }
+
+              const payload = JSON.parse(rawBody || '{}');
+              const command = String(payload.command || 'get_state');
+              const args = { ...(payload.args || {}) };
+
+              if (command === 'compare_gpx' && args.filePath && !args.gpxContent) {
+                const resolved = path.isAbsolute(args.filePath)
+                  ? args.filePath
+                  : path.resolve(__dirname, '..', args.filePath);
+                const text = fs.readFileSync(resolved, 'utf8');
+                if (resolved.endsWith('.json')) {
+                  const geo = JSON.parse(text);
+                  const coords: number[][] = geo.features?.[0]?.geometry?.coordinates || [];
+                  const name = path.basename(resolved, '.json');
+                  const pts = coords
+                    .map(
+                      (c) =>
+                        `<trkpt lat="${c[1]}" lon="${c[0]}">${c[2] !== undefined ? `<ele>${c[2]}</ele>` : ''}</trkpt>`,
+                    )
+                    .join('');
+                  args.gpxContent = `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1"><trk><name>${name}</name><trkseg>${pts}</trkseg></trk></gpx>`;
+                } else {
+                  args.gpxContent = text;
+                }
+              }
+
+              const id = `mcp_${Date.now()}_${++reqSeq}`;
+              const timeoutMs = Number(payload.timeoutMs || 15000);
+
+              const result: any = await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                  pending.delete(id);
+                  reject(
+                    new Error(
+                      'Timed out waiting for browser response. Please refresh https://localhost:3000 so the new MCP bridge hook loads.',
+                    ),
+                  );
+                }, timeoutMs);
+                pending.set(id, { resolve, reject, timer });
+                server.ws.send('mcp:command', { id, command, args });
+              });
+
+              if (command === 'screenshot' && result && typeof result.dataUrl === 'string') {
+                const base64 = result.dataUrl.replace(/^data:image\/png;base64,/, '');
+                const outPath = args.outPath
+                  ? path.isAbsolute(args.outPath)
+                    ? args.outPath
+                    : path.resolve(__dirname, '..', args.outPath)
+                  : path.join(__dirname, 'mcp-screenshot.png');
+                fs.mkdirSync(path.dirname(outPath), { recursive: true });
+                fs.writeFileSync(outPath, Buffer.from(base64, 'base64'));
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(
+                  JSON.stringify({
+                    ok: true,
+                    result: {
+                      path: outPath,
+                      width: result.width,
+                      height: result.height,
+                    },
+                  }),
+                );
+                return;
+              }
+
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: true, result }));
+            } catch (err: any) {
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: err?.message || String(err),
+                }),
+              );
+            }
+          });
+        });
+      },
+    },
   ],
+  build: {
+    chunkSizeWarningLimit: 1100,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          maplibre: ['maplibre-gl'],
+        },
+      },
+    },
+  },
   worker: {
     format: 'es',
   },

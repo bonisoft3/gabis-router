@@ -79,35 +79,72 @@ export function formatPlaceProperties(props: Record<string, any>): { title: stri
   };
 }
 
+const REVERSE_MIN_INTERVAL_MS = 350;
+const inFlightReverse = new Map<string, Promise<string | null>>();
+let reverseQueue: Promise<void> = Promise.resolve();
+let lastReverseFetchAt = 0;
+
+function enqueueReverseFetch<T>(fn: () => Promise<T>): Promise<T> {
+  const next = reverseQueue.then(async () => {
+    const elapsed = Date.now() - lastReverseFetchAt;
+    if (elapsed < REVERSE_MIN_INTERVAL_MS) {
+      await new Promise((r) => setTimeout(r, REVERSE_MIN_INTERVAL_MS - elapsed));
+    }
+    lastReverseFetchAt = Date.now();
+    return fn();
+  });
+  reverseQueue = next.then(
+    () => {},
+    () => {},
+  );
+  return next;
+}
+
 export async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
   const key = coordKey(lat, lon);
   const cached = reverseCache.get(key);
   if (cached !== undefined) {
-    return cached;
+    return cached || null;
   }
 
   if (!isOnlineMode()) {
     return null;
   }
 
-  const url = `https://photon.komoot.io/reverse?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) {
-      return null;
-    }
-    const data = await res.json();
-    if (!data.features || data.features.length === 0) {
-      reverseCache.set(key, '');
-      return null;
-    }
-    const feat = data.features[0];
-    const { name } = formatPlaceProperties(feat.properties || {});
-    reverseCache.set(key, name);
-    return name;
-  } catch {
-    return null;
+  const existing = inFlightReverse.get(key);
+  if (existing) {
+    return existing;
   }
+
+  const reqPromise = enqueueReverseFetch(async () => {
+    const recheck = reverseCache.get(key);
+    if (recheck !== undefined) {
+      return recheck || null;
+    }
+    const url = `https://photon.komoot.io/reverse?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        return null;
+      }
+      const data = await res.json();
+      if (!data.features || data.features.length === 0) {
+        reverseCache.set(key, '');
+        return null;
+      }
+      const feat = data.features[0];
+      const { name } = formatPlaceProperties(feat.properties || {});
+      reverseCache.set(key, name);
+      return name;
+    } catch {
+      return null;
+    } finally {
+      inFlightReverse.delete(key);
+    }
+  });
+
+  inFlightReverse.set(key, reqPromise);
+  return reqPromise;
 }
 
 export function cachePlaceName(lat: number, lon: number, name: string): void {

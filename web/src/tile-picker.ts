@@ -6,6 +6,7 @@ export class TilePickerControl implements maplibregl.IControl {
   private container?: HTMLElement;
   private button?: HTMLButtonElement;
   private menu?: HTMLElement;
+  private unsubBasemap?: () => void;
   private isOpen = false;
   private isOffline = false;
 
@@ -38,7 +39,7 @@ export class TilePickerControl implements maplibregl.IControl {
     document.addEventListener('click', this.onDocClick);
     document.addEventListener('keydown', this.onKeyDown);
 
-    onBasemapChange(() => {
+    this.unsubBasemap = onBasemapChange(() => {
       this.updateActiveState();
     });
 
@@ -50,6 +51,8 @@ export class TilePickerControl implements maplibregl.IControl {
   onRemove(): void {
     document.removeEventListener('click', this.onDocClick);
     document.removeEventListener('keydown', this.onKeyDown);
+    this.unsubBasemap?.();
+    this.unsubBasemap = undefined;
     this.button = undefined;
     this.menu = undefined;
     this.container?.remove();

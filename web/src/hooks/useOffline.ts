@@ -3,6 +3,7 @@ import * as pmtiles from 'pmtiles';
 import {
   SEGMENT_CACHE_NAME,
   MAP_TILES_CACHE_NAME,
+  CACHE_CHANNEL_NAME,
   MIN_RD5_BYTES,
   UK_SEGMENTS,
   fetchAndCacheSegment,
@@ -20,6 +21,7 @@ export interface OfflineBundleStatus {
   ready: boolean;
   totalBytes: number;
   hasAny: boolean;
+  hasPartialTiles?: boolean;
 }
 
 export interface DownloadProgress {
@@ -54,14 +56,13 @@ export async function getTileFile(segmentId: string): Promise<File | null> {
   const expectedSize = getCompletedTiles()[segmentId];
   if (!expectedSize) return null;
   if (!('storage' in navigator && 'getDirectory' in navigator.storage)) return null;
-  const dir = await navigator.storage.getDirectory();
   try {
+    const dir = await navigator.storage.getDirectory();
     const handle = await dir.getFileHandle(pmtilesFileName(segmentId));
     const file = await handle.getFile();
     return file.size === expectedSize ? file : null;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'NotFoundError') return null;
-    throw err;
+  } catch {
+    return null;
   }
 }
 
@@ -81,12 +82,14 @@ export async function checkOfflineBundleStatus(): Promise<OfflineBundleStatus> {
   let totalBytes = 0;
   let allTilesReady = true;
   let hasAny = false;
+  let hasPartialTiles = false;
 
   for (const id of UK_SEGMENTS) {
     const file = await getTileFile(id);
     if (file) {
       totalBytes += file.size;
       hasAny = true;
+      hasPartialTiles = true;
     } else {
       allTilesReady = false;
     }
@@ -114,18 +117,26 @@ export async function checkOfflineBundleStatus(): Promise<OfflineBundleStatus> {
   }
 
   const ready = allTilesReady && allSegmentsReady && allProfilesReady;
-  return { ready, totalBytes, hasAny };
+  return { ready, totalBytes, hasAny, hasPartialTiles };
 }
 
 function formatMb(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1);
 }
 
-// Global PMTiles in-memory map
+// Global PMTiles in-memory map and initialization gate
 export const loadedPMTiles = new Map<string, pmtiles.PMTiles>();
 (window as any).loadedPMTiles = loadedPMTiles;
 
-export function useOffline(onClearWorkerGraph: () => void, onStatusChange: (msg: string) => void) {
+let resolveArchivesReady: () => void;
+export const archivesReady = new Promise<void>((resolve) => {
+  resolveArchivesReady = resolve;
+});
+
+export function useOffline(
+  onClearWorkerGraph: (recompute?: boolean) => void,
+  onStatusChange: (msg: string) => void,
+) {
   const [isOfflineMode, setIsOfflineModeState] = useState<boolean>(() => {
     return localStorage.getItem(OFFLINE_MODE_KEY) === 'true';
   });
@@ -136,13 +147,22 @@ export function useOffline(onClearWorkerGraph: () => void, onStatusChange: (msg:
   const isOfflineModeRef = useRef(isOfflineMode);
   isOfflineModeRef.current = isOfflineMode;
 
+  const onClearWorkerGraphRef = useRef(onClearWorkerGraph);
+  onClearWorkerGraphRef.current = onClearWorkerGraph;
+  const onStatusChangeRef = useRef(onStatusChange);
+  onStatusChangeRef.current = onStatusChange;
+
   const refreshStatus = useCallback(async () => {
+    try {
+      const cache = await caches.open(SEGMENT_CACHE_NAME);
+      const date = await getLatestCachedSegmentDate(cache);
+      setSnapshotDate(date);
+    } catch (err) {
+      console.error('Failed to read cached segment date:', err);
+    }
+
     const status = await checkOfflineBundleStatus();
     setBundleStatus(status);
-
-    const cache = await caches.open(SEGMENT_CACHE_NAME);
-    const date = await getLatestCachedSegmentDate(cache);
-    setSnapshotDate(date);
 
     if (!status.ready && isOfflineModeRef.current) {
       setIsOfflineModeState(false);
@@ -155,36 +175,41 @@ export function useOffline(onClearWorkerGraph: () => void, onStatusChange: (msg:
     setIsOfflineModeState(enabled);
     localStorage.setItem(OFFLINE_MODE_KEY, String(enabled));
     window.dispatchEvent(new CustomEvent('offlinemodechange', { detail: { offline: enabled } }));
-    onStatusChange(
+    onStatusChangeRef.current(
       enabled
         ? 'Offline mode active. Rendering with local PMTiles archives.'
         : 'Online mode active. Streaming tiles on the fly.'
     );
-  }, [onStatusChange]);
+  }, []);
 
-  // Load PMTiles from OPFS on startup
+  // Load PMTiles from OPFS on startup and subscribe to segment cache updates
   useEffect(() => {
     async function initArchives() {
-      // Clean older cache/IndexedDB
-      if ('indexedDB' in window) {
-        indexedDB.deleteDatabase('rsrouter-pmtiles-v1');
-      }
       try {
-        const tileCache = await caches.open(MAP_TILES_CACHE_NAME);
-        for (const req of await tileCache.keys()) {
-          if (!req.url.startsWith(FONT_BASE_URL)) {
-            await tileCache.delete(req);
+        if ('indexedDB' in window) {
+          indexedDB.deleteDatabase('rsrouter-pmtiles-v1');
+        }
+        try {
+          const tileCache = await caches.open(MAP_TILES_CACHE_NAME);
+          for (const req of await tileCache.keys()) {
+            if (!req.url.startsWith(FONT_BASE_URL)) {
+              await tileCache.delete(req);
+            }
           }
-        }
-      } catch {}
+        } catch {}
 
-      for (const id of UK_SEGMENTS) {
-        const file = await getTileFile(id);
-        if (file && !loadedPMTiles.has(id)) {
-          const p = new pmtiles.PMTiles(new pmtiles.FileSource(file));
-          await p.getHeader();
-          loadedPMTiles.set(id, p);
+        for (const id of UK_SEGMENTS) {
+          try {
+            const file = await getTileFile(id);
+            if (file && !loadedPMTiles.has(id)) {
+              const p = new pmtiles.PMTiles(new pmtiles.FileSource(file));
+              await p.getHeader();
+              loadedPMTiles.set(id, p);
+            }
+          } catch {}
         }
+      } finally {
+        resolveArchivesReady();
       }
 
       const status = await refreshStatus();
@@ -197,6 +222,16 @@ export function useOffline(onClearWorkerGraph: () => void, onStatusChange: (msg:
 
     initArchives();
 
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel(CACHE_CHANNEL_NAME);
+        bc.onmessage = () => {
+          refreshStatus();
+        };
+      }
+    } catch {}
+
     const onOffline = async () => {
       if (isOfflineModeRef.current) return;
       const status = await checkOfflineBundleStatus();
@@ -208,6 +243,7 @@ export function useOffline(onClearWorkerGraph: () => void, onStatusChange: (msg:
     window.addEventListener('offline', onOffline);
     return () => {
       window.removeEventListener('offline', onOffline);
+      bc?.close();
     };
   }, [refreshStatus, setOfflineMode]);
 
@@ -339,31 +375,29 @@ export function useOffline(onClearWorkerGraph: () => void, onStatusChange: (msg:
   }, [refreshStatus, onStatusChange]);
 
   const updateBundle = useCallback(async () => {
-    onStatusChange('Invalidating cached routing data...');
     try {
       await clearAllCachedSegments();
-      onClearWorkerGraph();
-      await downloadBundle(true);
-    } catch (err) {
-      console.error('Update bundle failed:', err);
-    } finally {
       await refreshStatus();
+      onStatusChangeRef.current('Routing cache cleared. Segments will re-cache on next route.');
+      onClearWorkerGraphRef.current(true);
+    } catch (err) {
+      console.error('Clear routing cache failed:', err);
     }
-  }, [clearAllCachedSegments, downloadBundle, onClearWorkerGraph, onStatusChange, refreshStatus]);
+  }, [refreshStatus]);
 
   const deleteBundle = useCallback(async () => {
     if (isOfflineModeRef.current) {
       setOfflineMode(false);
     }
-    onStatusChange('Removing offline data...');
+    onStatusChangeRef.current('Removing offline data...');
     for (const segId of UK_SEGMENTS) {
       await deleteTileFile(segId, loadedPMTiles);
     }
     await clearAllCachedSegments();
-    onClearWorkerGraph();
+    onClearWorkerGraphRef.current(false);
     await refreshStatus();
-    onStatusChange('Offline data removed from local storage.');
-  }, [onClearWorkerGraph, onStatusChange, refreshStatus, setOfflineMode]);
+    onStatusChangeRef.current('Offline data removed from local storage.');
+  }, [refreshStatus, setOfflineMode]);
 
   return {
     isOfflineMode,
@@ -371,6 +405,7 @@ export function useOffline(onClearWorkerGraph: () => void, onStatusChange: (msg:
     bundleStatus,
     snapshotDate,
     downloadProgress,
+    refreshStatus,
     downloadBundle: () => downloadBundle(false),
     updateBundle,
     deleteBundle,

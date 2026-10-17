@@ -12,45 +12,7 @@ export class WasmRouter {
         wasm.__wbg_wasmrouter_free(ptr, 0);
     }
     /**
-     * Adds the part of a 5°×5° segment (e.g. "W5_N50") that lies inside a lon/lat box,
-     * at cell resolution, without resolving edges yet. Returns the number of cells added.
-     * @param {Uint8Array} data
-     * @param {string} segment_name
-     * @param {number} min_lon
-     * @param {number} min_lat
-     * @param {number} max_lon
-     * @param {number} max_lat
-     * @returns {number}
-     */
-    add_rd5_box(data, segment_name, min_lon, min_lat, max_lon, max_lat) {
-        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(segment_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmrouter_add_rd5_box(this.__wbg_ptr, ptr0, len0, ptr1, len1, min_lon, min_lat, max_lon, max_lat);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return ret[0] >>> 0;
-    }
-    /**
-     * Adds a single 1°×1° square from RD5 byte data into the routing graph without resolving edges yet.
-     * @param {Uint8Array} data
-     * @param {number} lon_deg
-     * @param {number} lat_deg
-     * @returns {number}
-     */
-    add_rd5_square(data, lon_deg, lat_deg) {
-        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmrouter_add_rd5_square(this.__wbg_ptr, ptr0, len0, lon_deg, lat_deg);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return ret[0] >>> 0;
-    }
-    /**
-     * Clears the loaded routing graph.
+     * Clears the loaded routing graph and segment index caches while preserving any attached lazy `CellProvider`.
      */
     clear_graph() {
         wasm.wasmrouter_clear_graph(this.__wbg_ptr);
@@ -96,38 +58,6 @@ export class WasmRouter {
         }
     }
     /**
-     * Computes a route for given waypoints ("lon,lat|lon,lat") and returns a GPX string.
-     * @param {string} waypoints_str
-     * @param {string} profile_name
-     * @param {number} alternative_idx
-     * @param {string | null} [nogos_str]
-     * @returns {string}
-     */
-    find_route_gpx(waypoints_str, profile_name, alternative_idx, nogos_str) {
-        let deferred5_0;
-        let deferred5_1;
-        try {
-            const ptr0 = passStringToWasm0(waypoints_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-            const len0 = WASM_VECTOR_LEN;
-            const ptr1 = passStringToWasm0(profile_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-            const len1 = WASM_VECTOR_LEN;
-            var ptr2 = isLikeNone(nogos_str) ? 0 : passStringToWasm0(nogos_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-            var len2 = WASM_VECTOR_LEN;
-            const ret = wasm.wasmrouter_find_route_gpx(this.__wbg_ptr, ptr0, len0, ptr1, len1, alternative_idx, ptr2, len2);
-            var ptr4 = ret[0];
-            var len4 = ret[1];
-            if (ret[3]) {
-                ptr4 = 0; len4 = 0;
-                throw takeFromExternrefTable0(ret[2]);
-            }
-            deferred5_0 = ptr4;
-            deferred5_1 = len4;
-            return getStringFromWasm0(ptr4, len4);
-        } finally {
-            wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
-        }
-    }
-    /**
      * Loads the lookups.dat dictionary from a string.
      * @param {string} text
      */
@@ -155,37 +85,43 @@ export class WasmRouter {
         }
     }
     /**
-     * Loads all non-empty squares in a 5°×5° segment (e.g. "W5_N50" or "E0_N50") into the routing graph.
-     * @param {Uint8Array} data
-     * @param {string} segment_name
+     * Returns the number of `MicroCache` cells currently decoded in the graph.
      * @returns {number}
      */
-    load_rd5_segment(data, segment_name) {
-        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(segment_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmrouter_load_rd5_segment(this.__wbg_ptr, ptr0, len0, ptr1, len1);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return ret[0] >>> 0;
+    loaded_cell_count() {
+        const ret = wasm.wasmrouter_loaded_cell_count(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
-     * Loads a single 1°×1° square from RD5 byte data into the routing graph and resolves edges immediately.
-     * @param {Uint8Array} data
-     * @param {number} lon_deg
-     * @param {number} lat_deg
-     * @returns {number}
+     * Snaps a GPX XML track to the road network, extracts the minimal set of waypoints
+     * required to reproduce the track within `tolerance_m` for `profile_name`, and returns
+     * a JSON string `{ "waypoints": [{"lon": ..., "lat": ...}], "route": <GeoJSON> }`.
+     * @param {string} gpx_xml
+     * @param {string} profile_name
+     * @param {number} tolerance_m
+     * @returns {string}
      */
-    load_rd5_square(data, lon_deg, lat_deg) {
-        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmrouter_load_rd5_square(this.__wbg_ptr, ptr0, len0, lon_deg, lat_deg);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
+    match_gpx_waypoints(gpx_xml, profile_name, tolerance_m) {
+        let deferred4_0;
+        let deferred4_1;
+        try {
+            const ptr0 = passStringToWasm0(gpx_xml, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ptr1 = passStringToWasm0(profile_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmrouter_match_gpx_waypoints(this.__wbg_ptr, ptr0, len0, ptr1, len1, tolerance_m);
+            var ptr3 = ret[0];
+            var len3 = ret[1];
+            if (ret[3]) {
+                ptr3 = 0; len3 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred4_0 = ptr3;
+            deferred4_1 = len3;
+            return getStringFromWasm0(ptr3, len3);
+        } finally {
+            wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
         }
-        return ret[0] >>> 0;
     }
     constructor() {
         const ret = wasm.wasmrouter_new();
@@ -202,19 +138,54 @@ export class WasmRouter {
         return ret >>> 0;
     }
     /**
-     * Resolves target elevations and edge indices for the entire graph.
+     * Attaches JS callbacks `(size_fn(name) -> number, read_fn(name, start, end) -> Uint8Array)`
+     * for BRouter-style lazy on-demand `MicroCache` cell loading during waypoint snapping and A* search.
+     * @param {Function} size_fn
+     * @param {Function} read_fn
      */
-    resolve_graph() {
-        wasm.wasmrouter_resolve_graph(this.__wbg_ptr);
+    set_segment_reader(size_fn, read_fn) {
+        wasm.wasmrouter_set_segment_reader(this.__wbg_ptr, size_fn, read_fn);
+    }
+    /**
+     * Drains and returns the names of any `.rd5` segments (e.g. `"W5_N50"`) that were requested
+     * during lazy cell loading while not yet available in the Worker's Blob map.
+     * @returns {string[]}
+     */
+    take_missing_segments() {
+        const ret = wasm.wasmrouter_take_missing_segments(this.__wbg_ptr);
+        var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]);
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
     }
 }
 if (Symbol.dispose) WasmRouter.prototype[Symbol.dispose] = WasmRouter.prototype.free;
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg___wbindgen_debug_string_4687d8d8c2017d52: function(arg0, arg1) {
+            const ret = debugString(arg1);
+            const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+        },
+        __wbg___wbindgen_number_get_2e0e7dee9f701a71: function(arg0, arg1) {
+            const obj = arg1;
+            const ret = typeof(obj) === 'number' ? obj : undefined;
+            getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
+        },
         __wbg___wbindgen_throw_41e9ee4f547fc59a: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
+        __wbg_call_187d372bd5fdd4aa: function() { return handleError(function (arg0, arg1, arg2) {
+            const ret = arg0.call(arg1, arg2);
+            return ret;
+        }, arguments); },
+        __wbg_call_939a2607c4484b0b: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4) {
+            const ret = arg0.call(arg1, arg2, arg3, arg4);
+            return ret;
+        }, arguments); },
         __wbg_error_757e9472f8410341: function(arg0, arg1) {
             let deferred0_0;
             let deferred0_1;
@@ -226,9 +197,16 @@ function __wbg_get_imports() {
                 wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
             }
         },
+        __wbg_length_7f3c00c40364105e: function(arg0) {
+            const ret = arg0.length;
+            return ret;
+        },
         __wbg_new_227d7c05414eb861: function() {
             const ret = new Error();
             return ret;
+        },
+        __wbg_prototypesetcall_bc27214492979395: function(arg0, arg1, arg2) {
+            Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
         },
         __wbg_stack_3b0d974bbf31e44f: function(arg0, arg1) {
             const ret = arg1.stack;
@@ -237,7 +215,12 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
-        __wbindgen_generic_0000000000000001: function(arg0, arg1) {
+        __wbindgen_generic_0000000000000001: function(arg0) {
+            // Cast intrinsic for `F64 -> Externref`.
+            const ret = arg0;
+            return ret;
+        },
+        __wbindgen_generic_0000000000000002: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
             return ret;
@@ -262,6 +245,93 @@ const WasmRouterFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmrouter_free(ptr, 1));
 
+function addToExternrefTable0(obj) {
+    const idx = wasm.__externref_table_alloc();
+    wasm.__wbindgen_externrefs.set(idx, obj);
+    return idx;
+}
+
+function debugString(val) {
+    // primitive types
+    const type = typeof val;
+    if (type == 'number' || type == 'boolean' || val == null) {
+        return  `${val}`;
+    }
+    if (type == 'string') {
+        return `"${val}"`;
+    }
+    if (type == 'symbol') {
+        const description = val.description;
+        if (description == null) {
+            return 'Symbol';
+        } else {
+            return `Symbol(${description})`;
+        }
+    }
+    if (type == 'function') {
+        const name = val.name;
+        if (typeof name == 'string' && name.length > 0) {
+            return `Function(${name})`;
+        } else {
+            return 'Function';
+        }
+    }
+    // objects
+    if (Array.isArray(val)) {
+        const length = val.length;
+        let debug = '[';
+        if (length > 0) {
+            debug += debugString(val[0]);
+        }
+        for(let i = 1; i < length; i++) {
+            debug += ', ' + debugString(val[i]);
+        }
+        debug += ']';
+        return debug;
+    }
+    // Test for built-in
+    const builtInMatches = /\[object ([^\]]+)\]/.exec(toString.call(val));
+    let className;
+    if (builtInMatches && builtInMatches.length > 1) {
+        className = builtInMatches[1];
+    } else {
+        // Failed to match the standard '[object ClassName]'
+        return toString.call(val);
+    }
+    if (className == 'Object') {
+        // we're a user defined class or Object
+        // JSON.stringify avoids problems with cycles, and is generally much
+        // easier than looping through ownProperties of `val`.
+        try {
+            return 'Object(' + JSON.stringify(val) + ')';
+        } catch (_) {
+            return 'Object';
+        }
+    }
+    // errors
+    if (val instanceof Error) {
+        return `${val.name}: ${val.message}\n${val.stack}`;
+    }
+    // TODO we could test for more things here, like `Set`s and `Map`s.
+    return className;
+}
+
+function getArrayJsValueFromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    const mem = getDataViewMemory0();
+    const result = [];
+    for (let i = ptr; i < ptr + 4 * len; i += 4) {
+        result.push(wasm.__wbindgen_externrefs.get(mem.getUint32(i, true)));
+    }
+    wasm.__externref_drop_slice(ptr, len);
+    return result;
+}
+
+function getArrayU8FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
+}
+
 let cachedDataViewMemory0 = null;
 function getDataViewMemory0() {
     if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)) {
@@ -282,15 +352,17 @@ function getUint8ArrayMemory0() {
     return cachedUint8ArrayMemory0;
 }
 
-function isLikeNone(x) {
-    return x === undefined || x === null;
+function handleError(f, args) {
+    try {
+        return f.apply(this, args);
+    } catch (e) {
+        const idx = addToExternrefTable0(e);
+        wasm.__wbindgen_exn_store(idx);
+    }
 }
 
-function passArray8ToWasm0(arg, malloc) {
-    const ptr = malloc(arg.length * 1, 1) >>> 0;
-    getUint8ArrayMemory0().set(arg, ptr / 1);
-    WASM_VECTOR_LEN = arg.length;
-    return ptr;
+function isLikeNone(x) {
+    return x === undefined || x === null;
 }
 
 function passStringToWasm0(arg, malloc, realloc) {

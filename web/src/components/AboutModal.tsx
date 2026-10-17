@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Icon } from './common/Icon.tsx';
 
 interface AboutModalProps {
   isOpen: boolean;
@@ -28,16 +29,22 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
       <div className="about-dialog" role="dialog" aria-modal="true" aria-labelledby="about-title">
         <div className="about-header">
           <div className="about-header-text">
-            <h2 id="about-title">GBRouter</h2>
+            <h2 id="about-title">
+              <span className="header-logo" aria-hidden="true">
+                <Icon name="bike" size={17} />
+              </span>
+              <span>GBRouter</span>
+            </h2>
             <p>Bike routing on your terms.</p>
           </div>
           <button
             id="btn-close-about"
+            type="button"
             className="about-close-btn"
             aria-label="Close dialog"
             onClick={onClose}
           >
-            ✕
+            <Icon name="close" size={16} />
           </button>
         </div>
         <div className="about-body">
@@ -45,7 +52,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
             <h3>Why GBRouter exists</h3>
             <p>
               GBRouter is built by cycling nerds, for cycling nerds. It is made for people who care about how a route
-              feels. Most route planners treat you like someone who just wants to get from A-to-B. They hide the map data
+              feels. Most route planners treat you like someone who just wants to get from A to B. They hide the map data
               and make decisions for you.
             </p>
             <p style={{ marginTop: '8px' }}>
@@ -65,8 +72,8 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
             </p>
             <p style={{ marginTop: '8px' }}>
               GBRouter brings the BRouter engine directly into your browser using WebAssembly. There is no separate
-              server to run. It also puts the nerdy details at the centre: surfaces, road types, traffic and noise
-              estimates. It's designed for cyclists who want to tweak their route until it feels right.
+              server to run. It also puts the nerdy details at the centre: surfaces, road types, traffic, speed limits,
+              and noise estimates. It is designed for cyclists who want to tweak their route until it feels right.
             </p>
             <p style={{ marginTop: '8px', fontStyle: 'italic', color: 'var(--muted)' }}>
               Visual profile editing without writing DSL code is coming soon.

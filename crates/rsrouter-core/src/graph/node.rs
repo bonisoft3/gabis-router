@@ -33,7 +33,7 @@ pub struct OsmNode {
     pub ilon: MicroDegrees,
     pub ilat: MicroDegrees,
     pub selev: ElevationQuarterMeters,
-    pub node_description: Option<Vec<u8>>,
+    pub node_desc_id: u32,
     pub turn_restrictions: Vec<DecodedTurnRestriction>,
 }
 
@@ -43,7 +43,7 @@ impl OsmNode {
             ilon,
             ilat,
             selev: i16::MIN,
-            node_description: None,
+            node_desc_id: u32::MAX,
             turn_restrictions: Vec::new(),
         }
     }

@@ -4,14 +4,14 @@
     {
       "type": "Feature",
       "properties": {
-        "creator": "BRouter-1.7.10",
+        "creator": "BRouter-1.7.11-beta",
         "name": "brouter_gravel_0",
         "track-length": "111465",
         "filtered ascend": "692",
         "plain-ascend": "57",
         "total-time": "16889",
         "total-energy": "2438958",
-        "cost": "346015",
+        "cost": "347099",
         "messages": [
           [
             "Longitude",
@@ -4223,7 +4223,7 @@
             "7",
             "20",
             "0",
-            "highway=unclassified surface=asphalt oneway=yes route_bicycle_lcn=yes",
+            "highway=unclassified surface=asphalt oneway=yes cycleway:left=no route_bicycle_lcn=yes",
             "highway=crossing crossing=unmarked",
             "2107",
             "315810"
@@ -4313,7 +4313,7 @@
             "20",
             "0",
             "0",
-            "highway=cycleway surface=asphalt foot=designated bicycle=designated segregated=yes oneway=no route_bicycle_lcn=yes",
+            "highway=cycleway surface=paved foot=designated bicycle=designated segregated=yes oneway=no route_bicycle_lcn=yes cycleway:surface=asphalt",
             "",
             "2131",
             "319507"
@@ -9539,16 +9539,31 @@
             "1601242"
           ],
           [
-            "-804487",
-            "51709975",
-            "234",
-            "877",
+            "-799145",
+            "51709677",
+            "230",
+            "483",
             "4324",
             "0",
-            "17",
+            "1",
             "0",
             "0",
             "reversedirection=yes highway=tertiary maxspeed=60",
+            "",
+            "11112",
+            "1618235"
+          ],
+          [
+            "-804487",
+            "51709975",
+            "234",
+            "394",
+            "7075",
+            "0",
+            "16",
+            "0",
+            "0",
+            "reversedirection=yes highway=tertiary maxspeed=100",
             "",
             "11175",
             "1627697"

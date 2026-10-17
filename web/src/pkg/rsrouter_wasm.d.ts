@@ -5,16 +5,7 @@ export class WasmRouter {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Adds the part of a 5°×5° segment (e.g. "W5_N50") that lies inside a lon/lat box,
-     * at cell resolution, without resolving edges yet. Returns the number of cells added.
-     */
-    add_rd5_box(data: Uint8Array, segment_name: string, min_lon: number, min_lat: number, max_lon: number, max_lat: number): number;
-    /**
-     * Adds a single 1°×1° square from RD5 byte data into the routing graph without resolving edges yet.
-     */
-    add_rd5_square(data: Uint8Array, lon_deg: number, lat_deg: number): number;
-    /**
-     * Clears the loaded routing graph.
+     * Clears the loaded routing graph and segment index caches while preserving any attached lazy `CellProvider`.
      */
     clear_graph(): void;
     /**
@@ -26,10 +17,6 @@ export class WasmRouter {
      */
     find_route(waypoints_str: string, profile_name: string, alternative_idx: number, nogos_str?: string | null): string;
     /**
-     * Computes a route for given waypoints ("lon,lat|lon,lat") and returns a GPX string.
-     */
-    find_route_gpx(waypoints_str: string, profile_name: string, alternative_idx: number, nogos_str?: string | null): string;
-    /**
      * Loads the lookups.dat dictionary from a string.
      */
     load_lookups(text: string): void;
@@ -38,22 +25,30 @@ export class WasmRouter {
      */
     load_profile(name: string, content: string): void;
     /**
-     * Loads all non-empty squares in a 5°×5° segment (e.g. "W5_N50" or "E0_N50") into the routing graph.
+     * Returns the number of `MicroCache` cells currently decoded in the graph.
      */
-    load_rd5_segment(data: Uint8Array, segment_name: string): number;
+    loaded_cell_count(): number;
     /**
-     * Loads a single 1°×1° square from RD5 byte data into the routing graph and resolves edges immediately.
+     * Snaps a GPX XML track to the road network, extracts the minimal set of waypoints
+     * required to reproduce the track within `tolerance_m` for `profile_name`, and returns
+     * a JSON string `{ "waypoints": [{"lon": ..., "lat": ...}], "route": <GeoJSON> }`.
      */
-    load_rd5_square(data: Uint8Array, lon_deg: number, lat_deg: number): number;
+    match_gpx_waypoints(gpx_xml: string, profile_name: string, tolerance_m: number): string;
     constructor();
     /**
      * Returns the number of nodes currently loaded in the graph.
      */
     node_count(): number;
     /**
-     * Resolves target elevations and edge indices for the entire graph.
+     * Attaches JS callbacks `(size_fn(name) -> number, read_fn(name, start, end) -> Uint8Array)`
+     * for BRouter-style lazy on-demand `MicroCache` cell loading during waypoint snapping and A* search.
      */
-    resolve_graph(): void;
+    set_segment_reader(size_fn: Function, read_fn: Function): void;
+    /**
+     * Drains and returns the names of any `.rd5` segments (e.g. `"W5_N50"`) that were requested
+     * during lazy cell loading while not yet available in the Worker's Blob map.
+     */
+    take_missing_segments(): string[];
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -61,24 +56,25 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_wasmrouter_free: (a: number, b: number) => void;
-    readonly wasmrouter_add_rd5_box: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
-    readonly wasmrouter_add_rd5_square: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmrouter_clear_graph: (a: number) => void;
     readonly wasmrouter_edge_count: (a: number) => number;
     readonly wasmrouter_find_route: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
-    readonly wasmrouter_find_route_gpx: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly wasmrouter_load_lookups: (a: number, b: number, c: number) => [number, number];
     readonly wasmrouter_load_profile: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmrouter_load_rd5_segment: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmrouter_load_rd5_square: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmrouter_loaded_cell_count: (a: number) => number;
+    readonly wasmrouter_match_gpx_waypoints: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly wasmrouter_new: () => number;
     readonly wasmrouter_node_count: (a: number) => number;
-    readonly wasmrouter_resolve_graph: (a: number) => void;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly wasmrouter_set_segment_reader: (a: number, b: any, c: any) => void;
+    readonly wasmrouter_take_missing_segments: (a: number) => [number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_exn_store: (a: number) => void;
+    readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __externref_table_dealloc: (a: number) => void;
+    readonly __externref_drop_slice: (a: number, b: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

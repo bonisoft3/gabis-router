@@ -8,18 +8,21 @@ interface PopoverState {
 
 export const PopoverContext = React.createContext<{
   showTooltip: (btn: HTMLElement, text: string) => void;
-  hideTooltip: () => void;
+  hideTooltip: (btn?: HTMLElement) => void;
+  togglePinTooltip: (btn: HTMLElement, text: string) => void;
 }>({
   showTooltip: () => {},
   hideTooltip: () => {},
+  togglePinTooltip: () => {},
 });
 
 export const PopoverProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [popover, setPopover] = useState<PopoverState | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const activeBtnRef = useRef<HTMLElement | null>(null);
+  const isPinnedRef = useRef<boolean>(false);
 
-  const showTooltip = (btn: HTMLElement, text: string) => {
+  const openForButton = (btn: HTMLElement, text: string) => {
     activeBtnRef.current = btn;
     const btnRect = btn.getBoundingClientRect();
     // Default estimated position before DOM measurement
@@ -32,12 +35,37 @@ export const PopoverProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setPopover({ text, x: left, y: top });
   };
 
-  const hideTooltip = () => {
+  const dismissAll = () => {
+    isPinnedRef.current = false;
     setPopover(null);
     if (activeBtnRef.current) {
       activeBtnRef.current.classList.remove('active');
       activeBtnRef.current = null;
     }
+  };
+
+  const showTooltip = (btn: HTMLElement, text: string) => {
+    if (isPinnedRef.current) return;
+    openForButton(btn, text);
+  };
+
+  const hideTooltip = (btn?: HTMLElement) => {
+    if (isPinnedRef.current) return;
+    if (btn && activeBtnRef.current && activeBtnRef.current !== btn) return;
+    dismissAll();
+  };
+
+  const togglePinTooltip = (btn: HTMLElement, text: string) => {
+    if (isPinnedRef.current && activeBtnRef.current === btn) {
+      dismissAll();
+      return;
+    }
+    if (activeBtnRef.current && activeBtnRef.current !== btn) {
+      activeBtnRef.current.classList.remove('active');
+    }
+    isPinnedRef.current = true;
+    btn.classList.add('active');
+    openForButton(btn, text);
   };
 
   // Adjust exact positioning after render
@@ -66,11 +94,11 @@ export const PopoverProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const target = e.target as Node;
       if (popoverRef.current?.contains(target)) return;
       if (activeBtnRef.current?.contains(target)) return;
-      hideTooltip();
+      dismissAll();
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') hideTooltip();
+      if (e.key === 'Escape') dismissAll();
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
@@ -82,7 +110,7 @@ export const PopoverProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [popover]);
 
   return (
-    <PopoverContext.Provider value={{ showTooltip, hideTooltip }}>
+    <PopoverContext.Provider value={{ showTooltip, hideTooltip, togglePinTooltip }}>
       {children}
       {popover && (
         <div
@@ -102,33 +130,24 @@ export const InfoButton: React.FC<{ tooltip: string; ariaLabel?: string }> = ({
   tooltip,
   ariaLabel,
 }) => {
-  const { showTooltip, hideTooltip } = React.useContext(PopoverContext);
+  const { showTooltip, hideTooltip, togglePinTooltip } = React.useContext(PopoverContext);
   const btnRef = useRef<HTMLButtonElement | null>(null);
-  const isPinnedRef = useRef<boolean>(false);
 
   const handlePointerEnter = () => {
-    if (isPinnedRef.current || !btnRef.current) return;
+    if (!btnRef.current) return;
     showTooltip(btnRef.current, tooltip);
   };
 
   const handlePointerLeave = () => {
-    if (isPinnedRef.current) return;
-    hideTooltip();
+    if (!btnRef.current) return;
+    hideTooltip(btnRef.current);
   };
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!btnRef.current) return;
-    if (isPinnedRef.current) {
-      isPinnedRef.current = false;
-      btnRef.current.classList.remove('active');
-      hideTooltip();
-    } else {
-      isPinnedRef.current = true;
-      btnRef.current.classList.add('active');
-      showTooltip(btnRef.current, tooltip);
-    }
+    togglePinTooltip(btnRef.current, tooltip);
   };
 
   return (

@@ -1,6 +1,5 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import type { Profile } from '../utils/geo.ts';
-import type { ComparedRoute } from '../utils/gpx.ts';
 import { formatDistance, formatElevation, type Units } from '../format.ts';
 import {
   classifySurface,
@@ -14,47 +13,89 @@ import {
   NOISE_META,
   SPEED_LIMIT_META,
 } from '../utils/classification.ts';
-import { gradeAt, gradeColor, nearestIndex } from '../utils/geo.ts';
+import { gradeAt, gradeColor, nearestIndex, nearestVertex } from '../utils/geo.ts';
 
-const CHART_HEIGHT = 96;
-const CHART_PAD = { top: 8, bottom: 16, left: 4, right: 4 };
+const CHART_HEIGHT = 100;
+const COMPACT_CHART_HEIGHT = 74;
+const CHART_PAD = { top: 8, bottom: 15, left: 4, right: 4 };
 
 interface ElevationChartProps {
+  slotIdx?: number;
+  compact?: boolean;
+  areaColor?: string;
   profile: Profile | null;
   segments: any[];
-  comparedRoute: ComparedRoute | null;
   units: Units;
+  hoverPosition?: { lon: number; lat: number } | null;
   onHover: (pos: { lon: number; lat: number } | null) => void;
 }
 
+interface HoverDetails {
+  cx: number;
+  cy: number;
+  distStr: string;
+  eleStr: string;
+  gradeStr: string;
+  gradeColor: string;
+  surfLabel: string;
+  surfColor: string;
+  roadLabel: string;
+  roadColor: string;
+  trafficLabel: string;
+  trafficColor: string;
+  noiseLabel: string;
+  speedLimitLabel: string;
+}
+
 export const ElevationChart: React.FC<ElevationChartProps> = ({
+  slotIdx = 0,
+  compact = false,
+  areaColor,
   profile,
   segments,
-  comparedRoute,
   units: _units,
+  hoverPosition,
   onHover,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [containerWidth, setContainerWidth] = useState<number>(300);
-  const [hoverState, setHoverState] = useState<{
-    cx: number;
-    tipText: string;
-    flip: boolean;
-  } | null>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(() =>
+    typeof window !== 'undefined' && window.innerWidth > 860
+      ? Math.max(260, Math.round((window.innerWidth - 432) * 0.46))
+      : 300,
+  );
+  const [localHoverIdx, setLocalHoverIdx] = useState<number | null>(null);
+
+  const chartHeight = compact ? COMPACT_CHART_HEIGHT : CHART_HEIGHT;
+  const gradId = `ec-grade-grad-${slotIdx}`;
+  const domId = slotIdx === 0 ? 'elevation-chart' : `elevation-chart-${slotIdx}`;
 
   useEffect(() => {
     if (!containerRef.current) return;
     const updateWidth = () => {
-      if (containerRef.current) {
-        setContainerWidth(Math.max(240, containerRef.current.clientWidth));
+      const cw = containerRef.current?.clientWidth || 0;
+      if (cw > 0) {
+        setContainerWidth(Math.max(240, cw));
+        return;
+      }
+      const rootW = document.getElementById('root')?.clientWidth || window.innerWidth;
+      if (rootW <= 860) {
+        setContainerWidth(Math.max(240, rootW - 40));
+      } else {
+        setContainerWidth(Math.max(260, Math.round((rootW - 432) * 0.46)));
       }
     };
     updateWidth();
     const ro = new ResizeObserver(updateWidth);
     ro.observe(containerRef.current);
+    const drawerEl = document.getElementById('route-info');
+    const mo = new MutationObserver(updateWidth);
+    if (drawerEl) {
+      mo.observe(drawerEl, { attributes: true, attributeFilter: ['class'] });
+    }
     window.addEventListener('resize', updateWidth);
     return () => {
       ro.disconnect();
+      mo.disconnect();
       window.removeEventListener('resize', updateWidth);
     };
   }, []);
@@ -62,7 +103,16 @@ export const ElevationChart: React.FC<ElevationChartProps> = ({
   const attributesAt = useCallback(
     (d: number) => {
       if (!segments || segments.length === 0) {
-        return { surfLabel: '', surfDetail: '', roadLabel: '', trafficLabel: '', noiseLabel: '', speedLimitLabel: '' };
+        return {
+          surfLabel: '',
+          surfColor: '#94a3b8',
+          roadLabel: '',
+          roadColor: '#94a3b8',
+          trafficLabel: '',
+          trafficColor: '#94a3b8',
+          noiseLabel: '',
+          speedLimitLabel: '',
+        };
       }
       let target = segments[segments.length - 1];
       for (const seg of segments) {
@@ -76,93 +126,185 @@ export const ElevationChart: React.FC<ElevationChartProps> = ({
       const tCat = classifyTraffic(target.traffic, target.highway);
       const nCat = classifyNoise(target.noise);
       const spCat = classifySpeedLimit(target.maxspeed, target.highway);
-      const trafficClassStr = target.traffic ? ` (class ${target.traffic})` : '';
-      const noiseClassStr = target.noise ? ` (class ${target.noise})` : '';
+      const rawSurf = target.surface ? ` (${target.surface})` : '';
       return {
-        surfLabel: SURFACE_META[sCat].label,
-        surfDetail: target.surface || target.highway,
+        surfLabel: `${SURFACE_META[sCat].label}${rawSurf}`,
+        surfColor: SURFACE_META[sCat].color,
         roadLabel: ROAD_META[rCat].label,
-        trafficLabel: `${TRAFFIC_META[tCat].label}${trafficClassStr}`,
-        noiseLabel: `${NOISE_META[nCat].label}${noiseClassStr}`,
+        roadColor: ROAD_META[rCat].color,
+        trafficLabel: `Traffic: ${TRAFFIC_META[tCat].label}`,
+        trafficColor: TRAFFIC_META[tCat].color,
+        noiseLabel: `Noise: ${NOISE_META[nCat].label}`,
         speedLimitLabel: SPEED_LIMIT_META[spCat].label,
       };
     },
     [segments],
   );
 
-  if (!profile || profile.ele.some((e) => e === undefined || Number.isNaN(e))) {
+  useEffect(() => {
+    setLocalHoverIdx(null);
+  }, [profile]);
+
+  const validProfile = !!(
+    profile &&
+    profile.ele.length > 0 &&
+    !profile.ele.some((e) => e === undefined || Number.isNaN(e))
+  );
+
+  const total = validProfile && profile ? profile.dist[profile.dist.length - 1] || 1 : 1;
+
+  const gradientStops = useMemo(() => {
+    if (!validProfile || !profile) return [];
+    const { dist, ele } = profile;
+    const maxStops = 90;
+    const step = Math.max(1, Math.floor(dist.length / maxStops));
+    const stops: Array<{ offset: string; color: string }> = [];
+    for (let i = 0; i < dist.length; i += step) {
+      const pct = Math.max(0, Math.min(100, (dist[i] / total) * 100));
+      stops.push({
+        offset: `${pct.toFixed(2)}%`,
+        color: gradeColor(gradeAt(dist, ele, i)),
+      });
+    }
+    if (dist.length > 1 && (dist.length - 1) % step !== 0) {
+      const last = dist.length - 1;
+      const pct = Math.max(0, Math.min(100, (dist[last] / total) * 100));
+      stops.push({
+        offset: `${pct.toFixed(2)}%`,
+        color: gradeColor(gradeAt(dist, ele, last)),
+      });
+    }
+    return stops;
+  }, [validProfile, profile, total]);
+
+  if (!validProfile || !profile) {
     return (
-      <div id="elevation-chart" ref={containerRef}>
+      <div id={domId} className="elevation-chart" ref={containerRef}>
         No elevation data for this route.
       </div>
     );
   }
 
   const { dist, ele, coords } = profile;
-  const cmpDist = comparedRoute?.dist;
-  const cmpEle = comparedRoute?.ele;
-  const hasCmp = !!(cmpDist && cmpEle && cmpDist.length > 1 && cmpEle.length > 1);
 
   const width = containerWidth;
-  const total = Math.max(dist[dist.length - 1] || 1, hasCmp ? cmpDist[cmpDist.length - 1] : 0);
-  let minEle = Math.min(...ele);
-  let maxEle = Math.max(...ele);
-  if (hasCmp && cmpEle.length > 0) {
-    minEle = Math.min(minEle, Math.min(...cmpEle));
-    maxEle = Math.max(maxEle, Math.max(...cmpEle));
+  let minEle = Infinity;
+  let maxEle = -Infinity;
+  for (let i = 0; i < ele.length; i++) {
+    if (ele[i] < minEle) minEle = ele[i];
+    if (ele[i] > maxEle) maxEle = ele[i];
   }
   const span = Math.max(maxEle - minEle, 20);
   const plotW = width - CHART_PAD.left - CHART_PAD.right;
-  const plotH = CHART_HEIGHT - CHART_PAD.top - CHART_PAD.bottom;
+  const plotH = chartHeight - CHART_PAD.top - CHART_PAD.bottom;
   const x = (d: number) => CHART_PAD.left + (d / total) * plotW;
   const y = (e: number) => CHART_PAD.top + plotH - ((e - minEle) / span) * plotH;
 
-  const lineD = dist.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(d).toFixed(1)},${y(ele[i]).toFixed(1)}`).join(' ');
-  const areaD = `${lineD} L${x(dist[dist.length - 1] || total).toFixed(1)},${CHART_PAD.top + plotH} L${x(0).toFixed(1)},${CHART_PAD.top + plotH} Z`;
+  const lineD = dist
+    .map((d, i) => `${i === 0 ? 'M' : 'L'}${x(d).toFixed(1)},${y(ele[i]).toFixed(1)}`)
+    .join(' ');
+  const areaD = `${lineD} L${x(dist[dist.length - 1] || total).toFixed(1)},${
+    CHART_PAD.top + plotH
+  } L${x(0).toFixed(1)},${CHART_PAD.top + plotH} Z`;
 
-  let cmpLineD = '';
-  if (hasCmp) {
-    cmpLineD = cmpDist.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(d).toFixed(1)},${y(cmpEle[i]).toFixed(1)}`).join(' ');
+  const midEle = minEle + span * 0.5;
+
+  // Determine active index from either local chart pointer or external hoverPosition (route / surface bar)
+  let activeIdx: number | null = localHoverIdx;
+  if (activeIdx === null && hoverPosition && coords.length > 0) {
+    activeIdx = nearestVertex(coords, hoverPosition.lon, hoverPosition.lat);
+  }
+
+  let hoverState: HoverDetails | null = null;
+  if (activeIdx !== null && activeIdx >= 0 && activeIdx < dist.length) {
+    const i = activeIdx;
+    const cx = x(dist[i]);
+    const cy = y(ele[i]);
+    const grade = gradeAt(dist, ele, i);
+    const gColor = gradeColor(grade);
+    const attrs = attributesAt(dist[i]);
+
+    hoverState = {
+      cx,
+      cy,
+      distStr: formatDistance(dist[i]),
+      eleStr: formatElevation(ele[i]),
+      gradeStr: `${grade >= 0 ? '+' : ''}${grade.toFixed(1)}%`,
+      gradeColor: gColor,
+      ...attrs,
+    };
   }
 
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
-    const d = Math.min(total, Math.max(0, ((e.clientX - box.left - CHART_PAD.left) / plotW) * total));
+    const d = Math.min(
+      total,
+      Math.max(0, ((e.clientX - box.left - CHART_PAD.left) / plotW) * total),
+    );
     const i = nearestIndex(dist, Math.min(dist[dist.length - 1], d));
-    const cx = x(dist[i]);
-    const grade = gradeAt(dist, ele, i);
-    const attrs = attributesAt(dist[i]);
-
-    const surfStr = attrs.surfLabel
-      ? `  •  ${attrs.surfDetail ? `${attrs.surfLabel} (${attrs.surfDetail})` : attrs.surfLabel}`
-      : '';
-    const roadStr = attrs.roadLabel ? `  •  ${attrs.roadLabel}` : '';
-    const trafficStr = attrs.trafficLabel ? `  •  Traffic: ${attrs.trafficLabel}` : '';
-    const noiseStr = attrs.noiseLabel ? `  •  Noise & pollution: ${attrs.noiseLabel}` : '';
-    const speedStr = attrs.speedLimitLabel ? `  •  Speed: ${attrs.speedLimitLabel}` : '';
-    let cmpStr = '';
-    if (hasCmp) {
-      const cmpI = nearestIndex(cmpDist, Math.min(cmpDist[cmpDist.length - 1], d));
-      cmpStr = `  •  GPX: ${formatElevation(cmpEle[cmpI])}`;
-    }
-
-    const tipText = `${formatElevation(ele[i])}  ${grade >= 0 ? '+' : ''}${grade.toFixed(1)}%  ${formatDistance(dist[i])}${cmpStr}${surfStr}${roadStr}${trafficStr}${noiseStr}${speedStr}`;
-    const flip = cx > width * 0.6;
-    setHoverState({ cx, tipText, flip });
+    setLocalHoverIdx(i);
     onHover({ lon: coords[i][0], lat: coords[i][1] });
   };
 
   const handlePointerLeave = () => {
-    setHoverState(null);
+    setLocalHoverIdx(null);
     onHover(null);
   };
 
   return (
-    <div id="elevation-chart" ref={containerRef}>
+    <div
+      id={domId}
+      className={`elevation-chart ${compact ? 'is-compact' : ''}`}
+      ref={containerRef}
+    >
+      {hoverState && (
+        <div className="ec-readout">
+          <div className="ec-readout-active">
+            <span className="ec-readout-primary">
+              <strong>{hoverState.eleStr}</strong>
+              <span
+                className="ec-grade-pill"
+                style={{ backgroundColor: hoverState.gradeColor }}
+              >
+                {hoverState.gradeStr}
+              </span>
+              <span className="ec-readout-dist">{hoverState.distStr}</span>
+            </span>
+            {hoverState.surfLabel && (
+              <span className="ec-readout-tags">
+                <span className="ec-tag">
+                  <span
+                    className="ec-tag-dot"
+                    style={{ backgroundColor: hoverState.surfColor }}
+                  />
+                  {hoverState.surfLabel}
+                </span>
+                <span className="ec-tag">
+                  <span
+                    className="ec-tag-dot"
+                    style={{ backgroundColor: hoverState.roadColor }}
+                  />
+                  {hoverState.roadLabel}
+                </span>
+                <span className="ec-tag">
+                  <span
+                    className="ec-tag-dot"
+                    style={{ backgroundColor: hoverState.trafficColor }}
+                  />
+                  {hoverState.trafficLabel}
+                </span>
+                <span className="ec-tag">{hoverState.noiseLabel}</span>
+                <span className="ec-tag">{hoverState.speedLimitLabel}</span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       <svg
         width={width}
-        height={CHART_HEIGHT}
-        viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
+        height={chartHeight}
+        viewBox={`0 0 ${width} ${chartHeight}`}
         role="img"
         aria-label="Elevation along the route"
         onPointerMove={handlePointerMove}
@@ -171,41 +313,44 @@ export const ElevationChart: React.FC<ElevationChartProps> = ({
       >
         <defs>
           <linearGradient
-            id="ec-grade-grad"
+            id={gradId}
             gradientUnits="userSpaceOnUse"
             x1={CHART_PAD.left}
             y1={0}
             x2={CHART_PAD.left + plotW}
             y2={0}
           >
-            {dist.map((d, i) => {
-              const pct = Math.max(0, Math.min(100, (d / total) * 100));
-              return (
-                <stop
-                  key={i}
-                  offset={`${pct.toFixed(2)}%`}
-                  stopColor={gradeColor(gradeAt(dist, ele, i))}
-                />
-              );
-            })}
+            {gradientStops.map((s, idx) => (
+              <stop key={idx} offset={s.offset} stopColor={s.color} />
+            ))}
           </linearGradient>
         </defs>
 
-        <path d={areaD} className="ec-area" />
-        <path d={lineD} className="ec-line" stroke="url(#ec-grade-grad)" />
+        {/* Horizontal grid lines */}
+        <line
+          className="ec-grid"
+          x1={CHART_PAD.left}
+          x2={CHART_PAD.left + plotW}
+          y1={CHART_PAD.top}
+          y2={CHART_PAD.top}
+        />
+        <line
+          className="ec-grid"
+          x1={CHART_PAD.left}
+          x2={CHART_PAD.left + plotW}
+          y1={y(midEle)}
+          y2={y(midEle)}
+        />
+        <line
+          className="ec-grid"
+          x1={CHART_PAD.left}
+          x2={CHART_PAD.left + plotW}
+          y1={CHART_PAD.top + plotH}
+          y2={CHART_PAD.top + plotH}
+        />
 
-        {hasCmp && <path d={cmpLineD} className="ec-line-compare" />}
-
-        {hasCmp && (
-          <text
-            x={width - CHART_PAD.right}
-            y={CHART_PAD.top + 9}
-            className="ec-label"
-            textAnchor="end"
-          >
-            <tspan fill="#3b82f6">― Router</tspan> <tspan fill="#d946ef">╌ GPX</tspan>
-          </text>
-        )}
+        <path d={areaD} className="ec-area" style={areaColor ? { fill: areaColor } : undefined} />
+        <path d={lineD} className="ec-line" style={{ stroke: `url(#${gradId})` }} />
 
         {/* Elevation min/max and distance labels */}
         <text x={CHART_PAD.left + 2} y={CHART_PAD.top + 9} className="ec-label" textAnchor="start">
@@ -219,19 +364,27 @@ export const ElevationChart: React.FC<ElevationChartProps> = ({
         >
           {formatElevation(minEle)}
         </text>
-        <text x={CHART_PAD.left} y={CHART_HEIGHT - 3} className="ec-label" textAnchor="start">
+        <text x={CHART_PAD.left} y={chartHeight - 3} className="ec-label" textAnchor="start">
           {formatDistance(0)}
         </text>
         <text
-          x={hasCmp ? width - CHART_PAD.right - 90 : width - CHART_PAD.right}
-          y={CHART_HEIGHT - 3}
+          x={width * 0.5}
+          y={chartHeight - 3}
+          className="ec-label"
+          textAnchor="middle"
+        >
+          {formatDistance(total * 0.5)}
+        </text>
+        <text
+          x={width - CHART_PAD.right}
+          y={chartHeight - 3}
           className="ec-label"
           textAnchor="end"
         >
           {formatDistance(total)}
         </text>
 
-        {/* Hover cursor and tip */}
+        {/* Hover cursor and point dot */}
         {hoverState && (
           <>
             <line
@@ -241,14 +394,13 @@ export const ElevationChart: React.FC<ElevationChartProps> = ({
               y1={CHART_PAD.top}
               y2={CHART_PAD.top + plotH}
             />
-            <text
-              className="ec-tip"
-              x={hoverState.flip ? hoverState.cx - 6 : hoverState.cx + 6}
-              y={CHART_PAD.top + 9}
-              textAnchor={hoverState.flip ? 'end' : 'start'}
-            >
-              {hoverState.tipText}
-            </text>
+            <circle
+              className="ec-cursor-dot"
+              cx={hoverState.cx}
+              cy={hoverState.cy}
+              r={4}
+              fill={hoverState.gradeColor}
+            />
           </>
         )}
       </svg>

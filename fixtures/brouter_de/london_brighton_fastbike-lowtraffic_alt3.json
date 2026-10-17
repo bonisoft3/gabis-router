@@ -4,7 +4,7 @@
     {
       "type": "Feature",
       "properties": {
-        "creator": "BRouter-1.7.10",
+        "creator": "BRouter-1.7.11-beta",
         "name": "brouter_fastbike-lowtraffic_3",
         "track-length": "103048",
         "filtered ascend": "859",
@@ -2003,7 +2003,7 @@
             "19",
             "0",
             "0",
-            "highway=cycleway surface=paved foot=yes bicycle=yes route_bicycle_lcn=yes",
+            "highway=cycleway surface=paved foot=yes bicycle=yes oneway=no route_bicycle_lcn=yes",
             "nodeaccessgranted=yes highway=crossing crossing=unmarked",
             "602",
             "60248"
@@ -2018,7 +2018,7 @@
             "1",
             "0",
             "0",
-            "highway=cycleway surface=paved foot=yes bicycle=yes route_bicycle_lcn=yes",
+            "highway=cycleway surface=paved foot=yes bicycle=yes oneway=no route_bicycle_lcn=yes",
             "nodeaccessgranted=yes estimated_crossing_class=5 crossing=no traffic_calming=island",
             "603",
             "60379"
@@ -2094,7 +2094,7 @@
             "0",
             "0",
             "reversedirection=yes highway=residential surface=asphalt",
-            "highway=crossing crossing=unmarked",
+            "highway=crossing crossing=unmarked kerb=flush",
             "643",
             "64362"
           ],
@@ -2154,7 +2154,7 @@
             "0",
             "0",
             "highway=residential surface=paving_stones route_bicycle_rcn=yes",
-            "nodeaccessgranted=yes highway=crossing crossing=unmarked",
+            "nodeaccessgranted=yes highway=crossing crossing=unmarked kerb=flush",
             "645",
             "64583"
           ],
@@ -12833,7 +12833,7 @@
             "4",
             "0",
             "0",
-            "reversedirection=yes highway=primary surface=asphalt estimated_traffic_class=4 cycleway=lane route_bicycle_rcn=yes",
+            "reversedirection=yes highway=primary surface=asphalt estimated_traffic_class=4 smoothness=good cycleway:both=lane route_bicycle_rcn=yes",
             "nodeaccessgranted=yes estimated_crossing_class=5",
             "20372",
             "2006983"
@@ -12848,7 +12848,7 @@
             "0",
             "0",
             "0",
-            "reversedirection=yes highway=primary surface=asphalt estimated_traffic_class=4 cycleway=lane route_bicycle_rcn=yes",
+            "reversedirection=yes highway=primary surface=asphalt estimated_traffic_class=4 smoothness=good cycleway:both=lane route_bicycle_rcn=yes",
             "",
             "20377",
             "2007516"

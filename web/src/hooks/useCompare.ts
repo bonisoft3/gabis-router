@@ -4,28 +4,36 @@ import type { LatLon } from '../types.ts';
 
 export function useCompare(
   onMatchWaypoints: (wps: LatLon[]) => void,
-  onStatusChange: (status: string) => void,
+  onStatusChange: (status: string, isError?: boolean) => void,
+  onGpxLoaded?: (route: ComparedRoute) => void,
 ) {
   const [comparedRoute, setComparedRoute] = useState<ComparedRoute | null>(null);
 
-  const loadGpxContent = useCallback((xmlText: string) => {
-    try {
-      const route = parseGpx(xmlText);
-      setComparedRoute(route);
-      onStatusChange(`Loaded GPX: ${route.name}`);
-    } catch (err: any) {
-      alert(`Could not load GPX: ${err.message || err}`);
-    }
-  }, [onStatusChange]);
+  const loadGpxContent = useCallback(
+    (xmlText: string) => {
+      try {
+        const route = parseGpx(xmlText);
+        setComparedRoute(route);
+        onStatusChange(`Loaded GPX: ${route.name}`);
+        onGpxLoaded?.(route);
+      } catch (err: any) {
+        onStatusChange(`Could not load GPX: ${err.message || String(err)}`, true);
+      }
+    },
+    [onStatusChange, onGpxLoaded],
+  );
 
-  const loadGpxFile = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      if (text) loadGpxContent(text);
-    };
-    reader.readAsText(file);
-  }, [loadGpxContent]);
+  const loadGpxFile = useCallback(
+    (file: File) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        if (text) loadGpxContent(text);
+      };
+      reader.readAsText(file);
+    },
+    [loadGpxContent],
+  );
 
   const clearComparedRoute = useCallback(() => {
     setComparedRoute(null);
@@ -41,14 +49,16 @@ export function useCompare(
     ]);
   }, [comparedRoute, onMatchWaypoints]);
 
-  // Window drag and drop
+  // Window drag and drop for GPX files only (do not hijack internal element drag-and-drop)
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
+      if (!e.dataTransfer?.types?.includes('Files')) return;
       e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      e.dataTransfer.dropEffect = 'copy';
     };
 
     const handleDrop = (e: DragEvent) => {
+      if (!e.dataTransfer?.types?.includes('Files')) return;
       e.preventDefault();
       const file = e.dataTransfer?.files?.[0];
       if (file && file.name.toLowerCase().endsWith('.gpx')) {
@@ -72,3 +82,4 @@ export function useCompare(
     matchStartAndEnd,
   };
 }
+

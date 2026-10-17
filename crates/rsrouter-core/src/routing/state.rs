@@ -8,24 +8,58 @@ use std::cmp::Ordering;
 use super::path::PathState;
 use crate::types::{Cost, ElevationQuarterMeters, MicroDegrees, NodeId, Point3D};
 
-/// Candidate path reaching an edge, used for Pareto dominance pruning.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Candidate path reaching an edge, used for Pareto dominance pruning and multi-candidate expansion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct CandidateState {
     pub cost: Cost,
     pub ehbd: i32,
     pub ehbu: i32,
+    pub history_idx: u32,
+    pub path_selev: ElevationQuarterMeters,
+    pub in_destination: bool,
+    pub can_leave_destination: bool,
 }
 
 impl CandidateState {
     #[inline(always)]
     pub fn new(cost: Cost, ehbd: i32, ehbu: i32) -> Self {
-        Self { cost, ehbd, ehbu }
+        Self {
+            cost,
+            ehbd,
+            ehbu,
+            history_idx: u32::MAX,
+            path_selev: i16::MIN,
+            in_destination: false,
+            can_leave_destination: false,
+        }
+    }
+
+    #[inline(always)]
+    pub fn with_context(
+        cost: Cost,
+        ehbd: i32,
+        ehbu: i32,
+        history_idx: u32,
+        path_selev: ElevationQuarterMeters,
+        in_destination: bool,
+        can_leave_destination: bool,
+    ) -> Self {
+        Self {
+            cost,
+            ehbd,
+            ehbu,
+            history_idx,
+            path_selev,
+            in_destination,
+            can_leave_destination,
+        }
     }
 
     /// Evaluates if `self` is definitely worse than `existing` under Pareto dominance
     /// across cumulative cost and elevation hysteresis buffers.
     ///
-    /// Matches `StdPath.definitlyWorseThan` in Java BRouter.
+    /// Matches `StdPath.definitlyWorseThan` (and `KinematicPath.definitlyWorseThan` when `downhillcostdiv < 0`)
+    /// in Java BRouter.
     #[inline(always)]
     pub fn is_definitely_worse_than(
         &self,
@@ -33,6 +67,9 @@ impl CandidateState {
         downhillcostdiv: i32,
         uphillcostdiv: i32,
     ) -> bool {
+        if downhillcostdiv < 0 {
+            return self.cost > existing.cost.saturating_add(100);
+        }
         let mut c = existing.cost;
         if downhillcostdiv > 0 {
             let delta = existing.ehbd / downhillcostdiv - self.ehbd / downhillcostdiv;
@@ -46,15 +83,15 @@ impl CandidateState {
                 c = c.saturating_add(delta as u32);
             }
         }
-        self.cost > c || (self.cost == c && self.ehbd <= existing.ehbd && self.ehbu <= existing.ehbu)
+        self.cost > c
     }
 }
 
-pub const INLINE_CANDS: usize = 3;
+pub const INLINE_CANDS: usize = 6;
 
 /// Multi-candidate dominance state per directed edge.
 ///
-/// Uses an inline array of up to 3 candidates to avoid dynamic heap allocations.
+/// Uses an inline array of up to 6 candidates to avoid dynamic heap allocations.
 #[derive(Clone, Copy)]
 pub struct EdgeState {
     pub cands: [CandidateState; INLINE_CANDS],
@@ -65,11 +102,7 @@ impl Default for EdgeState {
     #[inline(always)]
     fn default() -> Self {
         Self {
-            cands: [CandidateState {
-                cost: 0,
-                ehbd: 0,
-                ehbu: 0,
-            }; INLINE_CANDS],
+            cands: [CandidateState::default(); INLINE_CANDS],
             len: 0,
         }
     }
@@ -136,13 +169,16 @@ pub struct SearchNode {
     pub up_div: i32,
     pub history_idx: u32,
     pub selev: ElevationQuarterMeters,
+    pub path_selev: ElevationQuarterMeters,
     pub last_classifier: u8,
     pub in_destination: bool,
     pub can_leave_destination: bool,
+    pub has_tr: bool,
     pub edge_idx: u32,
     pub rev_edge_idx: u32,
     pub out_edges_start: u32,
     pub out_edges_count: u16,
+    pub node_desc_id: u32,
 }
 
 /// Compact 8-byte item stored in the BinaryHeap priority queue.

@@ -14,9 +14,9 @@ async fn test_parity_clapham_hackney_fastbike() {
         None,
         "clapham_hackney_fastbike.json",
         "clapham_hackney_fastbike.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -31,9 +31,9 @@ async fn test_parity_clapham_hackney_lowtraffic() {
         None,
         "clapham_hackney_lowtraffic.json",
         "clapham_hackney_fastbike-lowtraffic.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -48,9 +48,9 @@ async fn test_parity_clapham_hackney_verylowtraffic() {
         None,
         "clapham_hackney_verylowtraffic.json",
         "clapham_hackney_fastbike-verylowtraffic.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -63,7 +63,6 @@ const LONDON_BRIGHTON: &str = "-0.127818,51.507392|-0.136913,50.822431";
 
 #[tokio::test]
 async fn test_parity_london_brighton_fastbike() {
-    // Documented gap: Redhill town center parallel residential streets (cost delta <= 0.25%, 99.4% coord overlap)
     assert_route_parity(
         "London -> Brighton",
         "fastbike",
@@ -71,17 +70,16 @@ async fn test_parity_london_brighton_fastbike() {
         None,
         "london_brighton_fastbike.json",
         "london_brighton_fastbike.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.25,
-        0.50,
-        99.0,
+        100.0,
     )
     .await;
 }
 
 #[tokio::test]
 async fn test_parity_london_brighton_lowtraffic() {
-    // Documented gap: Seven Dials roundabout approach (dist delta <= 0.30%, cost delta <= 0.10%, 97.0% coord overlap)
     assert_route_parity(
         "London -> Brighton",
         "fastbike-lowtraffic",
@@ -89,10 +87,10 @@ async fn test_parity_london_brighton_lowtraffic() {
         None,
         "london_brighton_fastbike-lowtraffic_alt0.json",
         "london_brighton_fastbike-lowtraffic.geojson",
-        0.30,
-        0.10,
-        0.50,
-        96.0,
+        0.005,
+        0.005,
+        0.05,
+        100.0,
     )
     .await;
 }
@@ -106,9 +104,9 @@ async fn test_parity_london_brighton_verylowtraffic() {
         None,
         "london_brighton_verylowtraffic.json",
         "london_brighton_fastbike-verylowtraffic.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -123,10 +121,10 @@ async fn test_parity_london_brighton_alt1() {
         Some(1),
         "london_brighton_fastbike-lowtraffic_alt1.json",
         "london_brighton_fastbike-lowtraffic_alt1.geojson",
-        0.15,
-        0.25,
-        0.50,
-        95.0,
+        0.005,
+        0.005,
+        0.05,
+        100.0,
     )
     .await;
 }
@@ -140,10 +138,10 @@ async fn test_parity_london_brighton_alt2() {
         Some(2),
         "london_brighton_fastbike-lowtraffic_alt2.json",
         "london_brighton_fastbike-lowtraffic_alt2.geojson",
-        0.15,
-        0.10,
-        0.50,
-        98.0,
+        0.005,
+        0.005,
+        0.05,
+        100.0,
     )
     .await;
 }
@@ -157,10 +155,10 @@ async fn test_parity_london_brighton_alt3() {
         Some(3),
         "london_brighton_fastbike-lowtraffic_alt3.json",
         "london_brighton_fastbike-lowtraffic_alt3.geojson",
-        0.15,
-        0.20,
-        0.50,
-        98.0,
+        0.10,
+        0.005,
+        0.10,
+        98.5,
     )
     .await;
 }
@@ -179,9 +177,9 @@ async fn test_parity_london_oxford_fastbike() {
         None,
         "london_oxford_fastbike.json",
         "london_oxford_fastbike.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -196,9 +194,9 @@ async fn test_parity_london_oxford_lowtraffic() {
         None,
         "london_oxford_lowtraffic.json",
         "london_oxford_fastbike-lowtraffic.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -213,9 +211,9 @@ async fn test_parity_london_oxford_verylowtraffic() {
         None,
         "london_oxford_verylowtraffic.json",
         "london_oxford_fastbike-verylowtraffic.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -235,9 +233,9 @@ async fn test_parity_london_cardiff_fastbike() {
         None,
         "london_cardiff_fastbike.json",
         "london_cardiff_fastbike.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -245,7 +243,6 @@ async fn test_parity_london_cardiff_fastbike() {
 
 #[tokio::test]
 async fn test_parity_london_cardiff_lowtraffic() {
-    // Documented gap: Newport Road cycleway vs roadway tie (cost delta <= 0.05%, 99.9% coord overlap)
     assert_route_parity(
         "London -> Cardiff",
         "fastbike-lowtraffic",
@@ -253,10 +250,10 @@ async fn test_parity_london_cardiff_lowtraffic() {
         None,
         "london_cardiff_lowtraffic.json",
         "london_cardiff_fastbike-lowtraffic.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
-        99.5,
+        100.0,
     )
     .await;
 }
@@ -270,9 +267,9 @@ async fn test_parity_london_cardiff_verylowtraffic() {
         None,
         "london_cardiff_verylowtraffic.json",
         "london_cardiff_fastbike-verylowtraffic.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -293,9 +290,9 @@ async fn test_parity_richmond_oxford_fastbike() {
         None,
         "richmond_oxford_multi_point_fastbike.json",
         "richmond_oxford_multi_point_fastbike.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -310,9 +307,9 @@ async fn test_parity_richmond_oxford_lowtraffic() {
         None,
         "richmond_oxford_multi_point_lowtraffic.json",
         "richmond_oxford_multi_point_fastbike-lowtraffic.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;
@@ -327,9 +324,9 @@ async fn test_parity_richmond_oxford_verylowtraffic() {
         None,
         "richmond_oxford_multi_point_verylowtraffic.json",
         "richmond_oxford_multi_point_fastbike-verylowtraffic.geojson",
+        0.005,
+        0.005,
         0.05,
-        0.05,
-        0.50,
         100.0,
     )
     .await;

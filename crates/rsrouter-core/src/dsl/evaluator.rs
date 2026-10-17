@@ -37,7 +37,13 @@ pub struct WayCostResult {
     pub downhillmaxslope: f32,
     pub uphillmaxslopecost: f32,
     pub downhillmaxslopecost: f32,
+    pub maxspeed_explicit: f32,
+    pub minspeed: f32,
     // Precomputed derived fields
+    pub uphillcutoff_f: f32,
+    pub downhillcutoff_f: f32,
+    pub uphillmaxslope_f: f32,
+    pub downhillmaxslope_f: f32,
     pub uphillcutoff_i: i32,
     pub downhillcutoff_i: i32,
     pub uphillmaxslope_i: i32,
@@ -46,14 +52,20 @@ pub struct WayCostResult {
     pub downhillmaxslopecostdiv: i32,
     pub uphillcostdiv: i32,
     pub uphillmaxslopecostdiv: i32,
+    pub foreign_var_0: f32,
 }
 
 impl WayCostResult {
     pub fn init_derived(&mut self) {
-        self.uphillcutoff_i = (self.uphillcutoff * 10000.0) as i32;
-        self.downhillcutoff_i = (self.downhillcutoff * 10000.0) as i32;
-        self.uphillmaxslope_i = (self.uphillmaxslope * 10000.0) as i32;
-        self.downhillmaxslope_i = (self.downhillmaxslope * 10000.0) as i32;
+        self.uphillcutoff_f = self.uphillcutoff * 10000.0;
+        self.downhillcutoff_f = self.downhillcutoff * 10000.0;
+        self.uphillmaxslope_f = self.uphillmaxslope * 10000.0;
+        self.downhillmaxslope_f = self.downhillmaxslope * 10000.0;
+
+        self.uphillcutoff_i = self.uphillcutoff_f as i32;
+        self.downhillcutoff_i = self.downhillcutoff_f as i32;
+        self.uphillmaxslope_i = self.uphillmaxslope_f as i32;
+        self.downhillmaxslope_i = self.downhillmaxslope_f as i32;
 
         let down_cost = self.downhillcost as i32;
         self.downhillcostdiv = if down_cost > 0 {
@@ -82,9 +94,11 @@ impl WayCostResult {
 }
 
 /// Computed cost penalty for a node.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct NodeCostResult {
     pub initialcost: f32,
+    pub maxspeed: f32,
+    pub crossing_class: u8,
 }
 
 pub struct ProfileEvaluator<'a> {
@@ -93,6 +107,7 @@ pub struct ProfileEvaluator<'a> {
     pub node_lookups: &'a ContextLookups,
     pub way_vars: Vec<f32>,
     pub node_vars: Vec<f32>,
+    pub node_foreign_var_0: Option<usize>,
 }
 
 impl<'a> ProfileEvaluator<'a> {
@@ -109,12 +124,15 @@ impl<'a> ProfileEvaluator<'a> {
         let copy_node_len = profile.node_block.min_write_idx.min(profile.global_values.len());
         node_vars[..copy_node_len].copy_from_slice(&profile.global_values[..copy_node_len]);
 
+        let node_foreign_var_0 = profile.node_block.foreign_var_indices().into_iter().next();
+
         Self {
             profile,
             way_lookups,
             node_lookups,
             way_vars,
             node_vars,
+            node_foreign_var_0,
         }
     }
 
@@ -175,6 +193,12 @@ impl<'a> ProfileEvaluator<'a> {
         let downhillmaxslope = get_var(17);
         let uphillmaxslopecost = get_var(18);
         let downhillmaxslopecost = get_var(19);
+        let maxspeed_explicit = get_var(20);
+        let minspeed = get_var(21);
+        let foreign_var_0 = self
+            .node_foreign_var_0
+            .and_then(|i| self.way_vars.get(i).copied())
+            .unwrap_or(0.0);
 
         let mut res = WayCostResult {
             costfactor: cf,
@@ -197,6 +221,9 @@ impl<'a> ProfileEvaluator<'a> {
             downhillmaxslope,
             uphillmaxslopecost,
             downhillmaxslopecost,
+            maxspeed_explicit,
+            minspeed,
+            foreign_var_0,
             ..Default::default()
         };
         res.init_derived();
@@ -219,16 +246,21 @@ impl<'a> ProfileEvaluator<'a> {
             );
         }
 
-        let initialcost = self
-            .profile
-            .node_block
-            .builtin_indices
-            .first()
-            .and_then(|opt| *opt)
-            .map(|v_idx| self.node_vars[v_idx])
-            .unwrap_or(0.0);
+        let get_node_var = |idx: usize| -> f32 {
+            self.profile
+                .node_block
+                .builtin_indices
+                .get(idx)
+                .and_then(|opt| *opt)
+                .map(|v_idx| self.node_vars[v_idx])
+                .unwrap_or(0.0)
+        };
 
-        NodeCostResult { initialcost }
+        NodeCostResult {
+            initialcost: get_node_var(0),
+            maxspeed: get_node_var(1),
+            crossing_class: 0,
+        }
     }
 
     fn eval_expr(

@@ -2,6 +2,10 @@
 
 export interface MenuItem {
   label: string;
+  hint?: string;
+  danger?: boolean;
+  dividerBefore?: boolean;
+  active?: boolean;
   onSelect: () => void;
 }
 
@@ -21,15 +25,42 @@ export function menuClosedWithin(ms: number): boolean {
 }
 
 /** Shows a menu at viewport position (x, y). It stays inside the window. */
-export function showMenu(items: MenuItem[], x: number, y: number) {
+export function showMenu(items: MenuItem[], x: number, y: number, headerText?: string) {
   hideMenu();
   const el = document.createElement('div');
   el.id = 'map-menu';
   el.setAttribute('role', 'menu');
+
+  if (headerText) {
+    const hdr = document.createElement('div');
+    hdr.className = 'map-menu-header';
+    hdr.textContent = headerText;
+    el.appendChild(hdr);
+  }
+
   for (const item of items) {
+    if (item.dividerBefore) {
+      const div = document.createElement('div');
+      div.className = 'map-menu-divider';
+      el.appendChild(div);
+    }
     const button = document.createElement('button');
+    button.type = 'button';
     button.setAttribute('role', 'menuitem');
-    button.textContent = item.label;
+    if (item.danger) button.classList.add('map-menu-item-danger');
+    if (item.active) button.classList.add('map-menu-item-active');
+
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = item.label;
+    button.appendChild(labelSpan);
+
+    if (item.hint) {
+      const hintSpan = document.createElement('small');
+      hintSpan.className = 'map-menu-hint';
+      hintSpan.textContent = item.hint;
+      button.appendChild(hintSpan);
+    }
+
     button.addEventListener('click', () => {
       hideMenu();
       item.onSelect();
@@ -38,7 +69,7 @@ export function showMenu(items: MenuItem[], x: number, y: number) {
   }
   document.body.appendChild(el);
 
-  const margin = 8;
+  const margin = 10;
   el.style.left = `${Math.max(margin, Math.min(x, window.innerWidth - el.offsetWidth - margin))}px`;
   el.style.top = `${Math.max(margin, Math.min(y, window.innerHeight - el.offsetHeight - margin))}px`;
   el.querySelector('button')?.focus();
@@ -54,6 +85,20 @@ document.addEventListener(
   true,
 );
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') hideMenu();
+  if (!menuEl) return;
+  if (e.key === 'Escape') {
+    hideMenu();
+  } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const buttons = Array.from(menuEl.querySelectorAll<HTMLButtonElement>('button'));
+    if (buttons.length === 0) return;
+    e.preventDefault();
+    const cur = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      e.key === 'ArrowDown'
+        ? (cur + 1) % buttons.length
+        : (cur - 1 + buttons.length) % buttons.length;
+    buttons[next]?.focus();
+  }
 });
 window.addEventListener('resize', hideMenu);
+

@@ -84,16 +84,9 @@ assign is_road =
 # Paved roads that are part of a recognized bike route
 assign is_safe_road = and ( and is_road not isunpaved ) is_cycleroute
 
-assign is_20mph_road =
-  if ( not maxspeed= ) then ( maxspeed=10|20|30 )
-  else if ( not zone:maxspeed= ) then ( zone:maxspeed=20|30 )
-  else if reversedirection=yes then ( if not maxspeed:backward= then maxspeed:backward=10|20|30 else false )
-  else if ( not maxspeed:forward= ) then ( maxspeed:forward=10|20|30 )
-  else false
-
-# Turn penalty: 70 when following safe roads on cycle networks or 20mph roads, 120 on generic turns
-assign turncost = if junction=roundabout then 0
-                  else if and stick_to_cycleroutes ( or is_safe_road is_20mph_road ) then 70
+# Turn penalty: 70 when following safe roads on cycle networks, 120 on generic turns
+assign turncost = if and stick_to_cycleroutes is_safe_road then 70
+                  else if junction=roundabout then 0
                   else 120
 
 assign initialclassifier =
@@ -195,10 +188,8 @@ assign onewaypenalty =
        )
        else 0.0
 
-assign isresidentialorliving = or highway=residential|living_street living_street=yes
-
 # Eventually compute traffic penalty
-assign raw_trafficpenalty =
+assign trafficpenalty =
       if not consider_traffic then 0
       else
       min switch hascycleway 0.3 100   # trafficpenalty not above 0.3 if a cycleway is present
@@ -209,12 +200,10 @@ assign raw_trafficpenalty =
       else if estimated_traffic_class=6|7 then multiply 1.5   consider_traffic
       else 0
 
-assign trafficpenalty =
-  if is_20mph_road then multiply 0.2 raw_trafficpenalty
-  else raw_trafficpenalty
+assign isresidentialorliving = or highway=residential|living_street living_street=yes
 
 # add estimate tags
-assign raw_noise_penalty =
+assign noise_penalty
    switch consider_noise
      switch estimated_noise_class=  0
      switch estimated_noise_class=1  0
@@ -223,10 +212,6 @@ assign raw_noise_penalty =
      switch estimated_noise_class=4  0.1
      switch estimated_noise_class=5  0.5
      switch estimated_noise_class=6  1.0 0 0
-
-assign noise_penalty =
-  if is_20mph_road then multiply 0.2 raw_noise_penalty
-  else raw_noise_penalty
 
 assign no_river_penalty
    switch consider_river

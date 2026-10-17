@@ -6,12 +6,13 @@
 //!
 //! # Summary
 //! Manages open `.rd5` physical files in a segment directory, computes tile coordinates,
-//! and loads/decodes 1°×1° squares and MicroCache cells.
+//! and loads/decodes 1°×1° squares and MicroCache cells with LRU square and corridor caching.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{self, Error, ErrorKind};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -21,17 +22,43 @@ use super::micro_cache::DecodedMicroCache;
 use super::osm_file::OsmFile;
 use super::physical_file::PhysicalFile;
 
+pub const DEFAULT_MAX_CACHED_SQUARES: usize = 64;
+
 pub struct TileManager {
     pub segment_dir: PathBuf,
     pub files: HashMap<String, PhysicalFile>,
+    pub max_cached_squares: usize,
+    pub square_cache: HashMap<(i32, i32), Arc<Vec<DecodedMicroCache>>>,
+    pub lru_order: VecDeque<(i32, i32)>,
 }
 
 impl TileManager {
     pub fn new<P: AsRef<Path>>(segment_dir: P) -> Self {
+        Self::with_cache_capacity(segment_dir, DEFAULT_MAX_CACHED_SQUARES)
+    }
+
+    pub fn with_cache_capacity<P: AsRef<Path>>(
+        segment_dir: P,
+        max_cached_squares: usize,
+    ) -> Self {
         Self {
             segment_dir: segment_dir.as_ref().to_path_buf(),
             files: HashMap::new(),
+            max_cached_squares,
+            square_cache: HashMap::new(),
+            lru_order: VecDeque::new(),
         }
+    }
+
+    /// Returns the number of 1°×1° squares currently held in the LRU cache.
+    pub fn cached_square_count(&self) -> usize {
+        self.square_cache.len()
+    }
+
+    /// Clears the decoded 1°×1° square cache.
+    pub fn clear_cache(&mut self) {
+        self.square_cache.clear();
+        self.lru_order.clear();
     }
 
     /// Computes the 5°×5° filename base (e.g., "W5_N50") from microdegree coordinates.
@@ -102,6 +129,36 @@ impl TileManager {
         let osmf = OsmFile::new(pf, lon_degree, lat_degree)?;
         let file_clone = pf.file.try_clone()?;
         Ok((osmf, file_clone))
+    }
+
+    /// Retrieves a decoded 1°×1° square from the LRU cache, or decodes it from disk on miss.
+    pub fn decode_square_cached(
+        &mut self,
+        lon_degree: i32,
+        lat_degree: i32,
+    ) -> io::Result<Arc<Vec<DecodedMicroCache>>> {
+        let key = (lon_degree, lat_degree);
+        if let Some(cached) = self.square_cache.get(&key).cloned() {
+            if let Some(pos) = self.lru_order.iter().position(|&k| k == key) {
+                self.lru_order.remove(pos);
+            }
+            self.lru_order.push_back(key);
+            return Ok(cached);
+        }
+
+        let decoded = Arc::new(self.decode_all_in_square(lon_degree, lat_degree, None)?);
+        if self.max_cached_squares > 0 {
+            while self.square_cache.len() >= self.max_cached_squares {
+                if let Some(oldest) = self.lru_order.pop_front() {
+                    self.square_cache.remove(&oldest);
+                } else {
+                    break;
+                }
+            }
+            self.square_cache.insert(key, Arc::clone(&decoded));
+            self.lru_order.push_back(key);
+        }
+        Ok(decoded)
     }
 
     /// Decodes all microcaches in a 1°×1° square.

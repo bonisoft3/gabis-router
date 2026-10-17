@@ -5,20 +5,21 @@
   xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
   <metadata>
     <name>fastbike</name>
-    <desc>Distance: 4.85 km, Time: 14 min, Ascend: 6 m</desc>
+    <desc>Distance: 4.85 km, Time: 14 min, Ascend: 5 m</desc>
   </metadata>
   <trk>
     <name>fastbike</name>
-    <desc>Distance: 4.85 km, Time: 14 min, Ascend: 6 m</desc>
+    <desc>Distance: 4.85 km, Time: 14 min, Ascend: 5 m</desc>
     <trkseg>
       <trkpt lat="51.500012" lon="0.069995">
-        <ele>4.00</ele>
+        <ele>3.75</ele>
       </trkpt>
       <trkpt lat="51.500003" lon="0.069930">
         <ele>3.75</ele>
       </trkpt>
       <trkpt lat="51.499996" lon="0.069880">
         <ele>4.00</ele>
+        <sym>TR</sym>
       </trkpt>
       <trkpt lat="51.500924" lon="0.069598">
         <ele>2.00</ele>
@@ -31,12 +32,14 @@
       </trkpt>
       <trkpt lat="51.501051" lon="0.069567">
         <ele>2.25</ele>
+        <sym>C</sym>
       </trkpt>
       <trkpt lat="51.501088" lon="0.069555">
         <ele>2.25</ele>
       </trkpt>
       <trkpt lat="51.501127" lon="0.069532">
         <ele>2.25</ele>
+        <sym>TSHR</sym>
       </trkpt>
       <trkpt lat="51.501146" lon="0.069624">
         <ele>2.75</ele>
@@ -70,6 +73,7 @@
       </trkpt>
       <trkpt lat="51.501491" lon="0.070604">
         <ele>4.25</ele>
+        <sym>TL</sym>
       </trkpt>
       <trkpt lat="51.501531" lon="0.070615">
         <ele>4.50</ele>
@@ -85,6 +89,7 @@
       </trkpt>
       <trkpt lat="51.501589" lon="0.070526">
         <ele>4.50</ele>
+        <sym>TSLR</sym>
       </trkpt>
       <trkpt lat="51.501611" lon="0.070530">
         <ele>4.75</ele>
@@ -100,6 +105,7 @@
       </trkpt>
       <trkpt lat="51.501658" lon="0.070672">
         <ele>4.75</ele>
+        <sym>TL</sym>
       </trkpt>
       <trkpt lat="51.501695" lon="0.070693">
         <ele>5.00</ele>
@@ -150,28 +156,28 @@
         <ele>7.25</ele>
       </trkpt>
       <trkpt lat="51.504803" lon="0.071165">
-        <ele>0.00</ele>
+        <ele>7.00</ele>
       </trkpt>
       <trkpt lat="51.504962" lon="0.071204">
-        <ele>0.00</ele>
+        <ele>7.00</ele>
       </trkpt>
       <trkpt lat="51.505201" lon="0.071246">
-        <ele>0.00</ele>
+        <ele>6.75</ele>
       </trkpt>
       <trkpt lat="51.505502" lon="0.071272">
-        <ele>0.00</ele>
+        <ele>6.75</ele>
       </trkpt>
       <trkpt lat="51.505772" lon="0.071269">
-        <ele>0.00</ele>
+        <ele>6.50</ele>
       </trkpt>
       <trkpt lat="51.506022" lon="0.071245">
-        <ele>0.00</ele>
+        <ele>6.50</ele>
       </trkpt>
       <trkpt lat="51.506272" lon="0.071197">
-        <ele>0.00</ele>
+        <ele>6.25</ele>
       </trkpt>
       <trkpt lat="51.506490" lon="0.071132">
-        <ele>5.50</ele>
+        <ele>6.25</ele>
       </trkpt>
       <trkpt lat="51.506742" lon="0.071049">
         <ele>6.25</ele>
@@ -196,6 +202,7 @@
       </trkpt>
       <trkpt lat="51.507273" lon="0.070629">
         <ele>4.00</ele>
+        <sym>TSLL</sym>
       </trkpt>
       <trkpt lat="51.507292" lon="0.070597">
         <ele>4.00</ele>
@@ -214,6 +221,7 @@
       </trkpt>
       <trkpt lat="51.507355" lon="0.069940">
         <ele>4.75</ele>
+        <sym>TR</sym>
       </trkpt>
       <trkpt lat="51.507369" lon="0.069929">
         <ele>4.50</ele>
@@ -226,24 +234,28 @@
       </trkpt>
       <trkpt lat="51.507442" lon="0.069859">
         <ele>4.00</ele>
+        <sym>TR</sym>
       </trkpt>
       <trkpt lat="51.507471" lon="0.069890">
         <ele>4.00</ele>
       </trkpt>
       <trkpt lat="51.507500" lon="0.069925">
         <ele>4.00</ele>
+        <sym>C</sym>
       </trkpt>
       <trkpt lat="51.507555" lon="0.069989">
         <ele>4.00</ele>
       </trkpt>
       <trkpt lat="51.507584" lon="0.070023">
         <ele>4.00</ele>
+        <sym>TL</sym>
       </trkpt>
       <trkpt lat="51.507606" lon="0.070005">
         <ele>4.00</ele>
       </trkpt>
       <trkpt lat="51.507631" lon="0.069985">
         <ele>4.00</ele>
+        <sym>TSLL</sym>
       </trkpt>
       <trkpt lat="51.507653" lon="0.069963">
         <ele>4.00</ele>
@@ -283,18 +295,21 @@
       </trkpt>
       <trkpt lat="51.508640" lon="0.069980">
         <ele>3.75</ele>
+        <sym>C</sym>
       </trkpt>
       <trkpt lat="51.508681" lon="0.069938">
         <ele>3.75</ele>
       </trkpt>
       <trkpt lat="51.508713" lon="0.069908">
         <ele>3.75</ele>
+        <sym>TL</sym>
       </trkpt>
       <trkpt lat="51.508706" lon="0.069862">
         <ele>3.75</ele>
       </trkpt>
       <trkpt lat="51.508700" lon="0.069797">
         <ele>3.75</ele>
+        <sym>TR</sym>
       </trkpt>
       <trkpt lat="51.508879" lon="0.069768">
         <ele>3.00</ele>
@@ -337,6 +352,7 @@
       </trkpt>
       <trkpt lat="51.510991" lon="0.068743">
         <ele>3.00</ele>
+        <sym>RNLB2</sym>
       </trkpt>
       <trkpt lat="51.510967" lon="0.068682">
         <ele>3.00</ele>
@@ -391,6 +407,7 @@
       </trkpt>
       <trkpt lat="51.511975" lon="0.066332">
         <ele>4.00</ele>
+        <sym>TR</sym>
       </trkpt>
       <trkpt lat="51.512004" lon="0.066342">
         <ele>4.00</ele>
@@ -430,6 +447,7 @@
       </trkpt>
       <trkpt lat="51.514275" lon="0.066726">
         <ele>4.75</ele>
+        <sym>TR</sym>
       </trkpt>
       <trkpt lat="51.514204" lon="0.067900">
         <ele>6.25</ele>
@@ -442,6 +460,7 @@
       </trkpt>
       <trkpt lat="51.514160" lon="0.068112">
         <ele>7.00</ele>
+        <sym>TSLL</sym>
       </trkpt>
       <trkpt lat="51.514162" lon="0.068149">
         <ele>7.00</ele>
@@ -463,9 +482,11 @@
       </trkpt>
       <trkpt lat="51.514059" lon="0.069459">
         <ele>6.00</ele>
+        <sym>TSLL</sym>
       </trkpt>
       <trkpt lat="51.514105" lon="0.069682">
         <ele>6.00</ele>
+        <sym>TSLL</sym>
       </trkpt>
       <trkpt lat="51.514141" lon="0.069725">
         <ele>6.00</ele>
@@ -490,6 +511,7 @@
       </trkpt>
       <trkpt lat="51.514919" lon="0.069999">
         <ele>2.25</ele>
+        <sym>TSLR</sym>
       </trkpt>
       <trkpt lat="51.514915" lon="0.070039">
         <ele>2.25</ele>
@@ -508,6 +530,7 @@
       </trkpt>
       <trkpt lat="51.514999" lon="0.070154">
         <ele>2.00</ele>
+        <sym>TR</sym>
       </trkpt>
       <trkpt lat="51.515047" lon="0.070624">
         <ele>3.00</ele>
@@ -565,6 +588,7 @@
       </trkpt>
       <trkpt lat="51.518972" lon="0.072526">
         <ele>6.00</ele>
+        <sym>TSLR</sym>
       </trkpt>
       <trkpt lat="51.519023" lon="0.072529">
         <ele>5.50</ele>
@@ -592,6 +616,7 @@
       </trkpt>
       <trkpt lat="51.522317" lon="0.072369">
         <ele>2.25</ele>
+        <sym>TSLR</sym>
       </trkpt>
       <trkpt lat="51.522357" lon="0.072359">
         <ele>2.25</ele>
@@ -604,6 +629,7 @@
       </trkpt>
       <trkpt lat="51.522430" lon="0.072393">
         <ele>2.50</ele>
+        <sym>TSLL</sym>
       </trkpt>
       <trkpt lat="51.522461" lon="0.072409">
         <ele>2.75</ele>
@@ -616,6 +642,7 @@
       </trkpt>
       <trkpt lat="51.522538" lon="0.072362">
         <ele>3.00</ele>
+        <sym>TL</sym>
       </trkpt>
       <trkpt lat="51.522562" lon="0.072323">
         <ele>3.00</ele>
@@ -631,12 +658,14 @@
       </trkpt>
       <trkpt lat="51.522560" lon="0.072163">
         <ele>2.75</ele>
+        <sym>C</sym>
       </trkpt>
       <trkpt lat="51.522592" lon="0.072107">
         <ele>2.75</ele>
       </trkpt>
       <trkpt lat="51.522603" lon="0.072089">
         <ele>2.75</ele>
+        <sym>TR</sym>
       </trkpt>
       <trkpt lat="51.522641" lon="0.072094">
         <ele>2.75</ele>
@@ -652,15 +681,16 @@
       </trkpt>
       <trkpt lat="51.524197" lon="0.072387">
         <ele>4.00</ele>
+        <sym>TR</sym>
       </trkpt>
       <trkpt lat="51.524131" lon="0.072600">
-        <ele>5.75</ele>
+        <ele>4.00</ele>
       </trkpt>
       <trkpt lat="51.524032" lon="0.072936">
-        <ele>0.00</ele>
+        <ele>4.00</ele>
       </trkpt>
       <trkpt lat="51.524020" lon="0.073001">
-        <ele>5.25</ele>
+        <ele>4.00</ele>
       </trkpt>
       <trkpt lat="51.523999" lon="0.073173">
         <ele>4.00</ele>
@@ -727,12 +757,14 @@
       </trkpt>
       <trkpt lat="51.526184" lon="0.077107">
         <ele>4.50</ele>
+        <sym>TL</sym>
       </trkpt>
       <trkpt lat="51.526197" lon="0.077101">
         <ele>4.50</ele>
       </trkpt>
       <trkpt lat="51.526228" lon="0.077081">
         <ele>4.75</ele>
+        <sym>C</sym>
       </trkpt>
       <trkpt lat="51.526238" lon="0.077072">
         <ele>4.75</ele>
@@ -771,37 +803,39 @@
         <ele>5.75</ele>
       </trkpt>
       <trkpt lat="51.527580" lon="0.080720">
-        <ele>0.00</ele>
+        <ele>5.25</ele>
       </trkpt>
       <trkpt lat="51.527876" lon="0.081760">
-        <ele>0.00</ele>
+        <ele>5.00</ele>
       </trkpt>
       <trkpt lat="51.528036" lon="0.082451">
-        <ele>6.00</ele>
+        <ele>4.75</ele>
       </trkpt>
       <trkpt lat="51.528096" lon="0.082698">
         <ele>5.00</ele>
+        <sym>KR</sym>
       </trkpt>
       <trkpt lat="51.528072" lon="0.082717">
         <ele>5.00</ele>
       </trkpt>
       <trkpt lat="51.528080" lon="0.082779">
-        <ele>5.00</ele>
+        <ele>4.75</ele>
       </trkpt>
       <trkpt lat="51.528189" lon="0.083266">
-        <ele>0.00</ele>
+        <ele>4.50</ele>
+        <sym>TL</sym>
       </trkpt>
       <trkpt lat="51.528447" lon="0.083134">
-        <ele>0.00</ele>
+        <ele>4.25</ele>
       </trkpt>
       <trkpt lat="51.528347" lon="0.082627">
-        <ele>0.00</ele>
+        <ele>4.00</ele>
       </trkpt>
       <trkpt lat="51.528380" lon="0.082610">
-        <ele>0.00</ele>
+        <ele>4.00</ele>
       </trkpt>
       <trkpt lat="51.528436" lon="0.082894">
-        <ele>4.25</ele>
+        <ele>4.00</ele>
       </trkpt>
       <trkpt lat="51.528442" lon="0.082921">
         <ele>4.00</ele>
@@ -811,15 +845,18 @@
       </trkpt>
       <trkpt lat="51.528573" lon="0.083490">
         <ele>3.00</ele>
+        <sym>TSLL</sym>
       </trkpt>
       <trkpt lat="51.528600" lon="0.083499">
         <ele>3.00</ele>
+        <sym>TSLR</sym>
       </trkpt>
       <trkpt lat="51.528604" lon="0.083515">
         <ele>3.00</ele>
       </trkpt>
       <trkpt lat="51.528622" lon="0.083586">
         <ele>2.75</ele>
+        <sym>TL</sym>
       </trkpt>
       <trkpt lat="51.528683" lon="0.083558">
         <ele>2.50</ele>
@@ -841,6 +878,7 @@
       </trkpt>
       <trkpt lat="51.530355" lon="0.082020">
         <ele>3.00</ele>
+        <sym>TL</sym>
       </trkpt>
       <trkpt lat="51.530308" lon="0.081891">
         <ele>3.00</ele>
@@ -876,7 +914,7 @@
         <ele>3.00</ele>
       </trkpt>
       <trkpt lat="51.529515" lon="0.080301">
-        <ele>3.00</ele>
+        <ele>2.25</ele>
       </trkpt>
     </trkseg>
   </trk>

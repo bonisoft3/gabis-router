@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState, useEffect } from 'react';
 import type { Profile } from '../utils/geo.ts';
 import { nearestIndex } from '../utils/geo.ts';
 import type { SegmentHighlight, SegmentData } from '../utils/classification.ts';
@@ -18,6 +18,7 @@ import { formatDistance, type Units } from '../format.ts';
 import { InfoButton } from './TooltipPopover.tsx';
 
 interface SurfaceBreakdownProps {
+  slotIdx?: number;
   profile: Profile | null;
   segments: SegmentData[];
   units: Units;
@@ -26,6 +27,7 @@ interface SurfaceBreakdownProps {
 }
 
 interface StackedBarProps<T extends string> {
+  rowKey: string;
   title: string;
   tooltip: string;
   ariaLabel: string;
@@ -34,11 +36,14 @@ interface StackedBarProps<T extends string> {
   classifier: (s: SegmentData) => T;
   meta: Record<T, { label: string; color: string }>;
   profile: Profile | null;
+  pinnedKey: string | null;
+  onTogglePin: (key: string, highlight: SegmentHighlight) => void;
   onHover: (pos: { lon: number; lat: number } | null) => void;
   onHighlightSegment: (highlight: SegmentHighlight | null) => void;
 }
 
 function StackedBarRow<T extends string>({
+  rowKey,
   title,
   tooltip,
   ariaLabel,
@@ -47,6 +52,8 @@ function StackedBarRow<T extends string>({
   classifier,
   meta,
   profile,
+  pinnedKey,
+  onTogglePin,
   onHover,
   onHighlightSegment,
 }: StackedBarProps<T>) {
@@ -87,6 +94,24 @@ function StackedBarRow<T extends string>({
     [profile],
   );
 
+  const buildCategoryHighlight = useCallback(
+    (cat: T): SegmentHighlight | null => {
+      const allCoords: number[][][] = [];
+      for (const s of merged) {
+        if (s.category === cat) {
+          const c = segmentCoordinates(s.from, s.to);
+          if (c.length >= 2) allCoords.push(c);
+        }
+      }
+      if (allCoords.length === 0) return null;
+      return {
+        coordinates: allCoords,
+        color: meta[cat].color,
+      };
+    },
+    [merged, meta, segmentCoordinates],
+  );
+
   const handleBarPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!profile) return;
     const box = e.currentTarget.getBoundingClientRect();
@@ -114,27 +139,32 @@ function StackedBarRow<T extends string>({
             const dist = categoryTotals[cat] || 0;
             const pct = Math.round((dist / totalDist) * 100);
             if (pct < 1 && dist < 100) return null;
+            const itemKey = `${rowKey}:${cat}`;
+            const isPinned = pinnedKey === itemKey;
 
             return (
               <span
                 key={cat}
-                className="surface-legend-item"
+                role="button"
+                tabIndex={0}
+                className={`surface-legend-item ${isPinned ? 'active' : ''}`}
+                title={`${meta[cat].label}: ${formatDistance(dist)} (${pct}%) - Click to pin on map`}
                 onPointerEnter={() => {
-                  const allCoords: number[][][] = [];
-                  for (const s of merged) {
-                    if (s.category === cat) {
-                      const c = segmentCoordinates(s.from, s.to);
-                      if (c.length >= 2) allCoords.push(c);
-                    }
-                  }
-                  if (allCoords.length > 0) {
-                    onHighlightSegment({
-                      coordinates: allCoords,
-                      color: meta[cat].color,
-                    });
-                  }
+                  const hl = buildCategoryHighlight(cat);
+                  if (hl) onHighlightSegment(hl);
                 }}
                 onPointerLeave={() => onHighlightSegment(null)}
+                onClick={() => {
+                  const hl = buildCategoryHighlight(cat);
+                  if (hl) onTogglePin(itemKey, hl);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    const hl = buildCategoryHighlight(cat);
+                    if (hl) onTogglePin(itemKey, hl);
+                  }
+                }}
               >
                 <span className="surface-swatch" style={{ backgroundColor: meta[cat].color }}></span>
                 <span>{`${meta[cat].label} ${pct}%`}</span>
@@ -180,30 +210,67 @@ function StackedBarRow<T extends string>({
 }
 
 export const SurfaceBreakdown: React.FC<SurfaceBreakdownProps> = ({
+  slotIdx = 0,
   profile,
   segments,
   units: _units,
   onHover,
   onHighlightSegment,
 }) => {
+  const [pinned, setPinned] = useState<{ key: string; highlight: SegmentHighlight } | null>(null);
+
+  useEffect(() => {
+    setPinned(null);
+  }, [profile, segments]);
+
+  const handleHighlight = useCallback(
+    (hl: SegmentHighlight | null) => {
+      if (hl) {
+        onHighlightSegment(hl);
+      } else {
+        onHighlightSegment(pinned ? pinned.highlight : null);
+      }
+    },
+    [onHighlightSegment, pinned],
+  );
+
+  const handleTogglePin = useCallback(
+    (key: string, highlight: SegmentHighlight) => {
+      setPinned((prev) => {
+        if (prev?.key === key) {
+          onHighlightSegment(null);
+          return null;
+        }
+        onHighlightSegment(highlight);
+        return { key, highlight };
+      });
+    },
+    [onHighlightSegment],
+  );
+
   if (!profile || segments.length === 0) return null;
   const total = profile.dist[profile.dist.length - 1] || 1;
+  const domId = slotIdx === 0 ? 'surface-section' : `surface-section-${slotIdx}`;
 
   return (
-    <div id="surface-section">
+    <div id={domId} className="surface-section">
       <StackedBarRow
+        rowKey="surface"
         title="Surface"
-        tooltip="Road surface material from OpenStreetMap. Shows whether roads are paved, gravel, unpaved, or dirt trails."
+        tooltip="Road surface material from OpenStreetMap. Click any category to pin its segments on the map."
         ariaLabel="Surface types"
         totalDist={total}
         segments={segments}
         classifier={(s) => classifySurface(s.surface, s.highway)}
         meta={SURFACE_META}
         profile={profile}
+        pinnedKey={pinned?.key ?? null}
+        onTogglePin={handleTogglePin}
         onHover={onHover}
-        onHighlightSegment={onHighlightSegment}
+        onHighlightSegment={handleHighlight}
       />
       <StackedBarRow
+        rowKey="road"
         title="Road Type"
         tooltip="Highway classification from OpenStreetMap. Separates protected cycleways and quiet residential streets from major roads."
         ariaLabel="Road types"
@@ -212,44 +279,55 @@ export const SurfaceBreakdown: React.FC<SurfaceBreakdownProps> = ({
         classifier={(s) => classifyRoad(s.highway)}
         meta={ROAD_META}
         profile={profile}
+        pinnedKey={pinned?.key ?? null}
+        onTogglePin={handleTogglePin}
         onHover={onHover}
-        onHighlightSegment={onHighlightSegment}
+        onHighlightSegment={handleHighlight}
       />
       <StackedBarRow
+        rowKey="traffic"
         title="Traffic"
-        tooltip="Estimated vehicle volume based on road type. This is modeled data, not real-time traffic."
+        tooltip="Estimated motor vehicle volume based on road classification and BRouter traffic density tags."
         ariaLabel="Traffic levels"
         totalDist={total}
         segments={segments}
         classifier={(s) => classifyTraffic(s.traffic, s.highway)}
         meta={TRAFFIC_META}
         profile={profile}
+        pinnedKey={pinned?.key ?? null}
+        onTogglePin={handleTogglePin}
         onHover={onHover}
-        onHighlightSegment={onHighlightSegment}
+        onHighlightSegment={handleHighlight}
       />
       <StackedBarRow
+        rowKey="noise"
         title="Noise &amp; pollution"
-        tooltip="Modeled noise and air pollution based on distance to motorways, trunk roads, primary roads, and flight paths."
+        tooltip="Modeled noise and air pollution exposure based on proximity to motorways, trunk roads, primary roads, and flight paths."
         ariaLabel="Noise and pollution levels"
         totalDist={total}
         segments={segments}
         classifier={(s) => classifyNoise(s.noise)}
         meta={NOISE_META}
         profile={profile}
+        pinnedKey={pinned?.key ?? null}
+        onTogglePin={handleTogglePin}
         onHover={onHover}
-        onHighlightSegment={onHighlightSegment}
+        onHighlightSegment={handleHighlight}
       />
       <StackedBarRow
+        rowKey="speed"
         title="Speed Limit"
-        tooltip="Allowed motor vehicle speed limits on roads along the route, and car-free tracks and paths."
+        tooltip="Posted motor vehicle speed limits along the route, plus car-free tracks and cycle paths."
         ariaLabel="Speed limits"
         totalDist={total}
         segments={segments}
         classifier={(s) => classifySpeedLimit(s.maxspeed, s.highway)}
         meta={SPEED_LIMIT_META}
         profile={profile}
+        pinnedKey={pinned?.key ?? null}
+        onTogglePin={handleTogglePin}
         onHover={onHover}
-        onHighlightSegment={onHighlightSegment}
+        onHighlightSegment={handleHighlight}
       />
     </div>
   );

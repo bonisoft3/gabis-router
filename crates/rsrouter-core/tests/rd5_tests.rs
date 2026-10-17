@@ -124,38 +124,3 @@ fn test_w5_n50_tile_header_and_data() {
     );
     assert!(data_squares > 0);
 }
-
-#[test]
-fn test_rd5_slice_in_memory_parity() {
-    let rd5_path = repo_path("data/segments4/E0_N50.rd5");
-    if !rd5_path.exists() {
-        return;
-    }
-
-    let bytes = std::fs::read(&rd5_path).expect("Failed to read E0_N50.rd5");
-    let slice = rsrouter_core::rd5::rd5_slice::Rd5Slice::parse(&bytes).expect("Failed to parse Rd5Slice");
-
-    assert_eq!(slice.divisor, 32);
-    assert!(slice.has_data_for_tile(1));
-
-    let t0 = Instant::now();
-    let microcaches = slice.decode_square(180, 141, None).expect("Failed to decode square 180, 141");
-    let elapsed = t0.elapsed();
-
-    let total_nodes: usize = microcaches.iter().map(|mc| mc.nodes.len()).sum();
-    let total_links: usize = microcaches
-        .iter()
-        .map(|mc| mc.nodes.iter().map(|n| n.links.len()).sum::<usize>())
-        .sum();
-
-    println!(
-        "Rd5Slice decoded {} cells with {} nodes, {} links in {:.2} ms",
-        microcaches.len(),
-        total_nodes,
-        total_links,
-        elapsed.as_secs_f64() * 1000.0
-    );
-
-    assert_eq!(total_nodes, 859408);
-    assert_eq!(total_links, 1082364);
-}

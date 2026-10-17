@@ -126,7 +126,7 @@ def update_fixtures():
         tmp_dest = dest.with_suffix(".tmp")
         req = urllib.request.Request(url, headers={"User-Agent": "rsrouter-fixture-updater"})
 
-        for attempt in range(3):
+        for attempt in range(6):
             try:
                 with urllib.request.urlopen(req, timeout=90) as resp:
                     raw = resp.read()
@@ -142,12 +142,13 @@ def update_fixtures():
                     print(f"  {filename}: dist={dist}m cost={cost}")
                     break
             except Exception as e:
-                if attempt == 2:
+                if attempt == 5:
                     raise
-                print(f"  Attempt {attempt + 1} failed for {filename}: {e}. Retrying...")
-                time.sleep(2)
+                wait_s = 3 * (attempt + 1)
+                print(f"  Attempt {attempt + 1} failed for {filename}: {e}. Retrying in {wait_s}s...")
+                time.sleep(wait_s)
 
-        time.sleep(0.3)
+        time.sleep(0.5)
 
     print("All fixtures updated.")
 

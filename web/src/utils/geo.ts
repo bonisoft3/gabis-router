@@ -86,6 +86,87 @@ export function nearestIndex(dist: number[], d: number): number {
   return lo > 0 && d - dist[lo - 1] < dist[lo] - d ? lo - 1 : lo;
 }
 
+export function distToSegmentSq(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const cosLat = Math.cos(((ay + by) / 2) * (Math.PI / 180));
+  const dx = (bx - ax) * cosLat;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) {
+    const ex = (px - ax) * cosLat;
+    const ey = py - ay;
+    return ex * ex + ey * ey;
+  }
+  const t = Math.max(0, Math.min(1, ((px - ax) * cosLat * dx + (py - ay) * dy) / lenSq));
+  const projX = ax + t * (bx - ax);
+  const projY = ay + t * (by - ay);
+  const rx = (px - projX) * cosLat;
+  const ry = py - projY;
+  return rx * rx + ry * ry;
+}
+
+export function closestLeg(waypoints: LatLon[], lon: number, lat: number): number {
+  if (waypoints.length < 2) return 0;
+  let bestLeg = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const d = distToSegmentSq(
+      lon,
+      lat,
+      waypoints[i].lon,
+      waypoints[i].lat,
+      waypoints[i + 1].lon,
+      waypoints[i + 1].lat,
+    );
+    if (d < bestDist) {
+      bestDist = d;
+      bestLeg = i;
+    }
+  }
+  return bestLeg;
+}
+
+export function legIndexAt(
+  routeCoords: number[][] | undefined,
+  waypoints: LatLon[],
+  lon: number,
+  lat: number,
+): number {
+  if (waypoints.length < 2) return -1;
+  if (!routeCoords || routeCoords.length < 2) {
+    return closestLeg(waypoints, lon, lat);
+  }
+  const positions: number[] = [];
+  let from = 0;
+  for (const w of waypoints) {
+    from = nearestVertex(routeCoords, w.lon, w.lat, from);
+    positions.push(from);
+  }
+  const at = nearestVertex(routeCoords, lon, lat);
+  let leg = 0;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    if (positions[i] <= at) leg = i;
+  }
+  return leg;
+}
+
+export function parseCoordinateInput(input: string): LatLon | null {
+  const match = input.trim().match(/^(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  const lat = Number(match[1]);
+  const lon = Number(match[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    return null;
+  }
+  return { lat, lon, name: `${lat.toFixed(5)}, ${lon.toFixed(5)}` };
+}
+
 export function gradeAt(dist: number[], ele: number[], i: number): number {
   const a = nearestIndex(dist, dist[i] - GRADE_WINDOW_M);
   const b = nearestIndex(dist, dist[i] + GRADE_WINDOW_M);

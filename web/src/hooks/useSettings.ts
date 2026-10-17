@@ -17,12 +17,17 @@ export function useSettings() {
   const [thunderforestKey, setThunderforestKeyState] = useState<string>(() => getThunderforestKey());
 
   useEffect(() => {
-    onUnitsChange(() => setUnitsState(getUnits()));
-    onThemeChange(() => setThemeState(getTheme()));
-    onBasemapChange(() => {
+    const unsubUnits = onUnitsChange(() => setUnitsState(getUnits()));
+    const unsubTheme = onThemeChange(() => setThemeState(getTheme()));
+    const unsubBasemap = onBasemapChange(() => {
       setBasemapState(getBasemap());
       setThunderforestKeyState(getThunderforestKey());
     });
+    return () => {
+      unsubUnits();
+      unsubTheme();
+      unsubBasemap();
+    };
   }, []);
 
   const changeUnits = useCallback((next: Units) => {

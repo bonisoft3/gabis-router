@@ -1,14 +1,15 @@
 //! Rust implementation corresponding to BRouter no-go exclusion zones:
 //! - Java source: `https://github.com/abrensch/brouter/blob/master/brouter-core/src/main/java/btools/router/OsmNodeNamed.java`
+//! - Java source: `https://github.com/abrensch/brouter/blob/master/brouter-core/src/main/java/btools/router/OsmNogoPolygon.java`
 //! - Java source: `https://github.com/abrensch/brouter/blob/master/brouter-core/src/main/java/btools/router/RoutingContext.java`
 //!
 //! # Summary
-//! Circular and weighted avoid areas for routing constraints.
+//! Circular, polyline, and polygon avoid areas for routing constraints.
 
 use crate::graph::spatial::{distance, get_lon_lat_to_meter_scales, lat_to_ilat, lon_to_ilon};
 use crate::types::{Point2D, Point3D};
 
-/// A user-defined circular exclusion or avoid area.
+/// A user-defined circular, polyline, or polygon exclusion/avoid area.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NogoArea {
     pub lon: f64,
@@ -17,6 +18,12 @@ pub struct NogoArea {
     /// Penalty weight. If `None` or `< 0.0`, the area is an absolute exclusion zone.
     /// If `Some(w)` with `w >= 0.0`, traversal through the area incurs `distance_within_m * w` extra cost.
     pub weight: Option<f64>,
+    /// Optional polygon or polyline vertices `(lon, lat)` in degrees. Empty for circular no-gos.
+    #[serde(default)]
+    pub vertices: Vec<(f64, f64)>,
+    /// True if `vertices` form a closed polygon; false for open polylines.
+    #[serde(default)]
+    pub is_closed: bool,
 }
 
 impl NogoArea {
@@ -26,6 +33,8 @@ impl NogoArea {
             lat,
             radius_m,
             weight: None,
+            vertices: Vec::new(),
+            is_closed: false,
         }
     }
 
@@ -35,7 +44,45 @@ impl NogoArea {
             lat,
             radius_m,
             weight: Some(weight),
+            vertices: Vec::new(),
+            is_closed: false,
         }
+    }
+
+    pub fn from_polygon(
+        vertices: Vec<(f64, f64)>,
+        is_closed: bool,
+        weight: Option<f64>,
+    ) -> Option<Self> {
+        if vertices.len() < 2 {
+            return None;
+        }
+        let mut min_lon = f64::INFINITY;
+        let mut max_lon = f64::NEG_INFINITY;
+        let mut min_lat = f64::INFINITY;
+        let mut max_lat = f64::NEG_INFINITY;
+        for &(lon, lat) in &vertices {
+            min_lon = min_lon.min(lon);
+            max_lon = max_lon.max(lon);
+            min_lat = min_lat.min(lat);
+            max_lat = max_lat.max(lat);
+        }
+        let center_lon = 0.5 * (min_lon + max_lon);
+        let center_lat = 0.5 * (min_lat + max_lat);
+        let center_pt = Point2D::new(lon_to_ilon(center_lon), lat_to_ilat(center_lat));
+        let mut radius_m = 1.0f64;
+        for &(lon, lat) in &vertices {
+            let v_pt = Point2D::new(lon_to_ilon(lon), lat_to_ilat(lat));
+            radius_m = radius_m.max(distance(center_pt, v_pt) + 1.0);
+        }
+        Some(Self {
+            lon: center_lon,
+            lat: center_lat,
+            radius_m,
+            weight,
+            vertices,
+            is_closed,
+        })
     }
 
     #[inline]
@@ -48,7 +95,7 @@ impl NogoArea {
 }
 
 /// Precomputed internal representation of a no-go area with bounding box in microdegrees.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InternalNogo {
     pub ilon: i32,
     pub ilat: i32,
@@ -58,6 +105,8 @@ pub struct InternalNogo {
     pub max_lon: i32,
     pub min_lat: i32,
     pub max_lat: i32,
+    pub vertices: Vec<Point2D>,
+    pub is_closed: bool,
 }
 
 impl InternalNogo {
@@ -75,6 +124,11 @@ impl InternalNogo {
         } else {
             0
         };
+        let vertices: Vec<Point2D> = area
+            .vertices
+            .iter()
+            .map(|&(lon, lat)| Point2D::new(lon_to_ilon(lon), lat_to_ilat(lat)))
+            .collect();
         Self {
             ilon,
             ilat,
@@ -84,6 +138,8 @@ impl InternalNogo {
             max_lon: ilon + dlon_micros,
             min_lat: ilat - dlat_micros,
             max_lat: ilat + dlat_micros,
+            vertices,
+            is_closed: area.is_closed,
         }
     }
 
@@ -105,15 +161,27 @@ pub enum NogoCheckResult {
     Blocked,
 }
 
+fn parse_optional_weight(w_str: &str) -> Option<f64> {
+    let w_str = w_str.trim();
+    if w_str.is_empty()
+        || w_str.eq_ignore_ascii_case("nan")
+        || w_str.eq_ignore_ascii_case("undefined")
+    {
+        None
+    } else {
+        w_str.parse::<f64>().ok()
+    }
+}
+
 /// Parses no-go areas from BRouter's `nogos` query parameter format:
-/// `lon,lat,radius[,weight]|lon,lat,radius[,weight]|...`
+/// `lon,lat,radius[,weight]|lon,lat,radius[,weight]|...` (also accepts `;` separator).
 pub fn parse_nogos(s: &str) -> Vec<NogoArea> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return Vec::new();
     }
     let mut res = Vec::new();
-    for item in trimmed.split('|') {
+    for item in trimmed.split(['|', ';']) {
         let item = item.trim();
         if item.is_empty() {
             continue;
@@ -135,15 +203,7 @@ pub fn parse_nogos(s: &str) -> Vec<NogoArea> {
             continue;
         }
         let weight = if parts.len() > 3 {
-            let w_str = parts[3].trim();
-            if w_str.is_empty()
-                || w_str.eq_ignore_ascii_case("nan")
-                || w_str.eq_ignore_ascii_case("undefined")
-            {
-                None
-            } else {
-                w_str.parse::<f64>().ok()
-            }
+            parse_optional_weight(parts[3])
         } else {
             None
         };
@@ -152,24 +212,82 @@ pub fn parse_nogos(s: &str) -> Vec<NogoArea> {
             lat,
             radius_m,
             weight,
+            vertices: Vec::new(),
+            is_closed: false,
         });
+    }
+    res
+}
+
+/// Parses polyline (`is_closed = false`) or polygon (`is_closed = true`) no-go areas
+/// from BRouter's `polylines` / `polygons` query parameter format:
+/// `lon1,lat1,lon2,lat2[,weight]|...`
+pub fn parse_nogo_polygons(s: &str, is_closed: bool) -> Vec<NogoArea> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let mut res = Vec::new();
+    for item in trimmed.split(['|', ';']) {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = item.split(',').collect();
+        if parts.len() < 4 {
+            continue;
+        }
+        let pair_count = parts.len() / 2;
+        let mut vertices = Vec::with_capacity(pair_count);
+        let mut valid = true;
+        for i in 0..pair_count {
+            let Ok(lon) = parts[2 * i].trim().parse::<f64>() else {
+                valid = false;
+                break;
+            };
+            let Ok(lat) = parts[2 * i + 1].trim().parse::<f64>() else {
+                valid = false;
+                break;
+            };
+            vertices.push((lon, lat));
+        }
+        if !valid {
+            continue;
+        }
+        let weight = if parts.len() % 2 == 1 {
+            parse_optional_weight(parts[parts.len() - 1])
+        } else {
+            None
+        };
+        if let Some(poly) = NogoArea::from_polygon(vertices, is_closed, weight) {
+            res.push(poly);
+        }
     }
     res
 }
 
 /// Removes no-go zones that contain any of the given waypoints, matching BRouter's `cleanNogoList`.
 ///
-/// This prevents routes from becoming impossible when a waypoint is placed inside an avoided circle.
+/// This prevents routes from becoming impossible when a waypoint is placed inside an avoided circle/polygon.
 pub fn clean_nogos(nogos: &[NogoArea], waypoints: &[Point2D]) -> Vec<InternalNogo> {
     let mut result = Vec::with_capacity(nogos.len());
     for area in nogos {
         let internal = InternalNogo::from_area(area);
         let mut discard = false;
-        let nogo_pt = Point2D::new(internal.ilon, internal.ilat);
-        for wp in waypoints {
-            if distance(*wp, nogo_pt) < internal.radius_m {
-                discard = true;
-                break;
+        if internal.vertices.is_empty() {
+            let nogo_pt = Point2D::new(internal.ilon, internal.ilat);
+            for wp in waypoints {
+                if distance(*wp, nogo_pt) < internal.radius_m {
+                    discard = true;
+                    break;
+                }
+            }
+        } else if internal.is_closed {
+            for wp in waypoints {
+                if point_in_polygon(*wp, &internal.vertices) {
+                    discard = true;
+                    break;
+                }
             }
         }
         if !discard {
@@ -181,6 +299,7 @@ pub fn clean_nogos(nogos: &[NogoArea], waypoints: &[Point2D]) -> Vec<InternalNog
 
 /// Calculates the distance of a segment inside a circle, matching BRouter's
 /// `OsmNodeNamed.distanceWithinRadius`.
+#[allow(clippy::too_many_arguments)]
 pub fn distance_within_radius(
     mut lon1: i32,
     mut lat1: i32,
@@ -210,7 +329,8 @@ pub fn distance_within_radius(
         + (lat2 - lat1) as f64 * (center_lat - lat1) as f64 * ky * ky)
         / total_segment_length;
 
-    let initial_to_center = distance(Point2D::new(center_lon, center_lat), Point2D::new(lon1, lat1));
+    let initial_to_center =
+        distance(Point2D::new(center_lon, center_lat), Point2D::new(lon1, lat1));
     let under_sqrt = (radius * radius
         - (initial_to_center * initial_to_center - initial_to_project * initial_to_project))
         .max(0.0);
@@ -221,6 +341,64 @@ pub fn distance_within_radius(
     } else {
         2.0 * half_dist
     }
+}
+
+#[inline]
+fn ccw(a: Point2D, b: Point2D, c: Point2D) -> f64 {
+    (b.lon - a.lon) as f64 * (c.lat - a.lat) as f64
+        - (b.lat - a.lat) as f64 * (c.lon - a.lon) as f64
+}
+
+#[inline]
+fn segments_intersect(a: Point2D, b: Point2D, c: Point2D, d: Point2D) -> bool {
+    let d1 = ccw(a, b, c);
+    let d2 = ccw(a, b, d);
+    let d3 = ccw(c, d, a);
+    let d4 = ccw(c, d, b);
+    ((d1 <= 0.0 && d2 >= 0.0) || (d1 >= 0.0 && d2 <= 0.0))
+        && ((d3 <= 0.0 && d4 >= 0.0) || (d3 >= 0.0 && d4 <= 0.0))
+}
+
+fn point_in_polygon(pt: Point2D, vertices: &[Point2D]) -> bool {
+    if vertices.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = vertices.len() - 1;
+    for i in 0..vertices.len() {
+        let vi = vertices[i];
+        let vj = vertices[j];
+        if ((vi.lat > pt.lat) != (vj.lat > pt.lat))
+            && ((pt.lon as f64)
+                < (vj.lon - vi.lon) as f64 * (pt.lat - vi.lat) as f64 / (vj.lat - vi.lat) as f64
+                    + vi.lon as f64)
+        {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+fn segment_intersects_polygon(p1: Point2D, p2: Point2D, nogo: &InternalNogo) -> bool {
+    let verts = &nogo.vertices;
+    if verts.len() < 2 {
+        return false;
+    }
+    for i in 0..verts.len() - 1 {
+        if segments_intersect(p1, p2, verts[i], verts[i + 1]) {
+            return true;
+        }
+    }
+    if nogo.is_closed && verts.len() >= 3 {
+        if segments_intersect(p1, p2, verts[verts.len() - 1], verts[0]) {
+            return true;
+        }
+        if point_in_polygon(p1, verts) || point_in_polygon(p2, verts) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Tests whether a segment between `p1` and `p2` intersects any no-go area,
@@ -253,6 +431,17 @@ pub fn check_segment_against_nogos(
             || seg_max_lat < nogo.min_lat
             || seg_min_lat > nogo.max_lat
         {
+            continue;
+        }
+
+        if !nogo.vertices.is_empty() {
+            if segment_intersects_polygon(p1, p2, nogo) {
+                if nogo.is_hard() {
+                    return NogoCheckResult::Blocked;
+                } else if let Some(w) = nogo.weight {
+                    total_added_cost += (d * w).round() as u32;
+                }
+            }
             continue;
         }
 

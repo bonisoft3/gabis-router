@@ -4,14 +4,14 @@
     {
       "type": "Feature",
       "properties": {
-        "creator": "BRouter-1.7.10",
+        "creator": "BRouter-1.7.11-beta",
         "name": "brouter_trekking_0",
-        "track-length": "13359",
+        "track-length": "13328",
         "filtered ascend": "13",
         "plain-ascend": "-5",
-        "total-time": "2274",
-        "total-energy": "227469",
-        "cost": "15018",
+        "total-time": "2269",
+        "total-energy": "226944",
+        "cost": "14867",
         "messages": [
           [
             "Longitude",
@@ -353,7 +353,7 @@
             "0",
             "0",
             "0",
-            "reversedirection=yes highway=secondary surface=asphalt cycleway:left=lane route_bicycle_lcn=yes",
+            "reversedirection=yes highway=secondary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
             "nodeaccessgranted=yes estimated_crossing_class=5",
             "41",
             "4186"
@@ -368,7 +368,7 @@
             "0",
             "0",
             "0",
-            "reversedirection=yes highway=secondary surface=asphalt cycleway:left=lane route_bicycle_lcn=yes",
+            "reversedirection=yes highway=secondary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
             "nodeaccessgranted=yes estimated_crossing_class=5",
             "43",
             "4348"
@@ -383,7 +383,7 @@
             "0",
             "0",
             "0",
-            "reversedirection=yes highway=secondary surface=asphalt cycleway:left=lane route_bicycle_lcn=yes",
+            "reversedirection=yes highway=secondary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
             "nodeaccessgranted=yes estimated_crossing_class=5",
             "45",
             "4508"
@@ -398,7 +398,7 @@
             "0",
             "0",
             "0",
-            "reversedirection=yes highway=secondary surface=asphalt cycleway:left=lane route_bicycle_lcn=yes",
+            "reversedirection=yes highway=secondary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
             "nodeaccessgranted=yes estimated_crossing_class=5",
             "46",
             "4629"
@@ -413,7 +413,7 @@
             "0",
             "0",
             "0",
-            "reversedirection=yes highway=secondary surface=asphalt cycleway:left=lane route_bicycle_lcn=yes",
+            "reversedirection=yes highway=secondary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
             "nodeaccessgranted=yes estimated_crossing_class=5",
             "47",
             "4770"
@@ -428,7 +428,7 @@
             "0",
             "0",
             "0",
-            "reversedirection=yes highway=secondary surface=asphalt cycleway:left=lane route_bicycle_lcn=yes",
+            "reversedirection=yes highway=secondary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
             "nodeaccessgranted=yes highway=crossing estimated_crossing_class=0 crossing=uncontrolled traffic_calming=table",
             "50",
             "5095"
@@ -443,7 +443,7 @@
             "0",
             "0",
             "0",
-            "reversedirection=yes highway=secondary surface=asphalt cycleway:left=lane route_bicycle_lcn=yes",
+            "reversedirection=yes highway=secondary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
             "",
             "51",
             "5146"
@@ -554,10 +554,40 @@
             "9146"
           ],
           [
+            "-140366",
+            "51467752",
+            "16",
+            "6",
+            "1000",
+            "0",
+            "0",
+            "0",
+            "0",
+            "highway=residential route_bicycle_lcn=yes",
+            "",
+            "92",
+            "9258"
+          ],
+          [
+            "-139999",
+            "51467990",
+            "16",
+            "36",
+            "1000",
+            "0",
+            "0",
+            "0",
+            "0",
+            "highway=residential surface=asphalt route_bicycle_lcn=yes",
+            "",
+            "99",
+            "9916"
+          ],
+          [
             "-139654",
             "51468014",
             "16",
-            "66",
+            "24",
             "1000",
             "0",
             "0",
@@ -569,16 +599,31 @@
             "10345"
           ],
           [
-            "-138993",
-            "51468035",
+            "-139395",
+            "51468023",
             "16",
-            "46",
+            "18",
             "1000",
             "0",
             "0",
             "0",
             "0",
             "highway=residential route_bicycle_lcn=yes",
+            "",
+            "106",
+            "10663"
+          ],
+          [
+            "-138993",
+            "51468035",
+            "16",
+            "28",
+            "1000",
+            "0",
+            "0",
+            "0",
+            "0",
+            "highway=residential surface=asphalt route_bicycle_lcn=yes",
             "nodeaccessgranted=yes traffic_calming=cushion",
             "111",
             "11153"
@@ -593,7 +638,7 @@
             "0",
             "0",
             "0",
-            "highway=residential route_bicycle_lcn=yes",
+            "highway=residential surface=asphalt route_bicycle_lcn=yes",
             "nodeaccessgranted=yes highway=crossing crossing=zebra",
             "124",
             "12478"
@@ -608,7 +653,7 @@
             "0",
             "0",
             "0",
-            "highway=residential route_bicycle_lcn=yes",
+            "highway=residential surface=asphalt route_bicycle_lcn=yes",
             "",
             "126",
             "12657"
@@ -5426,7 +5471,7 @@
             "highway=secondary surface=asphalt route_bicycle_rcn=yes",
             "nodeaccessgranted=yes estimated_crossing_class=0",
             "1559",
-            "156013"
+            "156014"
           ],
           [
             "-89150",
@@ -6086,7 +6131,7 @@
             "highway=residential surface=paving_stones foot=yes cycleway=opposite oneway=yes oneway:bicycle=no route_bicycle_rcn=yes",
             "",
             "1725",
-            "172587"
+            "172588"
           ],
           [
             "-81190",
@@ -7001,7 +7046,7 @@
             "highway=cycleway surface=paving_stones foot=no bicycle=designated oneway=no route_bicycle_rcn=yes",
             "",
             "1951",
-            "195197"
+            "195198"
           ],
           [
             "-67319",
@@ -7814,38 +7859,53 @@
             "223412"
           ],
           [
-            "-56620",
-            "51543480",
-            "17",
-            "28",
-            "1000",
-            "0",
-            "0",
-            "0",
-            "0",
-            "highway=residential surface=asphalt route_bicycle_lcn=yes",
-            "",
-            "2238",
-            "223843"
-          ],
-          [
-            "-55650",
-            "51543596",
+            "-56986",
+            "51543469",
             "16",
-            "69",
+            "5",
             "1000",
             "0",
             "0",
             "0",
             "0",
-            "highway=residential surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes direction=backward",
-            "2247",
-            "224788"
+            "reversedirection=yes highway=cycleway surface=asphalt foot=no cycleway=crossing oneway=no route_bicycle_rcn=yes",
+            "",
+            "2234",
+            "223483"
           ],
           [
-            "-55633",
-            "51543598",
+            "-56971",
+            "51543494",
+            "16",
+            "3",
+            "1000",
+            "0",
+            "0",
+            "0",
+            "0",
+            "reversedirection=yes highway=cycleway surface=paving_stones oneway=no route_bicycle_rcn=yes route_bicycle_lcn=yes",
+            "",
+            "2235",
+            "223527"
+          ],
+          [
+            "-56111",
+            "51544674",
+            "16",
+            "145",
+            "1000",
+            "0",
+            "0",
+            "0",
+            "0",
+            "reversedirection=yes highway=cycleway surface=asphalt oneway=no route_bicycle_rcn=yes route_bicycle_lcn=yes",
+            "",
+            "2255",
+            "225537"
+          ],
+          [
+            "-56106",
+            "51544683",
             "16",
             "1",
             "1000",
@@ -7853,265 +7913,100 @@
             "0",
             "0",
             "0",
-            "highway=residential surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes direction=backward",
-            "2247",
-            "224802"
+            "reversedirection=yes highway=cycleway surface=paving_stones oneway=no route_bicycle_rcn=yes route_bicycle_lcn=yes",
+            "nodeaccessgranted=yes highway=crossing crossing=unmarked traffic_calming=table",
+            "2255",
+            "225553"
           ],
           [
-            "-55601",
-            "51543601",
+            "-56099",
+            "51544712",
+            "16",
+            "3",
+            "1000",
+            "0",
+            "0",
+            "0",
+            "0",
+            "reversedirection=yes highway=cycleway surface=paving_stones oneway=no route_bicycle_rcn=yes route_bicycle_lcn=yes",
+            "",
+            "2255",
+            "225601"
+          ],
+          [
+            "-56098",
+            "51544727",
             "16",
             "2",
             "1000",
             "0",
             "0",
-            "20",
-            "0",
-            "highway=residential surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes highway=traffic_signals crossing=no traffic_signals:direction=forward traffic_signals=signal",
-            "2248",
-            "224830"
-          ],
-          [
-            "-55528",
-            "51543618",
-            "16",
-            "5",
-            "1000",
             "0",
             "0",
-            "0",
-            "0",
-            "highway=residential surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes highway=crossing crossing=uncontrolled kerb=lowered",
-            "2248",
-            "224900"
-          ],
-          [
-            "-55335",
-            "51543627",
-            "16",
-            "14",
-            "1000",
-            "0",
-            "0",
-            "0",
-            "0",
-            "highway=residential surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes estimated_crossing_class=5",
-            "2250",
-            "225100"
-          ],
-          [
-            "-55336",
-            "51543751",
-            "16",
-            "14",
-            "1000",
-            "0",
-            "0",
-            "0",
-            "0",
-            "highway=primary surface=asphalt smoothness=intermediate cycleway:both=no route_bicycle_lcn=yes",
+            "reversedirection=yes highway=cycleway surface=asphalt oneway=no route_bicycle_rcn=yes route_bicycle_lcn=yes",
             "",
-            "2252",
-            "225304"
-          ],
-          [
-            "-55337",
-            "51543873",
-            "16",
-            "14",
-            "1000",
-            "0",
-            "0",
-            "0",
-            "0",
-            "highway=primary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes estimated_crossing_class=0",
-            "2254",
-            "225512"
-          ],
-          [
-            "-55335",
-            "51543979",
-            "16",
-            "12",
-            "1000",
-            "0",
-            "0",
-            "20",
-            "0",
-            "highway=primary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes highway=crossing estimated_crossing_class=0 crossing=traffic_signals",
             "2256",
-            "225693"
+            "225633"
           ],
           [
-            "-55334",
-            "51544009",
+            "-56098",
+            "51544739",
             "16",
-            "3",
-            "1000",
-            "0",
-            "0",
-            "20",
-            "0",
-            "highway=primary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes highway=traffic_signals traffic_signals:direction=backward",
-            "2257",
-            "225738"
-          ],
-          [
-            "-55337",
-            "51544114",
-            "16",
-            "12",
+            "1",
             "1000",
             "0",
             "0",
             "0",
             "0",
-            "highway=primary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes estimated_crossing_class=0",
-            "2258",
-            "225922"
-          ],
-          [
-            "-55341",
-            "51544256",
-            "16",
-            "16",
-            "1000",
-            "0",
-            "0",
-            "0",
-            "0",
-            "highway=primary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
+            "reversedirection=yes highway=cycleway surface=paving_stones oneway=no route_bicycle_rcn=yes route_bicycle_lcn=yes",
             "",
-            "2261",
-            "226169"
+            "2256",
+            "225649"
           ],
           [
-            "-55346",
-            "51544433",
-            "16",
-            "20",
-            "1000",
-            "0",
-            "0",
-            "20",
-            "0",
-            "highway=primary surface=asphalt cycleway:right=no cycleway:left=share_busway route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes highway=traffic_signals traffic_signals:direction=forward traffic_calming=island",
-            "2264",
-            "226483"
-          ],
-          [
-            "-55343",
-            "51544453",
-            "16",
-            "2",
+            "-55475",
+            "51544739",
+            "15",
+            "43",
             "1000",
             "0",
             "0",
             "0",
             "0",
-            "highway=primary surface=asphalt cycleway:both=no route_bicycle_lcn=yes",
+            "highway=residential surface=paving_stones cycleway=no route_bicycle_rcn=proposed route_bicycle_lcn=yes",
+            "nodeaccessgranted=yes highway=crossing crossing=unmarked traffic_calming=table",
+            "2263",
+            "226328"
+          ],
+          [
+            "-55461",
+            "51544739",
+            "16",
+            "1",
+            "1000",
+            "0",
+            "0",
+            "0",
+            "0",
+            "highway=residential surface=paving_stones cycleway=no route_bicycle_rcn=proposed route_bicycle_lcn=yes",
             "",
-            "2264",
-            "226514"
-          ],
-          [
-            "-55341",
-            "51544479",
-            "16",
-            "3",
-            "1000",
-            "0",
-            "0",
-            "0",
-            "0",
-            "highway=primary surface=asphalt route_bicycle_lcn=yes",
-            "",
-            "2265",
-            "226562"
-          ],
-          [
-            "-55334",
-            "51544602",
-            "16",
-            "14",
-            "1000",
-            "0",
-            "0",
-            "0",
-            "0",
-            "highway=primary surface=asphalt cycleway:left=share_busway route_bicycle_lcn=yes",
-            "",
-            "2267",
-            "226784"
-          ],
-          [
-            "-55330",
-            "51544657",
-            "16",
-            "6",
-            "1000",
-            "0",
-            "0",
-            "20",
-            "0",
-            "highway=primary surface=asphalt route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes highway=crossing estimated_crossing_class=0 crossing=traffic_signals",
-            "2268",
-            "226880"
-          ],
-          [
-            "-55328",
-            "51544699",
-            "16",
-            "5",
-            "1000",
-            "0",
-            "0",
-            "0",
-            "0",
-            "highway=primary surface=asphalt route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes direction=backward",
-            "2269",
-            "226960"
-          ],
-          [
-            "-55325",
-            "51544729",
-            "16",
-            "3",
-            "1000",
-            "0",
-            "0",
-            "20",
-            "0",
-            "highway=primary surface=asphalt route_bicycle_lcn=yes",
-            "nodeaccessgranted=yes highway=traffic_signals traffic_signals:direction=backward",
-            "2269",
-            "227008"
+            "2263",
+            "226345"
           ],
           [
             "-55325",
             "51544737",
             "16",
-            "1",
+            "9",
             "1000",
             "0",
             "0",
             "0",
             "0",
-            "highway=primary surface=asphalt route_bicycle_lcn=yes",
+            "highway=residential surface=asphalt cycleway=no route_bicycle_rcn=proposed route_bicycle_lcn=yes",
             "nodeaccessgranted=yes estimated_crossing_class=4",
-            "2269",
-            "227024"
+            "2264",
+            "226492"
           ],
           [
             "-55317",
@@ -8125,8 +8020,8 @@
             "0",
             "highway=primary surface=asphalt smoothness=good cycleway:left=no route_bicycle_lcn=yes",
             "",
-            "2271",
-            "227169"
+            "2266",
+            "226640"
           ],
           [
             "-55309",
@@ -8140,8 +8035,8 @@
             "0",
             "highway=primary surface=asphalt smoothness=good cycleway:left=share_busway route_bicycle_lcn=yes",
             "",
-            "2272",
-            "227282"
+            "2267",
+            "226755"
           ],
           [
             "-55296",
@@ -8155,8 +8050,8 @@
             "0",
             "highway=primary surface=asphalt smoothness=good cycleway:right=no cycleway:left=share_busway route_bicycle_lcn=yes",
             "",
-            "2274",
-            "227469"
+            "2269",
+            "226944"
           ]
         ],
         "times": [
@@ -8749,6 +8644,7 @@
           1424.857,
           1428.715,
           1428.882,
+          1430.392,
           1430.728,
           1431.266,
           1432.697,
@@ -9059,32 +8955,26 @@
           2233.016,
           2233.3,
           2233.869,
-          2235.09,
-          2238.178,
-          2245.295,
-          2247.629,
-          2247.768,
-          2248.048,
-          2248.752,
-          2249.177,
-          2250.751,
-          2252.791,
-          2254.869,
-          2256.676,
-          2257.131,
-          2258.965,
-          2261.44,
-          2264.575,
-          2264.891,
-          2265.365,
-          2267.589,
-          2268.548,
-          2269.348,
-          2269.83,
-          2269.99,
-          2271.439,
-          2272.569,
-          2274.438
+          2234.586,
+          2235.018,
+          2238.783,
+          2244.239,
+          2247.05,
+          2251.192,
+          2255.125,
+          2255.283,
+          2255.76,
+          2256.077,
+          2256.237,
+          2259.275,
+          2259.918,
+          2261.207,
+          2263.034,
+          2263.197,
+          2264.67,
+          2266.146,
+          2267.296,
+          2269.192
         ]
       },
       "geometry": {
@@ -12036,6 +11926,11 @@
             16.25
           ],
           [
+            -0.099101,
+            51.519292,
+            16.25
+          ],
+          [
             -0.099073,
             51.519301,
             16.25
@@ -13586,113 +13481,83 @@
             16.75
           ],
           [
-            -0.056906,
-            51.543445,
-            17.0
+            -0.056986,
+            51.543469,
+            16.75
           ],
           [
-            -0.05662,
-            51.54348,
-            17.0
+            -0.056971,
+            51.543494,
+            16.75
           ],
           [
-            -0.055887,
-            51.54357,
-            16.25
+            -0.056787,
+            51.543707,
+            16.5
           ],
           [
-            -0.05565,
-            51.543596,
+            -0.056523,
+            51.544036,
             16.0
           ],
           [
-            -0.055633,
-            51.543598,
+            -0.056397,
+            51.544208,
+            15.75
+          ],
+          [
+            -0.056229,
+            51.544464,
+            15.5
+          ],
+          [
+            -0.056111,
+            51.544674,
             16.0
           ],
           [
-            -0.055601,
-            51.543601,
+            -0.056106,
+            51.544683,
             16.0
           ],
           [
-            -0.055528,
-            51.543618,
+            -0.056099,
+            51.544712,
             16.0
           ],
           [
-            -0.05549,
-            51.543625,
+            -0.056098,
+            51.544727,
             16.0
           ],
           [
-            -0.055335,
-            51.543627,
+            -0.056098,
+            51.544739,
             16.0
           ],
           [
-            -0.055336,
-            51.543751,
+            -0.055829,
+            51.544742,
             16.0
           ],
           [
-            -0.055337,
-            51.543873,
+            -0.055769,
+            51.544742,
             16.0
           ],
           [
-            -0.055335,
-            51.543979,
+            -0.055649,
+            51.544742,
             16.0
           ],
           [
-            -0.055334,
-            51.544009,
-            16.0
+            -0.055475,
+            51.544739,
+            15.75
           ],
           [
-            -0.055337,
-            51.544114,
-            16.0
-          ],
-          [
-            -0.055341,
-            51.544256,
-            16.0
-          ],
-          [
-            -0.055346,
-            51.544433,
-            16.0
-          ],
-          [
-            -0.055343,
-            51.544453,
-            16.0
-          ],
-          [
-            -0.055341,
-            51.544479,
-            16.0
-          ],
-          [
-            -0.055334,
-            51.544602,
-            16.0
-          ],
-          [
-            -0.05533,
-            51.544657,
-            16.0
-          ],
-          [
-            -0.055328,
-            51.544699,
-            16.0
-          ],
-          [
-            -0.055325,
-            51.544729,
+            -0.055461,
+            51.544739,
             16.0
           ],
           [

@@ -6,10 +6,13 @@ Reads BRouter `.rd5` tiles and `.brf` profiles, runs 2-pass A* search with eleva
 
 ## Project Structure
 
-| Crate | Path | Description |
+| Component | Path | Description |
 | :--- | :--- | :--- |
-| `rsrouter-core` | `crates/rsrouter-core/` | Core library: RD5 decoding, graph topology, profile DSL, and guided A* routing |
+| `rsrouter-core` | `crates/rsrouter-core/` | Core library: RD5 decoding, graph topology, profile DSL, guided A* routing, and GPX map matching |
+| `rsrouter-wasm` | `crates/rsrouter-wasm/` | WebAssembly bindings for browser routing and GPX waypoint extraction |
 | `rsrouter-server` | `crates/rsrouter-server/` | HTTP service (`/brouter`), parity benchmarks (`compare_routes`), and visualizer (`plot_routes`) |
+| `web` | `web/` | React + MapLibre PWA frontend. See [web/README.md](web/README.md) |
+| `tools` | `tools/` | Data updater, PMTiles extractor, and Frontend MCP server (`mcp-frontend.mjs`). See [tools/README.md](tools/README.md) |
 
 ## Quick Start
 
@@ -74,9 +77,7 @@ See [tools/README.md](tools/README.md) for individual component flags.
 
 ## Performance and Parity
 
-12 of 15 routes match upstream BRouter point for point. The remaining 3 diverge by at most 521 m due to tie-breaking on equal-cost alternatives. All routes stay within 0.21% distance delta and 0.18% cost delta.
-
-On medium and long corridors, `rsrouter` is 1.05x to 3.07x faster than the official BRouter server. Short routes on the regional graph are 1.3x to 1.5x slower.
+15 of 15 primary routes and 2 of 3 alternative routes match upstream BRouter point for point, with 0.00% distance delta, 0.00% cost delta, 0.00% to 0.02% time delta, and identical filtered ascend. Alternative 3 matches total cost (`165368`) and ascend (`859 m`) with 98.6% coordinate overlap.
 
 See [PARITY.md](PARITY.md) for full tables and analysis.
 

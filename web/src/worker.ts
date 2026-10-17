@@ -3,30 +3,20 @@ import init, { WasmRouter } from './pkg/rsrouter_wasm.js';
 import { SEGMENT_CACHE_NAME, MIN_RD5_BYTES, fetchAndCacheSegment, isHtml } from './segment-cache.ts';
 
 // Dedicated Web Worker running rsrouter WebAssembly off the main UI thread.
-// Messages are handled one at a time, so a route request never sees a half-loaded graph.
+// Uses BRouter-style lazy on-demand MicroCache cell loading via disk-backed Blob.slice + FileReaderSync.
 
-const PROFILES = ['fastbike-lowtraffic', 'fastbike', 'fastbike-verylowtraffic', 'gabis-lite-gravel', 'gabis-safe-road', 'gravel', 'trekking'];
+const PROFILES = ['fastbike-lowtraffic', 'fastbike', 'fastbike-verylowtraffic', 'gabis-fast-city', 'gabis-lite-gravel', 'gabis-safe-road', 'gravel', 'trekking'];
+const MAX_CACHED_CELLS = 2500;
 
 let router: WasmRouter | null = null;
 let isOfflineMode = false;
-let latestRouteId: string | null = null;
+const latestSlotRouteIds = new Map<number, string>();
+let latestImportId: string | null = null;
 
-// BRouter loads 1/80° cells lazily as the search reaches them, so it has no bounding box.
-// Our graph is built before the search, so we load the waypoints' bounding box plus a margin,
-// and retry with a wider margin if no route is found inside it.
-const MIN_MARGIN_KM = 5;
-const MARGIN_FRACTION = 0.2; // of the bounding box diagonal
-const MARGIN_RETRY_FACTOR = 3;
-const MAX_MARGIN_KM = 60;
-
-interface Box {
-  minLon: number;
-  minLat: number;
-  maxLon: number;
-  maxLat: number;
-}
-
-let loadedBox: Box | null = null;
+// Disk-backed Blob handles for 5°×5° .rd5 files (0 bytes of JS heap per file until a slice is read).
+const segmentBlobs = new Map<string, Blob>();
+const failedSegments = new Set<string>();
+const fileReaderSync = new FileReaderSync();
 
 function status(message: string) {
   postMessage({ type: 'STATUS', message } satisfies WorkerMessage);
@@ -39,7 +29,7 @@ async function fetchText(url: string): Promise<string> {
   const cache = await caches.open(SEGMENT_CACHE_NAME);
   if (!isOfflineMode && navigator.onLine) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-cache' });
       if (res.ok && !isHtml(res)) {
         await cache.put(url, res.clone());
         return await res.text();
@@ -52,41 +42,12 @@ async function fetchText(url: string): Promise<string> {
   if (cached && !isHtml(cached)) {
     return cached.text();
   }
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: 'no-cache' });
   if (!res.ok || isHtml(res)) {
     throw new Error(`Failed to fetch ${url}: HTTP ${res.status}`);
   }
   await cache.put(url, res.clone());
   return res.text();
-}
-
-
-/**
- * Returns the raw RD5 segment bytes. Every segment is cached under /segments4/<name>.rd5,
- * whether it came from the local server or from brouter.de.
- */
-async function getSegmentBytes(segmentName: string): Promise<Uint8Array> {
-  const key = `/segments4/${segmentName}.rd5`;
-  const cache = await caches.open(SEGMENT_CACHE_NAME);
-  const cached = await cache.match(key);
-  if (cached) {
-    const buf = await cached.arrayBuffer();
-    if (!isHtml(cached) && buf.byteLength >= MIN_RD5_BYTES) {
-      return new Uint8Array(buf);
-    }
-    await cache.delete(key);
-  }
-
-  if (isOfflineMode) {
-    throw new Error(`Routing data ${segmentName} is not downloaded for offline use`);
-  }
-
-  status(`Fetching ${segmentName}.rd5...`);
-  return fetchAndCacheSegment(segmentName, (received, total) => {
-    const mb = (received / (1024 * 1024)).toFixed(1);
-    const totMb = total > 0 ? (total / (1024 * 1024)).toFixed(1) : '?';
-    status(`Downloading ${segmentName}.rd5 (${mb} / ${totMb} MB)...`);
-  });
 }
 
 function segmentName(lon: number, lat: number): string {
@@ -97,64 +58,61 @@ function segmentName(lon: number, lat: number): string {
   return `${slon}_${slat}`;
 }
 
-/** The 5°×5° segments that overlap the box. */
-function segmentsForBox(box: Box): string[] {
-  const names: string[] = [];
-  for (let lon = Math.floor(box.minLon / 5) * 5; lon <= box.maxLon; lon += 5) {
-    for (let lat = Math.floor(box.minLat / 5) * 5; lat <= box.maxLat; lat += 5) {
-      names.push(segmentName(lon, lat));
-    }
+/**
+ * Opens a zero-copy disk-backed Blob reference to `/segments4/<segmentName>.rd5` in CacheStorage,
+ * downloading and caching it first if not yet present.
+ */
+async function openSegmentBlob(name: string, required: boolean): Promise<boolean> {
+  if (segmentBlobs.has(name)) {
+    return true;
   }
-  return names;
-}
+  if (!required && failedSegments.has(name)) {
+    return false;
+  }
 
-function waypointBox(waypoints: LatLon[]): Box {
-  const lons = waypoints.map((w) => w.lon);
-  const lats = waypoints.map((w) => w.lat);
-  return {
-    minLon: Math.min(...lons),
-    minLat: Math.min(...lats),
-    maxLon: Math.max(...lons),
-    maxLat: Math.max(...lats),
-  };
-}
+  const key = `/segments4/${name}.rd5`;
+  const cache = await caches.open(SEGMENT_CACHE_NAME);
+  const cached = await cache.match(key);
+  if (cached && !isHtml(cached)) {
+    const blob = await cached.blob();
+    if (blob.size >= MIN_RD5_BYTES) {
+      segmentBlobs.set(name, blob);
+      failedSegments.delete(name);
+      return true;
+    }
+    await cache.delete(key);
+  }
 
-function kmPerDegreeLon(lat: number): number {
-  return 111.32 * Math.cos((lat * Math.PI) / 180);
-}
+  if (isOfflineMode) {
+    failedSegments.add(name);
+    if (required) {
+      throw new Error(`Routing data ${name} is not downloaded for offline use`);
+    }
+    return false;
+  }
 
-function boxDiagonalKm(box: Box): number {
-  const midLat = (box.minLat + box.maxLat) / 2;
-  const dx = (box.maxLon - box.minLon) * kmPerDegreeLon(midLat);
-  const dy = (box.maxLat - box.minLat) * 110.57;
-  return Math.hypot(dx, dy);
-}
-
-function padBox(box: Box, marginKm: number): Box {
-  // Use the latitude closest to the pole, where a degree of longitude is shortest.
-  const lat = Math.max(Math.abs(box.minLat), Math.abs(box.maxLat));
-  const dLon = marginKm / kmPerDegreeLon(lat);
-  const dLat = marginKm / 110.57;
-  return {
-    minLon: box.minLon - dLon,
-    minLat: box.minLat - dLat,
-    maxLon: box.maxLon + dLon,
-    maxLat: box.maxLat + dLat,
-  };
-}
-
-function boxContains(outer: Box, inner: Box): boolean {
-  return (
-    outer.minLon <= inner.minLon &&
-    outer.minLat <= inner.minLat &&
-    outer.maxLon >= inner.maxLon &&
-    outer.maxLat >= inner.maxLat
-  );
+  try {
+    status(`Fetching ${name}.rd5...`);
+    const bytes = await fetchAndCacheSegment(name, (received, total) => {
+      const mb = (received / (1024 * 1024)).toFixed(1);
+      const totMb = total > 0 ? (total / (1024 * 1024)).toFixed(1) : '?';
+      status(`Downloading ${name}.rd5 (${mb} / ${totMb} MB)...`);
+    });
+    const freshCached = await cache.match(key);
+    const blob = freshCached ? await freshCached.blob() : new Blob([bytes as BlobPart]);
+    segmentBlobs.set(name, blob);
+    failedSegments.delete(name);
+    return true;
+  } catch (err) {
+    failedSegments.add(name);
+    if (required) throw err;
+    console.warn(`Skipping border segment ${name}:`, err);
+    return false;
+  }
 }
 
 /**
- * Loads WASM, lookups and all profiles. Only sets `router` once everything succeeded,
- * so a failed init (for example while offline) is retried on the next request.
+ * Loads WASM, lookups, profiles, and attaches the synchronous Blob.slice reader callbacks.
  */
 async function ensureRouter(): Promise<WasmRouter> {
   if (router) return router;
@@ -162,6 +120,19 @@ async function ensureRouter(): Promise<WasmRouter> {
   status('Initializing WebAssembly engine...');
   await init();
   const r = new WasmRouter();
+
+  r.set_segment_reader(
+    (name: string): number => {
+      const blob = segmentBlobs.get(name);
+      return blob ? blob.size : 0;
+    },
+    (name: string, start: number, end: number): Uint8Array => {
+      const blob = segmentBlobs.get(name);
+      if (!blob) return new Uint8Array(0);
+      const buf = fileReaderSync.readAsArrayBuffer(blob.slice(start, end));
+      return new Uint8Array(buf);
+    },
+  );
 
   status('Loading lookups dictionary...');
   r.load_lookups(await fetchText('/profiles/lookups.dat'));
@@ -176,41 +147,94 @@ async function ensureRouter(): Promise<WasmRouter> {
 }
 
 /**
- * Makes sure the graph covers `box`. If not, the graph is rebuilt with exactly this box,
- * so memory use stays bounded across many routes. Segments holding a waypoint must load.
- * Segments that only cover the margin are skipped if unavailable: sea, or not downloaded.
+ * Executes an operation on `WasmRouter` with lazy on-demand cell loading. If the search touches
+ * a 5°×5° segment boundary whose Blob has not been opened yet, opens the missing segment Blob(s)
+ * and re-runs the operation once.
  */
-async function ensureBoxLoaded(r: WasmRouter, box: Box, required: Set<string>): Promise<void> {
-  if (loadedBox && boxContains(loadedBox, box)) {
-    return;
-  }
-
-  r.clear_graph();
-  loadedBox = null;
-
-  try {
-    for (const name of segmentsForBox(box)) {
-      status(`Loading routing data ${name}...`);
-      let bytes: Uint8Array;
-      try {
-        bytes = await getSegmentBytes(name);
-      } catch (err) {
-        if (required.has(name)) throw err;
-        console.warn(`Skipping margin segment ${name}:`, err);
-        continue;
-      }
-      status(`Decoding ${name}...`);
-      r.add_rd5_box(bytes, name, box.minLon, box.minLat, box.maxLon, box.maxLat);
-    }
-    status('Resolving road graph connections...');
-    r.resolve_graph();
-  } catch (err) {
+async function runWithLazySegments<T>(
+  r: WasmRouter,
+  initialPoints: LatLon[],
+  op: () => T,
+): Promise<T> {
+  if (r.loaded_cell_count() > MAX_CACHED_CELLS) {
     r.clear_graph();
-    throw err;
   }
 
-  loadedBox = box;
-  status(`Graph ready: ${r.node_count().toLocaleString()} nodes, ${r.edge_count().toLocaleString()} edges.`);
+  const requiredSegments = new Set(initialPoints.map((w) => segmentName(w.lon, w.lat)));
+  for (const seg of requiredSegments) {
+    await openSegmentBlob(seg, true);
+  }
+
+  const nearbySegments = new Set<string>();
+  for (const w of initialPoints) {
+    for (const dLon of [-0.15, 0, 0.15]) {
+      for (const dLat of [-0.15, 0, 0.15]) {
+        const seg = segmentName(w.lon + dLon, w.lat + dLat);
+        if (!requiredSegments.has(seg)) {
+          nearbySegments.add(seg);
+        }
+      }
+    }
+  }
+  for (const seg of nearbySegments) {
+    await openSegmentBlob(seg, false);
+  }
+
+  r.take_missing_segments();
+
+  while (true) {
+    let result: T | undefined;
+    let opErr: unknown = null;
+    try {
+      result = op();
+    } catch (err) {
+      opErr = err;
+      const msg = String(err);
+      if (msg.includes('unreachable') || msg.includes('recursive use of an object')) {
+        router = null;
+        throw err;
+      }
+    }
+
+    const missing = r.take_missing_segments();
+    let openedAny = false;
+    for (const seg of missing) {
+      if (await openSegmentBlob(seg, false)) {
+        openedAny = true;
+      }
+    }
+
+    if (openedAny) {
+      r.clear_graph();
+      continue;
+    }
+    if (opErr !== null) {
+      throw opErr;
+    }
+    return result as T;
+  }
+}
+
+function extractGpxTrackPoints(gpxXml: string): LatLon[] {
+  for (const tag of ['trkpt', 'rtept', 'wpt']) {
+    const pts: LatLon[] = [];
+    const tagRe = new RegExp(`<${tag}\\s+([^>]+)>`, 'gi');
+    let m: RegExpExecArray | null;
+    while ((m = tagRe.exec(gpxXml)) !== null) {
+      const attrs = m[1];
+      const latMatch = /lat\s*=\s*["']([^"']+)["']/i.exec(attrs);
+      const lonMatch = /lon\s*=\s*["']([^"']+)["']/i.exec(attrs);
+      if (latMatch && lonMatch) {
+        const lat = Number(latMatch[1]);
+        const lon = Number(lonMatch[1]);
+        if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+          pts.push({ lat, lon });
+        }
+      }
+    }
+    if (pts.length >= 2) return pts;
+  }
+  return [];
 }
 
 async function handleMessage(msg: WorkerMessage): Promise<void> {
@@ -226,19 +250,12 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
     }
 
     case 'ROUTE_REQUEST': {
-      // A newer request arrived while this one was queued. Skip it.
-      if (msg.id !== latestRouteId) return;
+      const slotIdx = msg.slotIdx ?? 0;
+      if (latestSlotRouteIds.get(slotIdx) !== msg.id) return;
       try {
         const r = await ensureRouter();
+        if (latestSlotRouteIds.get(slotIdx) !== msg.id) return;
         const { waypoints, profile, alternativeIdx, nogos } = msg.payload;
-        if (!isOfflineMode && navigator.onLine) {
-          try {
-            const profileText = await fetchText(`/profiles/${profile}.brf`);
-            r.load_profile(profile, profileText);
-          } catch (_e) {
-            // ignore reload failure and continue with existing loaded profile
-          }
-        }
         const waypointsStr = waypoints.map((w) => `${w.lon},${w.lat}`).join('|');
         const nogosStr =
           nogos && nogos.length > 0
@@ -249,27 +266,54 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
                 )
                 .join('|')
             : undefined;
-        const required = new Set(waypoints.map((w) => segmentName(w.lon, w.lat)));
-        const bbox = waypointBox(waypoints);
 
-        let marginKm = Math.min(MAX_MARGIN_KM, Math.max(MIN_MARGIN_KM, MARGIN_FRACTION * boxDiagonalKm(bbox)));
-        let geojsonStr: string;
-        while (true) {
-          await ensureBoxLoaded(r, padBox(bbox, marginKm), required);
-          status(`Calculating route (${waypoints.length} points, ${profile}, ${Math.round(marginKm)} km margin)...`);
-          try {
-            geojsonStr = r.find_route(waypointsStr, profile, alternativeIdx ?? 0, nogosStr);
-            break;
-          } catch (err) {
-            // A waypoint far from any road is not fixed by loading a wider area.
-            if (marginKm >= MAX_MARGIN_KM || /could not be mapped/.test(String(err))) throw err;
-            marginKm = Math.min(MAX_MARGIN_KM, marginKm * MARGIN_RETRY_FACTOR);
-            status(`No route inside the loaded area. Retrying with a ${Math.round(marginKm)} km margin...`);
-          }
-        }
+        status(`Calculating route (${waypoints.length} points, ${profile})...`);
+        const geojsonStr = await runWithLazySegments(r, waypoints, () =>
+          r.find_route(waypointsStr, profile, alternativeIdx ?? 0, nogosStr),
+        );
+        if (latestSlotRouteIds.get(slotIdx) !== msg.id) return;
 
         const response: RouteResponse = JSON.parse(geojsonStr);
-        postMessage({ type: 'ROUTE_SUCCESS', id: msg.id, payload: response } satisfies WorkerMessage);
+        postMessage({
+          type: 'ROUTE_SUCCESS',
+          id: msg.id,
+          slotIdx,
+          payload: response,
+        } satisfies WorkerMessage);
+      } catch (err) {
+        postMessage({
+          type: 'ROUTE_ERROR',
+          id: msg.id,
+          slotIdx,
+          error: String(err),
+        } satisfies WorkerMessage);
+      }
+      break;
+    }
+
+    case 'IMPORT_GPX_REQUEST': {
+      if (msg.id !== latestImportId) return;
+      try {
+        const r = await ensureRouter();
+        if (msg.id !== latestImportId) return;
+        const { gpxXml, profile, toleranceM } = msg.payload;
+        const trackPoints = extractGpxTrackPoints(gpxXml);
+        if (trackPoints.length < 2) {
+          throw new Error('GPX document must contain at least 2 valid track, route, or waypoint coordinates.');
+        }
+
+        status(`Matching GPX track (${trackPoints.length} points, ${profile})...`);
+        const rawJson = await runWithLazySegments(r, trackPoints, () =>
+          r.match_gpx_waypoints(gpxXml, profile, toleranceM ?? 20.0),
+        );
+        if (msg.id !== latestImportId) return;
+
+        const parsed = JSON.parse(rawJson) as { waypoints: LatLon[]; route: RouteResponse };
+        postMessage({
+          type: 'IMPORT_GPX_SUCCESS',
+          id: msg.id,
+          payload: parsed,
+        } satisfies WorkerMessage);
       } catch (err) {
         postMessage({ type: 'ROUTE_ERROR', id: msg.id, error: String(err) } satisfies WorkerMessage);
       }
@@ -277,8 +321,13 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
     }
 
     case 'CLEAR_GRAPH': {
-      router?.clear_graph();
-      loadedBox = null;
+      try {
+        router?.clear_graph();
+      } catch {
+        router = null;
+      }
+      segmentBlobs.clear();
+      failedSegments.clear();
       break;
     }
   }
@@ -289,11 +338,18 @@ let queue: Promise<void> = Promise.resolve();
 self.onmessage = (e: MessageEvent<WorkerMessage>) => {
   const msg = e.data;
   if (msg.type === 'SET_OFFLINE_MODE') {
+    if (isOfflineMode !== msg.offline) {
+      failedSegments.clear();
+    }
     isOfflineMode = msg.offline;
     return;
   }
   if (msg.type === 'ROUTE_REQUEST') {
-    latestRouteId = msg.id;
+    latestSlotRouteIds.set(msg.slotIdx ?? 0, msg.id);
+  } else if (msg.type === 'IMPORT_GPX_REQUEST') {
+    latestImportId = msg.id;
+    latestSlotRouteIds.clear();
   }
   queue = queue.then(() => handleMessage(msg));
 };
+

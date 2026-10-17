@@ -58,7 +58,7 @@ impl BinaryOp {
             BinaryOp::Max => v1.max(v2),
             BinaryOp::Min => v1.min(v2),
             BinaryOp::Equal => {
-                if (v1 - v2).abs() < f32::EPSILON {
+                if v1 == v2 {
                     1.0
                 } else {
                     0.0
@@ -225,6 +225,55 @@ impl BExpr {
                 expr: Box::new(expr.optimize()),
             },
             other => other,
+        }
+    }
+
+    /// Returns true if this expression subtree references any `ForeignVariable`.
+    pub fn has_foreign_variable(&self) -> bool {
+        match self {
+            BExpr::ForeignVariable { .. } => true,
+            BExpr::Not(e) => e.has_foreign_variable(),
+            BExpr::Binary { left, right, .. } => {
+                left.has_foreign_variable() || right.has_foreign_variable()
+            }
+            BExpr::Switch {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                cond.has_foreign_variable()
+                    || then_expr.has_foreign_variable()
+                    || else_expr.has_foreign_variable()
+            }
+            BExpr::Assign { expr, .. } => expr.has_foreign_variable(),
+            _ => false,
+        }
+    }
+
+    /// Appends unique `var_idx` values of any `ForeignVariable` referenced in this expression subtree.
+    pub fn collect_foreign_vars(&self, out: &mut Vec<usize>) {
+        match self {
+            BExpr::ForeignVariable { var_idx, .. } => {
+                if !out.contains(var_idx) {
+                    out.push(*var_idx);
+                }
+            }
+            BExpr::Not(e) => e.collect_foreign_vars(out),
+            BExpr::Binary { left, right, .. } => {
+                left.collect_foreign_vars(out);
+                right.collect_foreign_vars(out);
+            }
+            BExpr::Switch {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                cond.collect_foreign_vars(out);
+                then_expr.collect_foreign_vars(out);
+                else_expr.collect_foreign_vars(out);
+            }
+            BExpr::Assign { expr, .. } => expr.collect_foreign_vars(out),
+            _ => {}
         }
     }
 }

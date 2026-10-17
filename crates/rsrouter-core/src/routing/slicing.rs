@@ -57,7 +57,7 @@ pub fn find_crosspoint_projection(
             best_idx = i;
             best_frac = frac;
             best_elev = if p1.elev != i16::MIN && p2.elev != i16::MIN {
-                (p1.elev as f64 * (1.0 - frac) + p2.elev as f64 * frac).round() as ElevationQuarterMeters
+                (p1.elev as f64 * (1.0 - frac) + p2.elev as f64 * frac) as ElevationQuarterMeters
             } else if p1.elev != i16::MIN {
                 p1.elev
             } else {

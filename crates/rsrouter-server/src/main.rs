@@ -58,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             parts[0], parts[2], parts[1], parts[3]
         );
         let t0 = std::time::Instant::now();
-        let state = ServerState::with_preloaded_bbox(
+        let state = ServerState::with_bounding_box(
             cli.segments,
             cli.profiles,
             parts[0],

@@ -8,7 +8,7 @@
 //! Path state tracker with 3-state elevation hysteresis buffers, slope cutoffs,
 //! turn angle penalties, and kinematic travel time integration.
 
-use super::cost::KinematicConfig;
+use super::cost::{CarKinematicModel, KinematicConfig};
 use super::state::CandidateState;
 use crate::dsl::evaluator::WayCostResult;
 use crate::types::{Cost, Distance, Joules, Seconds};
@@ -21,6 +21,14 @@ pub struct SectionInput {
     pub cos_angle: f64,
     pub crossing_penalty: i32,
     pub is_detail: bool,
+}
+
+/// Pre-evaluated outgoing way summary at a junction for `KinematicModel` (`KinematicPrePath`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KinematicPrePath {
+    pub angle: f64,
+    pub priorityclassifier: i32,
+    pub classifiermask: i32,
 }
 
 /// Elevation hysteresis parameters configured globally or by profile.
@@ -55,11 +63,14 @@ impl ElevationConfig {
 /// Dynamic path state carried across road segments along a search path.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PathState {
-    pub ehbd: i32,             // downhill elevation hysteresis buffer in micrometers
-    pub ehbu: i32,             // uphill elevation hysteresis buffer in micrometers
-    pub elevation_buffer: f32, // buffer for continuous incline estimation
-    pub total_time_s: Seconds, // cumulative travel time in seconds
-    pub total_energy_j: Joules, // cumulative energy in Joules
+    pub ehbd: i32,                  // downhill elevation hysteresis buffer in micrometers
+    pub ehbu: i32,                  // uphill elevation hysteresis buffer in micrometers
+    pub elevation_buffer: f32,      // buffer for continuous incline estimation
+    pub total_time_s: Seconds,      // cumulative travel time in seconds
+    pub total_energy_j: Joules,     // cumulative energy in Joules
+    pub ekin: f64,                  // kinetic energy in Joules (for KinematicModel)
+    pub floating_angle_left: f32,   // sliding average left bend in degrees (for KinematicModel)
+    pub floating_angle_right: f32,  // sliding average right bend in degrees (for KinematicModel)
 }
 
 /// Turn crossing cost configuration for junctions with `estimated_crossing_class`.
@@ -125,24 +136,24 @@ impl StdPathCalculator {
         if dist <= 0.0 {
             return 0.0;
         }
-        *elevation_buffer += delta_h as f32;
+        *elevation_buffer = (*elevation_buffer as f64 + delta_h) as f32;
 
-        let min_delta = 3.0f32;
-        let mut shift = 0.0f32;
-        if *elevation_buffer > min_delta {
+        let min_delta = 3.0f64;
+        let mut shift = 0.0f64;
+        if (*elevation_buffer as f64) > min_delta {
             shift = -min_delta;
-        } else if *elevation_buffer < -min_delta {
+        } else if (*elevation_buffer as f64) < -min_delta {
             shift = min_delta;
         }
 
-        let decay_factor = (-dist / 100.0).exp() as f32;
-        let new_buffer = (*elevation_buffer + shift) * decay_factor - shift;
-        let incline = ((*elevation_buffer - new_buffer) / dist as f32) as f64;
+        let decay_factor = (-dist / 100.0).exp();
+        let new_buffer = ((*elevation_buffer as f64 + shift) * decay_factor - shift) as f32;
+        let incline = (*elevation_buffer - new_buffer) as f64 / dist;
         *elevation_buffer = new_buffer;
         incline
     }
 
-    /// Evaluates a road segment with turn cost, elevation hysteresis, and kinematics.
+    /// Evaluates a road segment with turn cost, elevation hysteresis, and kinematics (`StdPath`).
     pub fn process_section(
         state: &mut PathState,
         way_cost: &WayCostResult,
@@ -157,10 +168,10 @@ impl StdPathCalculator {
         let is_detail = input.is_detail;
 
         let turncost_base = way_cost.turncost;
-        let uphillcutoff = way_cost.uphillcutoff_i;
-        let downhillcutoff = way_cost.downhillcutoff_i;
-        let uphillmaxslope = way_cost.uphillmaxslope_i;
-        let downhillmaxslope = way_cost.downhillmaxslope_i;
+        let uphillcutoff = way_cost.uphillcutoff_f;
+        let downhillcutoff = way_cost.downhillcutoff_f;
+        let uphillmaxslope = way_cost.uphillmaxslope_f;
+        let downhillmaxslope = way_cost.downhillmaxslope_f;
 
         let cfup = way_cost.uphillcostfactor;
         let cfdown = way_cost.downhillcostfactor;
@@ -172,17 +183,21 @@ impl StdPathCalculator {
         let uphillmaxslopecostdiv = way_cost.uphillmaxslopecostdiv;
 
         let dist_int = dist as i32;
+        let dist_f = dist_int as f32;
 
         // 1. Turn penalty with crossing cost
         let turn_cost = ((1.0 - cos_angle) * turncost_base as f64 + 0.2) as i32 + crossing_penalty;
         let mut section_cost = turn_cost as f64;
 
-        // 2. Elevation penalty with hysteresis buffer
-        state.ehbd += delta_h_micros.saturating_neg() - dist_int * downhillcutoff;
-        state.ehbu += delta_h_micros - dist_int * uphillcutoff;
+        // 2. Elevation penalty with hysteresis buffer (matching Java `int += float` semantics)
+        state.ehbd = (state.ehbd as f32
+            + (delta_h_micros.saturating_neg() as f32 - dist_f * downhillcutoff))
+            as i32;
+        state.ehbu =
+            (state.ehbu as f32 + (delta_h_micros as f32 - dist_f * uphillcutoff)) as i32;
 
         let mut downweight = 0.0f32;
-        let mut elev_cost = 0.0f64;
+        let mut total_elev_cost = 0.0f64;
 
         if state.ehbd > elev_cfg.penalty_buffer {
             downweight = 1.0;
@@ -198,13 +213,18 @@ impl StdPathCalculator {
             }
             state.ehbd -= reduce;
 
+            let mut elev_cost_down = 0.0f32;
             if downhillcostdiv > 0 {
-                elev_cost +=
-                    reduce.min(dist_int * downhillmaxslope) as f64 / downhillcostdiv as f64;
+                elev_cost_down +=
+                    (reduce as f32).min(dist_f * downhillmaxslope) / downhillcostdiv as f32;
             }
             if downhillmaxslopecostdiv > 0 {
-                elev_cost += 0.max(reduce - dist_int * downhillmaxslope) as f64
-                    / downhillmaxslopecostdiv as f64;
+                elev_cost_down += (0.0f32).max(reduce as f32 - dist_f * downhillmaxslope)
+                    / downhillmaxslopecostdiv as f32;
+            }
+            if elev_cost_down > 0.0 {
+                section_cost += elev_cost_down as f64;
+                total_elev_cost += elev_cost_down as f64;
             }
         } else if state.ehbd < 0 {
             state.ehbd = 0;
@@ -225,22 +245,26 @@ impl StdPathCalculator {
             }
             state.ehbu -= reduce;
 
+            let mut elev_cost_up = 0.0f32;
             if uphillcostdiv > 0 {
-                elev_cost += reduce.min(dist_int * uphillmaxslope) as f64 / uphillcostdiv as f64;
+                elev_cost_up +=
+                    (reduce as f32).min(dist_f * uphillmaxslope) / uphillcostdiv as f32;
             }
             if uphillmaxslopecostdiv > 0 {
-                elev_cost +=
-                    0.max(reduce - dist_int * uphillmaxslope) as f64 / uphillmaxslopecostdiv as f64;
+                elev_cost_up += (0.0f32).max(reduce as f32 - dist_f * uphillmaxslope)
+                    / uphillmaxslopecostdiv as f32;
+            }
+            if elev_cost_up > 0.0 {
+                section_cost += elev_cost_up as f64;
+                total_elev_cost += elev_cost_up as f64;
             }
         } else if state.ehbu < 0 {
             state.ehbu = 0;
         }
 
-        section_cost += elev_cost;
-
         // 3. Slope-dependent effective costfactor
         let costfactor = cfup * upweight + cf * (1.0 - upweight - downweight) + cfdown * downweight;
-        section_cost += (dist_int as f32 * costfactor + 0.5f32) as f64;
+        section_cost += (dist_f * costfactor + 0.5f32) as f64;
 
         let section_cost_int = (section_cost.max(0.0)) as u32;
 
@@ -272,11 +296,151 @@ impl StdPathCalculator {
             section_cost,
             section_cost_int,
             turn_cost: turn_cost as f64,
-            elevation_cost: elev_cost,
+            elevation_cost: total_elev_cost,
             effective_costfactor: costfactor,
             time_seconds: dt,
             energy_joules: energy,
         }
+    }
+
+    /// Evaluates a road segment using `KinematicPath` or `KinematicNoCostPath` (`CarKinematicModel`).
+    /// Returns `None` if the segment is impassable (`effective_speed_limit <= 0.0` or `section_cost < 0.0`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn process_car_section(
+        state: &mut PathState,
+        way_cost: &WayCostResult,
+        km: &CarKinematicModel,
+        dist: Distance,
+        delta_h: f64,
+        elevation: f64,
+        angle: f64,
+        cos_angle: f64,
+        is_startpoint: bool,
+        nsection: usize,
+        last_prio: i32,
+        pre_paths: &[KinematicPrePath],
+    ) -> Option<SectionCost> {
+        let mut cost = 0.0f64;
+        let mut extra_time = 0.0f64;
+        let priorityclassifier = way_cost.priorityclassifier;
+
+        if is_startpoint {
+            extra_time = 0.5 * (1.0 - cos_angle) * 40.0;
+        } else {
+            let mut turnspeed = 999.0f64;
+            if km.turn_angle_decay_time != 0.0 {
+                if angle < 0.0 {
+                    state.floating_angle_left -= angle as f32;
+                } else {
+                    state.floating_angle_right += angle as f32;
+                }
+                let aa = state.floating_angle_left.max(state.floating_angle_right);
+                let curve_speed = if aa > 10.0 { 200.0 / aa as f64 } else { 20.0 };
+                let distance_time = dist / curve_speed;
+                let decay_factor = (-distance_time / km.turn_angle_decay_time).exp();
+                state.floating_angle_left = (state.floating_angle_left as f64 * decay_factor) as f32;
+                state.floating_angle_right =
+                    (state.floating_angle_right as f64 * decay_factor) as f32;
+                if curve_speed < 20.0 {
+                    turnspeed = curve_speed;
+                }
+            }
+
+            if nsection == 0 {
+                let mut junctionspeed = 999.0f64;
+                let classifiermask = way_cost.classifiermask;
+                let mut has_left_way = false;
+                let mut has_right_way = false;
+                let mut has_residential = false;
+
+                for pp in pre_paths {
+                    if ((pp.classifiermask ^ classifiermask) & 8) != 0 {
+                        continue;
+                    }
+                    if (pp.classifiermask & 32) != 0 {
+                        has_residential = true;
+                    }
+                    if pp.priorityclassifier > priorityclassifier
+                        || (pp.priorityclassifier == priorityclassifier && priorityclassifier < 20)
+                    {
+                        let diff = pp.angle - angle;
+                        if diff < -40.0 && diff > -140.0 {
+                            has_left_way = true;
+                        }
+                        if diff > 40.0 && diff < 140.0 {
+                            has_right_way = true;
+                        }
+                    }
+                }
+
+                let residential_speed = 13.0;
+                if has_left_way && junctionspeed > km.left_way_speed {
+                    junctionspeed = km.left_way_speed;
+                }
+                if has_right_way && junctionspeed > km.right_way_speed {
+                    junctionspeed = km.right_way_speed;
+                }
+                if has_residential && junctionspeed > residential_speed {
+                    junctionspeed = residential_speed;
+                }
+
+                if (last_prio < 20) ^ (priorityclassifier < 20) {
+                    extra_time += 10.0;
+                    junctionspeed = 0.0;
+                }
+                if last_prio != priorityclassifier && (classifiermask & 8) != 0 {
+                    extra_time += 2.0;
+                }
+                if turnspeed > junctionspeed {
+                    turnspeed = junctionspeed;
+                }
+            }
+            km.cut_ekin(&mut state.ekin, turnspeed);
+        }
+
+        let tcorr = (20.0 - km.outside_temp) * 0.0035;
+        let ecorr = 0.0001375 * (elevation - 100.0);
+        let f_air = km.f_air * (1.0 + tcorr - ecorr);
+
+        let (distance_cost, dt_evolve, de_evolve) = km.evolve_distance(
+            &mut state.ekin,
+            &mut state.total_time_s,
+            &mut state.total_energy_j,
+            way_cost,
+            dist,
+            delta_h,
+            f_air,
+        );
+        if distance_cost < 0.0 {
+            return None;
+        }
+
+        if !km.no_cost_factor {
+            cost += dist * (way_cost.costfactor as f64) + 0.5;
+        }
+
+        let turn_cost = extra_time * km.pw / km.cost0;
+        cost += turn_cost;
+        state.total_time_s += extra_time as f32;
+        cost += distance_cost;
+
+        if cost < 0.0 {
+            return None;
+        }
+
+        Some(SectionCost {
+            section_cost: cost,
+            section_cost_int: cost as u32,
+            turn_cost,
+            elevation_cost: 0.0,
+            effective_costfactor: if dist > 0.0 {
+                (distance_cost / dist) as f32
+            } else {
+                way_cost.costfactor
+            },
+            time_seconds: dt_evolve + extra_time as f32,
+            energy_joules: de_evolve,
+        })
     }
 
     /// Computes uphill and downhill cost divisors from way cost parameters.

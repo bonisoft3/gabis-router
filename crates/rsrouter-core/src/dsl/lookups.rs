@@ -177,6 +177,37 @@ impl ContextLookups {
             (val - 1000) as f32 / 100.0
         }
     }
+
+    /// Formats a decoded lookup array into BRouter's space-separated `key=value` description
+    /// matching `BExpressionContext.getKeyValueDescription`.
+    pub fn format_key_values(&self, ld: &[i32]) -> String {
+        let mut out = String::new();
+        for (i, &val) in ld.iter().enumerate() {
+            if val == 0 || i >= self.names.len() {
+                continue;
+            }
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(&self.names[i]);
+            out.push('=');
+            if val < 900 {
+                if let Some(lv) = self.values.get(i).and_then(|v| v.get(val as usize)) {
+                    out.push_str(&lv.value);
+                } else {
+                    out.push_str("unknown");
+                }
+            } else {
+                let num = (val - 1000) as f32 / 100.0;
+                if (num - num.round()).abs() < 1e-4 {
+                    out.push_str(&format!("{}", num.round() as i32));
+                } else {
+                    out.push_str(&format!("{}", num));
+                }
+            }
+        }
+        out
+    }
 }
 
 /// Metadata and lookup dictionary loaded from `lookups.dat`.

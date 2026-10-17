@@ -4,7 +4,7 @@
     {
       "type": "Feature",
       "properties": {
-        "creator": "BRouter-1.7.10",
+        "creator": "BRouter-1.7.11-beta",
         "name": "brouter_fastbike-lowtraffic_0",
         "track-length": "99199",
         "filtered ascend": "482",

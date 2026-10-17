@@ -195,3 +195,51 @@ fn test_evaluate_profile_way_tags() {
         res_motorway.costfactor, res_cycleway.costfactor
     );
 }
+
+#[test]
+fn test_profile_custom_params_and_no_start_way() {
+    use std::collections::HashMap;
+    use rsrouter_core::routing::cost::CarKinematicModel;
+
+    let lookups =
+        LookupData::load_from_file(repo_path("profiles/lookups.dat")).expect("Failed to parse lookups.dat");
+
+    let mut params = HashMap::new();
+    params.insert("avoid_main_roads".to_string(), "8".to_string());
+    let fastbike_custom = Profile::load_from_file_with_params(
+        repo_path("profiles/fastbike.brf"),
+        &lookups,
+        Some(&params),
+    )
+    .expect("Failed to load fastbike with custom params");
+    assert_eq!(fastbike_custom.get_global_var("avoid_main_roads", 0.0), 8.0);
+
+    // Check car-eco profile loads CarKinematicModel
+    let car_eco = Profile::load_from_file(repo_path("profiles/car-eco.brf"), &lookups)
+        .expect("Failed to load car-eco.brf");
+    let km = CarKinematicModel::from_profile(&car_eco).expect("Expected CarKinematicModel for car-eco");
+    assert!(!km.no_cost_factor);
+    assert!((km.total_weight - 1640.0).abs() < 1e-3);
+
+    // Check noStartWay parsing and check_start_way_decoded
+    let no_start_src = r#"
+---context:global
+assign check_start_way = true # %check_start_way% | Do not start on motorways | noStartWay=highway,motorway;highway,trunk
+---context:way
+assign costfactor = 1
+---context:node
+assign initialcost = 0
+"#;
+    let no_start_prof =
+        Profile::parse("no_start_test", no_start_src, &lookups).expect("Failed to parse no_start_test");
+    assert_eq!(no_start_prof.no_start_ways.len(), 2);
+
+    let hw_idx = lookups.way.get_name_idx("highway").unwrap();
+    let motorway_val = lookups.way.get_value_idx(hw_idx, "motorway").unwrap();
+    let residential_val = lookups.way.get_value_idx(hw_idx, "residential").unwrap();
+    let mut ld = vec![0i32; lookups.way.names.len()];
+    ld[hw_idx] = motorway_val;
+    assert!(!no_start_prof.check_start_way_decoded(&ld));
+    ld[hw_idx] = residential_val;
+    assert!(no_start_prof.check_start_way_decoded(&ld));
+}

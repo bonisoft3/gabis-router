@@ -1,10 +1,58 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  classifyRoad,
   classifySpeedLimit,
+  ROAD_META,
   SPEED_LIMIT_META,
+  type RoadCategory,
   type SpeedLimitCategory,
 } from '../src/utils/classification.ts';
+
+test('classifyRoad: maps OSM highway tags to road categories', () => {
+  assert.equal(classifyRoad('cycleway'), 'cycleway');
+
+  for (const h of ['residential', 'living_street', 'service', 'unclassified']) {
+    assert.equal(classifyRoad(h), 'residential');
+  }
+
+  for (const h of ['tertiary', 'tertiary_link']) {
+    assert.equal(classifyRoad(h), 'tertiary');
+  }
+
+  for (const h of ['secondary', 'secondary_link']) {
+    assert.equal(classifyRoad(h), 'secondary');
+  }
+
+  for (const h of ['primary', 'primary_link', 'trunk', 'trunk_link', 'motorway', 'motorway_link']) {
+    assert.equal(classifyRoad(h), 'primary');
+  }
+
+  for (const h of ['path', 'footway', 'bridleway', 'track', 'steps', 'pedestrian']) {
+    assert.equal(classifyRoad(h), 'path');
+  }
+
+  assert.equal(classifyRoad(''), 'unknown');
+  assert.equal(classifyRoad(undefined), 'unknown');
+});
+
+test('classifyRoad: all categories have valid metadata labels and colors', () => {
+  const categories: RoadCategory[] = [
+    'cycleway',
+    'residential',
+    'tertiary',
+    'secondary',
+    'primary',
+    'path',
+    'unknown',
+  ];
+
+  for (const cat of categories) {
+    assert.ok(ROAD_META[cat], `Missing meta for ${cat}`);
+    assert.ok(ROAD_META[cat].label, `Missing label for ${cat}`);
+    assert.ok(ROAD_META[cat].color, `Missing color for ${cat}`);
+  }
+});
 
 test('classifySpeedLimit: car-free infrastructure', () => {
   const carFreeHighways = ['cycleway', 'path', 'footway', 'pedestrian', 'bridleway', 'track', 'steps'];
@@ -44,24 +92,17 @@ test('classifySpeedLimit: explicit speed limits (km/h from RD5)', () => {
   assert.equal(classifySpeedLimit(130, 'motorway'), '70mph');
 });
 
-test('classifySpeedLimit: fallback inference from highway when maxspeed is missing', () => {
-  assert.equal(classifySpeedLimit(0, 'residential'), '20mph');
-  assert.equal(classifySpeedLimit(undefined, 'living_street'), '20mph');
-  assert.equal(classifySpeedLimit(undefined, 'service'), '20mph');
-
-  assert.equal(classifySpeedLimit(0, 'tertiary'), '30mph');
-  assert.equal(classifySpeedLimit(undefined, 'unclassified'), '30mph');
-
-  assert.equal(classifySpeedLimit(0, 'secondary'), '40mph');
-  assert.equal(classifySpeedLimit(undefined, 'secondary_link'), '40mph');
-
-  assert.equal(classifySpeedLimit(0, 'primary'), '50mph');
-  assert.equal(classifySpeedLimit(undefined, 'primary_link'), '50mph');
-
-  assert.equal(classifySpeedLimit(0, 'trunk'), '60mph');
-
-  assert.equal(classifySpeedLimit(0, 'motorway'), '70mph');
-  assert.equal(classifySpeedLimit(undefined, 'motorway_link'), '70mph');
+test('classifySpeedLimit: untagged when maxspeed is missing', () => {
+  assert.equal(classifySpeedLimit(0, 'residential'), 'untagged');
+  assert.equal(classifySpeedLimit(undefined, 'living_street'), 'untagged');
+  assert.equal(classifySpeedLimit(undefined, 'service'), 'untagged');
+  assert.equal(classifySpeedLimit(0, 'tertiary'), 'untagged');
+  assert.equal(classifySpeedLimit(undefined, 'unclassified'), 'untagged');
+  assert.equal(classifySpeedLimit(0, 'secondary'), 'untagged');
+  assert.equal(classifySpeedLimit(0, 'primary'), 'untagged');
+  assert.equal(classifySpeedLimit(0, 'trunk'), 'untagged');
+  assert.equal(classifySpeedLimit(0, 'motorway'), 'untagged');
+  assert.equal(classifySpeedLimit(undefined, ''), 'untagged');
 });
 
 test('classifySpeedLimit: all categories have valid metadata labels and colors', () => {
@@ -73,6 +114,7 @@ test('classifySpeedLimit: all categories have valid metadata labels and colors',
     '50mph',
     '60mph',
     '70mph',
+    'untagged',
   ];
 
   for (const cat of categories) {
@@ -81,3 +123,4 @@ test('classifySpeedLimit: all categories have valid metadata labels and colors',
     assert.ok(SPEED_LIMIT_META[cat].color, `Missing color for ${cat}`);
   }
 });
+
