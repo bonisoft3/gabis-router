@@ -188,7 +188,25 @@ ${trkpts}
 </gpx>`;
 }
 
-export function downloadGpxFile(content: string, filename: string) {
+export async function downloadGpxFile(content: string, filename: string): Promise<void> {
+  if (typeof window !== 'undefined' && window.AndroidNative?.exportGpx) {
+    if (window.AndroidNative.exportGpx(content, filename)) {
+      return;
+    }
+  }
+
+  if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.() && typeof navigator !== 'undefined' && navigator.share) {
+    try {
+      const file = new File([content], filename, { type: 'application/gpx+xml' });
+      if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        return;
+      }
+    } catch (err: any) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+    }
+  }
+
   const blob = new Blob([content], { type: 'application/gpx+xml;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -199,3 +217,4 @@ export function downloadGpxFile(content: string, filename: string) {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+

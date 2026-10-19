@@ -447,7 +447,11 @@ impl RoutingGraph {
     /// Returns the precomputed outgoing edge slice offset and count for a node ID.
     #[inline(always)]
     pub fn get_node_edge_slice(&self, s_id: u64) -> (u32, u16) {
-        self.node_edge_offsets.get(&s_id).copied().unwrap_or((0, 0))
+        let default_start = if self.has_cell_provider() { u32::MAX } else { 0 };
+        self.node_edge_offsets
+            .get(&s_id)
+            .copied()
+            .unwrap_or((default_start, 0))
     }
 
     pub fn get_or_intern_description(&mut self, desc: Option<&[u8]>) -> u32 {
@@ -485,7 +489,34 @@ impl RoutingGraph {
     }
 
     fn insert_or_update_edge(&mut self, s_id: u64, edge: GraphEdge) {
-        if self.node_edge_offsets.contains_key(&s_id) {
+        if let Some(&(start, count)) = self.node_edge_offsets.get(&s_id) {
+            let slice =
+                &mut self.flat_edges[start as usize..(start as usize + count as usize)];
+            if let Some(existing) = slice.iter_mut().find(|e| {
+                e.target_id == edge.target_id
+                    && e.is_reverse == edge.is_reverse
+                    && (e.desc_id == edge.desc_id || e.desc_id == NO_DESC || edge.desc_id == NO_DESC)
+            }) {
+                if existing.geometry.is_empty() && !edge.geometry.is_empty() {
+                    existing.geometry = edge.geometry;
+                    existing.straight_dist = 0.0;
+                }
+                if existing.desc_id == NO_DESC && edge.desc_id != NO_DESC {
+                    existing.desc_id = edge.desc_id;
+                }
+                if existing.target_selev == i16::MIN && edge.target_selev != i16::MIN {
+                    existing.target_selev = edge.target_selev;
+                }
+                if !existing.has_node_desc && edge.has_node_desc {
+                    existing.has_node_desc = true;
+                }
+                if existing.target_node_desc_id == NO_DESC && edge.target_node_desc_id != NO_DESC {
+                    existing.target_node_desc_id = edge.target_node_desc_id;
+                }
+                if !existing.has_target_tr && edge.has_target_tr {
+                    existing.has_target_tr = true;
+                }
+            }
             return;
         }
         let edge_list = self.edges.entry(s_id).or_default();
@@ -544,7 +575,7 @@ impl RoutingGraph {
             };
             self.nodes.insert(s_id, osm_node);
 
-            if track_grid && !node.links.is_empty() {
+            if track_grid {
                 let cell = (
                     s_lon.div_euclid(GRID_CELL_SIZE),
                     s_lat.div_euclid(GRID_CELL_SIZE),
@@ -617,6 +648,24 @@ impl RoutingGraph {
         self.add_micro_cache_ref(&cache);
     }
 
+    /// Returns true if the `MicroCache` cell containing `(ilon, ilat)` has been checked/loaded
+    /// (i.e. its parent `.rd5` segment was available).
+    #[inline]
+    fn is_cell_checked_at_microdeg(&self, ilon: i32, ilat: i32) -> bool {
+        let lon_deg = ilon.div_euclid(1_000_000);
+        let lat_deg = ilat.div_euclid(1_000_000);
+        let Some(&divisor) = self.cell_divisors.get(&(lon_deg, lat_deg)) else {
+            return false;
+        };
+        if divisor <= 0 {
+            return false;
+        }
+        let cell_size = 1_000_000 / divisor;
+        let lon_idx = ilon.div_euclid(cell_size);
+        let lat_idx = ilat.div_euclid(cell_size);
+        self.loaded_cells.contains_key(&(lon_idx, lat_idx))
+    }
+
     /// Lazily loads the `MicroCache` cell containing microdegree coordinate `(ilon, ilat)` if not already attempted.
     #[inline]
     pub fn ensure_cell_at_microdeg(&mut self, ilon: i32, ilat: i32) -> bool {
@@ -654,8 +703,12 @@ impl RoutingGraph {
                 self.add_micro_cache_ref(&cache);
                 true
             }
-            Ok(None) | Err(_) => {
+            Ok(None) => {
                 self.loaded_cells.insert((lon_idx, lat_idx), false);
+                false
+            }
+            Err(_) => {
+                self.cell_divisors.remove(&(lon_deg, lat_deg));
                 false
             }
         }
@@ -691,6 +744,46 @@ impl RoutingGraph {
         }
     }
 
+    /// Ensures that for all candidate nodes in the spatial grid range `[min_cx..=max_cx, min_cy..=max_cy]`,
+    /// any external link whose geometry is stored in the neighbor cell (`is_reverse && geometry.is_empty()`)
+    /// has its neighbor cell loaded before waypoint or track snapping.
+    pub(crate) fn ensure_external_link_cells_for_grid(
+        &mut self,
+        min_cx: i32,
+        max_cx: i32,
+        min_cy: i32,
+        max_cy: i32,
+    ) {
+        if !self.has_cell_provider() || self.spatial_grid.is_empty() {
+            return;
+        }
+        const CELL_GCD: i32 = 6_250;
+        let mut target_coords: Vec<(i32, i32)> = Vec::new();
+        for cx in min_cx..=max_cx {
+            for cy in min_cy..=max_cy {
+                if let Some(nodes) = self.spatial_grid.get(&(cx, cy)) {
+                    for &s_id in nodes {
+                        if let Some(edges) = self.edges.get(&s_id) {
+                            for e in edges {
+                                if e.is_reverse && e.geometry.is_empty() {
+                                    target_coords.push((e.target_lon, e.target_lat));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut last_cell = (i32::MIN, i32::MIN);
+        for (t_ilon, t_ilat) in target_coords {
+            let cell = (t_ilon.div_euclid(CELL_GCD), t_ilat.div_euclid(CELL_GCD));
+            if cell != last_cell {
+                last_cell = cell;
+                self.ensure_cell_at_microdeg(t_ilon, t_ilat);
+            }
+        }
+    }
+
     /// Ensures that node `s_id` has its own cell and all neighbor cells loaded, and that its
     /// outgoing edges are resolved and moved into `self.flat_edges`.
     /// Returns `(out_edges_start, out_edges_count)`.
@@ -703,6 +796,9 @@ impl RoutingGraph {
         }
         let s_pos = super::node::unpack_node_id(s_id);
         self.ensure_cell_at_microdeg(s_pos.lon, s_pos.lat);
+        if !self.is_cell_checked_at_microdeg(s_pos.lon, s_pos.lat) {
+            return (0, 0);
+        }
         const CELL_GCD: i32 = 6_250; // gcd(12_500, 31_250)
         let mut last_cell = (
             s_pos.lon.div_euclid(CELL_GCD),
@@ -775,8 +871,12 @@ impl RoutingGraph {
                         .round()
                         .max(1.0);
             }
+            let target_cell_checked =
+                self.is_cell_checked_at_microdeg(edge.target_lon, edge.target_lat);
             let t_offset = self.node_edge_offsets.get(&edge.target_id).copied();
-            let is_dead = if let Some(&parent) = self.dead_end_parents.get(&edge.target_id) {
+            let is_dead = if !target_cell_checked {
+                false
+            } else if let Some(&parent) = self.dead_end_parents.get(&edge.target_id) {
                 parent == s_id
             } else if let Some((t_start, t_count)) = t_offset {
                 if t_count == 0 {
@@ -805,23 +905,36 @@ impl RoutingGraph {
                 edge.target_edges_start = t_start;
                 edge.target_edges_count = t_count;
                 let t_end = t_start as usize + t_count as usize;
+                let mut exact_rev: Option<usize> = None;
+                let mut fallback_rev: Option<usize> = None;
                 for rev_idx in (t_start as usize)..t_end {
                     let rev_edge = &mut self.flat_edges[rev_idx];
                     if rev_edge.target_id == s_id {
                         rev_edge.target_edges_start = start;
                         rev_edge.target_edges_count = count;
-                        if rev_edge.rev_edge_idx == u32::MAX
-                            && rev_edge.desc_id == edge.desc_id
+                        if rev_edge.desc_id == edge.desc_id
                             && rev_edge.is_reverse != edge.is_reverse
+                            && rev_edge.rev_edge_idx == u32::MAX
                         {
-                            rev_edge.rev_edge_idx = edge_idx;
-                            edge.rev_edge_idx = rev_idx as u32;
-                        } else if edge.rev_edge_idx == u32::MAX {
-                            edge.rev_edge_idx = rev_idx as u32;
-                            if rev_edge.rev_edge_idx == u32::MAX {
-                                rev_edge.rev_edge_idx = edge_idx;
-                            }
+                            exact_rev = Some(rev_idx);
+                            break;
+                        } else if fallback_rev.is_none() {
+                            fallback_rev = Some(rev_idx);
                         }
+                    }
+                }
+                // Ensure remaining parallel reverse edges also get target_edges_start/count updated
+                for rev_idx in (t_start as usize)..t_end {
+                    let rev_edge = &mut self.flat_edges[rev_idx];
+                    if rev_edge.target_id == s_id {
+                        rev_edge.target_edges_start = start;
+                        rev_edge.target_edges_count = count;
+                    }
+                }
+                if let Some(rev_idx) = exact_rev.or(fallback_rev) {
+                    edge.rev_edge_idx = rev_idx as u32;
+                    if self.flat_edges[rev_idx].rev_edge_idx == u32::MAX {
+                        self.flat_edges[rev_idx].rev_edge_idx = edge_idx;
                     }
                 }
             }
@@ -904,6 +1017,7 @@ impl RoutingGraph {
                 (max_cx + 1) * GRID_CELL_SIZE,
                 (max_cy + 1) * GRID_CELL_SIZE,
             );
+            self.ensure_external_link_cells_for_grid(min_cx, max_cx, min_cy, max_cy);
         }
 
         let res = self.snap_waypoint_with_direction(

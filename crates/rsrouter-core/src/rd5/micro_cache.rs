@@ -275,7 +275,14 @@ impl DecodedMicroCache {
             let links_count = bc.decode_noisy_number(1) as usize;
             for _ in 0..links_count {
                 let node_idx_offset = node_idx_diff.decode_signed_value(&mut bc);
-                let node_idx = (n as i32 + node_idx_offset) as usize;
+                let node_idx_i32 = n as i32 + node_idx_offset;
+                if node_idx_i32 < 0 || (node_idx_i32 as usize) >= nodes.len() {
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        "MicroCache internal link node index out of bounds",
+                    ));
+                }
+                let node_idx = node_idx_i32 as usize;
 
                 let is_internal = node_idx != n;
                 let mut is_reverse = false;

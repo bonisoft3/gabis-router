@@ -176,6 +176,40 @@ impl LazyRd5Provider {
         }
     }
 
+    fn read_segment_range(&self, segment_name: &str, start: u64, end: u64) -> io::Result<Vec<u8>> {
+        let expected = (end.saturating_sub(start)) as usize;
+        match self.reader.read_range(segment_name, start, end) {
+            Ok(buf) if buf.len() >= expected => Ok(buf),
+            Ok(_) => {
+                self.invalidate_segment(segment_name);
+                Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    format!("Short RD5 slice read from {segment_name}"),
+                ))
+            }
+            Err(e) => {
+                self.invalidate_segment(segment_name);
+                Err(e)
+            }
+        }
+    }
+
+    fn invalidate_segment(&self, segment_name: &str) {
+        if let Ok(mut segs) = self.segments.write() {
+            segs.remove(segment_name);
+        }
+        if let Ok(mut sqs) = self.squares.write() {
+            sqs.retain(|_, v| {
+                v.as_ref()
+                    .map(|sq| sq.segment_name != segment_name)
+                    .unwrap_or(true)
+            });
+        }
+        if let Ok(mut missing) = self.missing_segments.write() {
+            missing.insert(segment_name.to_string());
+        }
+    }
+
     fn get_or_load_segment(&self, segment_name: &str) -> io::Result<Option<Rd5SegmentMeta>> {
         if let Ok(segs) = self.segments.read() {
             if let Some(cached) = segs.get(segment_name) {
@@ -197,13 +231,7 @@ impl LazyRd5Provider {
             return Ok(None);
         }
 
-        let header_buf = self.reader.read_range(segment_name, 0, 200)?;
-        if header_buf.len() < 200 {
-            return Err(Error::new(
-                ErrorKind::UnexpectedEof,
-                "Short RD5 header slice",
-            ));
-        }
+        let header_buf = self.read_segment_range(segment_name, 0, 200)?;
 
         let file_index_crc = crc::crc(&header_buf);
         let mut dis = ByteDataReader::new(&header_buf);
@@ -233,7 +261,7 @@ impl LazyRd5Provider {
                     "RD5 segment too short for trailer",
                 ));
             }
-            let trailer_buf = self.reader.read_range(segment_name, pos, pos + extra_len)?;
+            let trailer_buf = self.read_segment_range(segment_name, pos, pos + extra_len)?;
             let mut tdis = ByteDataReader::new(&trailer_buf);
             let _creation_time = tdis.read_long();
             let crc_data = tdis.read_int();
@@ -312,9 +340,8 @@ impl LazyRd5Provider {
             ));
         }
 
-        let index_buf = self
-            .reader
-            .read_range(&segment_name, start_offset, start_offset + indexsize)?;
+        let index_buf =
+            self.read_segment_range(&segment_name, start_offset, start_offset + indexsize)?;
         let header_crc = crc::crc(&index_buf);
         if meta.file_header_crcs[tile_index] != header_crc {
             return Err(Error::new(
@@ -390,7 +417,7 @@ impl crate::graph::routing_graph::CellProvider for LazyRd5Provider {
             return Ok(None);
         }
 
-        let cell_bytes = self.reader.read_range(
+        let cell_bytes = self.read_segment_range(
             &sq.segment_name,
             sq.square_start + start_pos,
             sq.square_start + end_pos,

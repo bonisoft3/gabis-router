@@ -58,13 +58,38 @@ function segmentName(lon: number, lat: number): string {
   return `${slon}_${slat}`;
 }
 
+async function toReadableBlob(res: Response, fallbackBytes?: Uint8Array): Promise<Blob | null> {
+  try {
+    const blob = await res.clone().blob();
+    if (blob.size < MIN_RD5_BYTES) return null;
+    fileReaderSync.readAsArrayBuffer(blob.slice(0, 8));
+    return blob;
+  } catch {
+    try {
+      const buf = fallbackBytes ? (fallbackBytes as BlobPart) : await res.arrayBuffer();
+      const memBlob = new Blob([buf]);
+      if (memBlob.size < MIN_RD5_BYTES) return null;
+      fileReaderSync.readAsArrayBuffer(memBlob.slice(0, 8));
+      return memBlob;
+    } catch {
+      return null;
+    }
+  }
+}
+
 /**
  * Opens a zero-copy disk-backed Blob reference to `/segments4/<segmentName>.rd5` in CacheStorage,
  * downloading and caching it first if not yet present.
  */
 async function openSegmentBlob(name: string, required: boolean): Promise<boolean> {
-  if (segmentBlobs.has(name)) {
-    return true;
+  const existing = segmentBlobs.get(name);
+  if (existing) {
+    try {
+      fileReaderSync.readAsArrayBuffer(existing.slice(0, 8));
+      return true;
+    } catch {
+      segmentBlobs.delete(name);
+    }
   }
   if (!required && failedSegments.has(name)) {
     return false;
@@ -74,8 +99,8 @@ async function openSegmentBlob(name: string, required: boolean): Promise<boolean
   const cache = await caches.open(SEGMENT_CACHE_NAME);
   const cached = await cache.match(key);
   if (cached && !isHtml(cached)) {
-    const blob = await cached.blob();
-    if (blob.size >= MIN_RD5_BYTES) {
+    const blob = await toReadableBlob(cached);
+    if (blob) {
       segmentBlobs.set(name, blob);
       failedSegments.delete(name);
       return true;
@@ -99,7 +124,9 @@ async function openSegmentBlob(name: string, required: boolean): Promise<boolean
       status(`Downloading ${name}.rd5 (${mb} / ${totMb} MB)...`);
     });
     const freshCached = await cache.match(key);
-    const blob = freshCached ? await freshCached.blob() : new Blob([bytes as BlobPart]);
+    const blob =
+      (freshCached ? await toReadableBlob(freshCached, bytes) : null) ??
+      new Blob([bytes as BlobPart]);
     segmentBlobs.set(name, blob);
     failedSegments.delete(name);
     return true;
@@ -129,8 +156,13 @@ async function ensureRouter(): Promise<WasmRouter> {
     (name: string, start: number, end: number): Uint8Array => {
       const blob = segmentBlobs.get(name);
       if (!blob) return new Uint8Array(0);
-      const buf = fileReaderSync.readAsArrayBuffer(blob.slice(start, end));
-      return new Uint8Array(buf);
+      try {
+        const buf = fileReaderSync.readAsArrayBuffer(blob.slice(start, end));
+        return new Uint8Array(buf);
+      } catch (err) {
+        segmentBlobs.delete(name);
+        throw err;
+      }
     },
   );
 
@@ -149,13 +181,13 @@ async function ensureRouter(): Promise<WasmRouter> {
 /**
  * Executes an operation on `WasmRouter` with lazy on-demand cell loading. If the search touches
  * a 5°×5° segment boundary whose Blob has not been opened yet, opens the missing segment Blob(s)
- * and re-runs the operation once.
+ * and re-runs the operation. Also self-heals on stale Blob handles or WASM traps.
  */
 async function runWithLazySegments<T>(
-  r: WasmRouter,
   initialPoints: LatLon[],
-  op: () => T,
+  op: (r: WasmRouter) => T,
 ): Promise<T> {
+  let r = await ensureRouter();
   if (r.loaded_cell_count() > MAX_CACHED_CELLS) {
     r.clear_graph();
   }
@@ -181,17 +213,29 @@ async function runWithLazySegments<T>(
   }
 
   r.take_missing_segments();
+  let retriedCleanGraph = r.loaded_cell_count() === 0;
+  let retriedFreshRouter = false;
 
   while (true) {
     let result: T | undefined;
     let opErr: unknown = null;
     try {
-      result = op();
+      result = op(r);
     } catch (err) {
       opErr = err;
       const msg = String(err);
-      if (msg.includes('unreachable') || msg.includes('recursive use of an object')) {
+      if (
+        msg.includes('unreachable') ||
+        msg.includes('out of bounds') ||
+        msg.includes('recursive use of an object')
+      ) {
         router = null;
+        if (!retriedFreshRouter) {
+          retriedFreshRouter = true;
+          retriedCleanGraph = true;
+          r = await ensureRouter();
+          continue;
+        }
         throw err;
       }
     }
@@ -206,9 +250,15 @@ async function runWithLazySegments<T>(
 
     if (openedAny) {
       r.clear_graph();
+      retriedCleanGraph = true;
       continue;
     }
     if (opErr !== null) {
+      if (!retriedCleanGraph) {
+        retriedCleanGraph = true;
+        r.clear_graph();
+        continue;
+      }
       throw opErr;
     }
     return result as T;
@@ -253,7 +303,7 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
       const slotIdx = msg.slotIdx ?? 0;
       if (latestSlotRouteIds.get(slotIdx) !== msg.id) return;
       try {
-        const r = await ensureRouter();
+        await ensureRouter();
         if (latestSlotRouteIds.get(slotIdx) !== msg.id) return;
         const { waypoints, profile, alternativeIdx, nogos } = msg.payload;
         const waypointsStr = waypoints.map((w) => `${w.lon},${w.lat}`).join('|');
@@ -268,7 +318,7 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
             : undefined;
 
         status(`Calculating route (${waypoints.length} points, ${profile})...`);
-        const geojsonStr = await runWithLazySegments(r, waypoints, () =>
+        const geojsonStr = await runWithLazySegments(waypoints, (r) =>
           r.find_route(waypointsStr, profile, alternativeIdx ?? 0, nogosStr),
         );
         if (latestSlotRouteIds.get(slotIdx) !== msg.id) return;
@@ -294,7 +344,7 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
     case 'IMPORT_GPX_REQUEST': {
       if (msg.id !== latestImportId) return;
       try {
-        const r = await ensureRouter();
+        await ensureRouter();
         if (msg.id !== latestImportId) return;
         const { gpxXml, profile, toleranceM } = msg.payload;
         const trackPoints = extractGpxTrackPoints(gpxXml);
@@ -303,7 +353,7 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
         }
 
         status(`Matching GPX track (${trackPoints.length} points, ${profile})...`);
-        const rawJson = await runWithLazySegments(r, trackPoints, () =>
+        const rawJson = await runWithLazySegments(trackPoints, (r) =>
           r.match_gpx_waypoints(gpxXml, profile, toleranceM ?? 20.0),
         );
         if (msg.id !== latestImportId) return;
@@ -350,6 +400,10 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
     latestImportId = msg.id;
     latestSlotRouteIds.clear();
   }
-  queue = queue.then(() => handleMessage(msg));
+  queue = queue
+    .then(() => handleMessage(msg))
+    .catch((err) => {
+      console.error('Worker queue error:', err);
+    });
 };
 

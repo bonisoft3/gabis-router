@@ -7,3 +7,7 @@ tools/pmtiles
 *.pmtiles
 web/map-tiles/
 web/.cert/
+
+web/.env.local
+web/.env.*.local
+web/mcp-screenshot.png

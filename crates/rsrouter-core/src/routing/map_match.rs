@@ -271,6 +271,7 @@ fn snap_track_point_to_road(
                 (max_cx + 1) * grid_cell_size,
                 (max_cy + 1) * grid_cell_size,
             );
+            g_mut.ensure_external_link_cells_for_grid(min_cx, max_cx, min_cy, max_cy);
         }
     }
 
@@ -1029,8 +1030,7 @@ impl AStarRouter {
                     if let Some(mid_k) = ((start_idx + 1)..end_idx).min_by(|&a, &b| {
                         (cum_dist[a] - target_d)
                             .abs()
-                            .partial_cmp(&(cum_dist[b] - target_d).abs())
-                            .unwrap()
+                            .total_cmp(&(cum_dist[b] - target_d).abs())
                     }) {
                         if cum_dist[mid_k] - cum_dist[start_idx] >= tol_m
                             && cum_dist[end_idx] - cum_dist[mid_k] >= tol_m
@@ -1186,8 +1186,7 @@ fn find_worst_deviation_index(
                 .min_by(|&a, &b| {
                     (cum_dist[a] - target_anchor_d)
                         .abs()
-                        .partial_cmp(&(cum_dist[b] - target_anchor_d).abs())
-                        .unwrap()
+                        .total_cmp(&(cum_dist[b] - target_anchor_d).abs())
                 })
             {
                 return Some(anchor_k);
@@ -1196,7 +1195,7 @@ fn find_worst_deviation_index(
 
         let worst_exc = excursions
             .iter()
-            .max_by(|a, b| a.peak_dev.partial_cmp(&b.peak_dev).unwrap())
+            .max_by(|a, b| a.peak_dev.total_cmp(&b.peak_dev))
             .unwrap();
         let exc_len = cum_dist[worst_exc.end_k] - cum_dist[worst_exc.start_k];
         if exc_len > 400.0 && worst_exc.end_k > worst_exc.start_k + 2 {
@@ -1210,8 +1209,7 @@ fn find_worst_deviation_index(
                 .min_by(|&a, &b| {
                     (cum_dist[a] - d_mid)
                         .abs()
-                        .partial_cmp(&(cum_dist[b] - d_mid).abs())
-                        .unwrap()
+                        .total_cmp(&(cum_dist[b] - d_mid).abs())
                 })
             {
                 return Some(mid_k);

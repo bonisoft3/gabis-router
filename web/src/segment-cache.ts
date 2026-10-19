@@ -2,6 +2,8 @@
  * Centralized segment cache configuration, date extraction, and download logic.
  */
 
+import { getSegmentDownloadUrl } from './platform.ts';
+
 export const SEGMENT_CACHE_NAME = 'rsrouter-segments-v3';
 export const MAP_TILES_CACHE_NAME = 'rsrouter-map-tiles-v1';
 export const MIN_RD5_BYTES = 50000;
@@ -123,8 +125,9 @@ export async function fetchAndCacheSegment(
 ): Promise<Uint8Array> {
   const cache = await caches.open(SEGMENT_CACHE_NAME);
   const key = `/segments4/${segmentId}.rd5`;
+  const downloadUrl = getSegmentDownloadUrl(segmentId);
 
-  const res = await fetch(key, { cache: 'no-cache' });
+  const res = await fetch(downloadUrl, { cache: 'no-cache' });
   if (!res.ok || !res.body || isHtml(res)) {
     throw new Error(`Failed to fetch routing segment ${segmentId}: HTTP ${res.status}`);
   }

@@ -1003,7 +1003,7 @@ impl AStarRouter {
                                 } else {
                                     val_str.parse::<u32>().unwrap_or(0)
                                 }
-                            } else if m_val >= 900 {
+                            } else if m_val >= 1000 {
                                 ((m_val - 1000) / 100) as u32
                             } else {
                                 0
@@ -1603,18 +1603,27 @@ impl<'a> SearchPassState<'a> {
     #[inline(always)]
     fn is_edge_closed(&self, edge_idx: u32) -> bool {
         let idx = edge_idx as usize;
-        (self.closed_edges[idx >> 6] & (1u64 << (idx & 63))) != 0
+        let word = idx >> 6;
+        word < self.closed_edges.len() && (self.closed_edges[word] & (1u64 << (idx & 63))) != 0
     }
 
     #[inline(always)]
     fn mark_edge_closed(&mut self, edge_idx: u32) {
         let idx = edge_idx as usize;
-        self.closed_edges[idx >> 6] |= 1u64 << (idx & 63);
+        let word = idx >> 6;
+        if word >= self.closed_edges.len() {
+            self.closed_edges.resize(word + 1, 0u64);
+        }
+        self.closed_edges[word] |= 1u64 << (idx & 63);
     }
 
     #[inline(always)]
     fn get_edge_state(&self, edge_idx: u32) -> Option<&EdgeState> {
-        let entry_idx = self.edge_heads[edge_idx as usize];
+        let entry_idx = self
+            .edge_heads
+            .get(edge_idx as usize)
+            .copied()
+            .unwrap_or(u32::MAX);
         if entry_idx != u32::MAX {
             Some(&self.edge_states_pool[entry_idx as usize])
         } else {
@@ -1624,18 +1633,26 @@ impl<'a> SearchPassState<'a> {
 
     #[inline(always)]
     fn has_edge_state(&self, edge_idx: u32) -> bool {
-        self.edge_heads[edge_idx as usize] != u32::MAX
+        self.edge_heads
+            .get(edge_idx as usize)
+            .copied()
+            .unwrap_or(u32::MAX)
+            != u32::MAX
     }
 
     #[inline(always)]
     fn get_or_create_edge_state(&mut self, edge_idx: u32) -> &mut EdgeState {
-        let entry_idx = self.edge_heads[edge_idx as usize];
+        let idx = edge_idx as usize;
+        if idx >= self.edge_heads.len() {
+            self.edge_heads.resize(idx + 1, u32::MAX);
+        }
+        let entry_idx = self.edge_heads[idx];
         if entry_idx != u32::MAX {
             &mut self.edge_states_pool[entry_idx as usize]
         } else {
             let new_idx = self.edge_states_pool.len() as u32;
             self.edge_states_pool.push(EdgeState::default());
-            self.edge_heads[edge_idx as usize] = new_idx;
+            self.edge_heads[idx] = new_idx;
             &mut self.edge_states_pool[new_idx as usize]
         }
     }
@@ -2839,7 +2856,11 @@ impl<'a> SearchPassState<'a> {
             new_destination,
             can_leave,
         );
-        let entry_idx = self.edge_heads[edge.edge_idx as usize];
+        let entry_idx = self
+            .edge_heads
+            .get(edge.edge_idx as usize)
+            .copied()
+            .unwrap_or(u32::MAX);
         if entry_idx != u32::MAX {
             let edge_entry = &self.edge_states_pool[entry_idx as usize];
             let mut dominated = false;

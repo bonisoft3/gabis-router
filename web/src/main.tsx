@@ -31,11 +31,12 @@ if (rootElement) {
   );
 }
 
-// Service worker registration
-if ('serviceWorker' in navigator) {
+// Service worker registration (web PWA only; native Capacitor packages assets locally)
+if ('serviceWorker' in navigator && !window.Capacitor?.isNativePlatform?.()) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch((err) => {
       console.warn('Service worker registration failed:', err);
     });
   });
 }
+

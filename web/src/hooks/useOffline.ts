@@ -12,6 +12,7 @@ import {
   clearAllCachedSegments,
 } from '../segment-cache.ts';
 import { FONT_BASE_URL, FONT_NAMES, FONT_RANGES, ROUTING_FILES } from '../utils/map-styles.ts';
+import { getMapTileDownloadUrl } from '../platform.ts';
 import type { DownloadEvent, DownloadRequest } from '../download-worker.ts';
 
 const TILES_DONE_KEY = 'rsrouter_map_tiles_done';
@@ -272,7 +273,7 @@ export function useOffline(
         };
         dl.onerror = (e) => reject(new Error(e.message));
         dl.postMessage({
-          url: `/map-tiles/${segmentId}.pmtiles`,
+          url: getMapTileDownloadUrl(segmentId),
           fileName: pmtilesFileName(segmentId),
         } satisfies DownloadRequest);
       });

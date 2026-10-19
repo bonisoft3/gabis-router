@@ -808,5 +808,8 @@ if (import.meta.hot) {
 }
 
 export function useMcpBridge(ctx: McpBridgeContext) {
-  activeCtxRef.current = ctx;
+  if (import.meta.hot) {
+    activeCtxRef.current = ctx;
+  }
 }
+

@@ -9,6 +9,7 @@ import {
   type ProfileName,
 } from '../types.ts';
 import { routeToGpx, downloadGpxFile } from '../utils/gpx.ts';
+import { getShareableRouteUrl, isNativePlatform } from '../platform.ts';
 import { Header } from './Header.tsx';
 import { PlaceSearch } from './PlaceSearch.tsx';
 import { WaypointList } from './WaypointList.tsx';
@@ -84,9 +85,14 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
   };
 
   const handleShare = async () => {
-    const url = location.href;
+    const url = getShareableRouteUrl();
     try {
-      if (navigator.share && window.matchMedia('(pointer: coarse)').matches) {
+      if (typeof window !== 'undefined' && window.AndroidNative?.shareText) {
+        if (window.AndroidNative.shareText('GBRouter route', url)) {
+          return;
+        }
+      }
+      if (navigator.share && (isNativePlatform() || window.matchMedia('(pointer: coarse)').matches)) {
         await navigator.share({ title: 'GBRouter route', url });
       } else {
         await navigator.clipboard.writeText(url);
@@ -100,14 +106,14 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
     }
   };
 
-  const handleExportGpx = () => {
+  const handleExportGpx = async () => {
     if (!routing.currentRoute) return;
     const startName = routing.waypoints[0]?.name;
     const endName = routing.waypoints[routing.waypoints.length - 1]?.name;
     const trackName =
       startName && endName ? `${startName} to ${endName}` : `${routing.profile}_route`;
     const filename = `${trackName.replace(/[/\\?%*:|"<>]/g, '_')}.gpx`;
-    downloadGpxFile(routeToGpx(routing.currentRoute, trackName), filename);
+    await downloadGpxFile(routeToGpx(routing.currentRoute, trackName), filename);
     routing.setStatus(`Route exported as ${filename}`);
   };
 

@@ -92,7 +92,7 @@ impl TagValueCoder {
             }
         }
 
-        let len = ctx.close_and_get_encoded_length();
+        let len = ctx.close_and_get_encoded_length().min(buffer.len());
         let res = buffer[..len].to_vec();
 
         let access_type = match validator {
