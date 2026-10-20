@@ -1,6 +1,10 @@
 import type { RouteResponse, WorkerMessage, LatLon } from './types.ts';
 import init, { WasmRouter } from './pkg/rsrouter_wasm.js';
 import { SEGMENT_CACHE_NAME, MIN_RD5_BYTES, fetchAndCacheSegment, isHtml } from './segment-cache.ts';
+import {
+  getMechaBlobStorage,
+  reassembleDecomposedRd5,
+} from './pronto/decomposed-storage.ts';
 
 // Dedicated Web Worker running rsrouter WebAssembly off the main UI thread.
 // Uses BRouter-style lazy on-demand MicroCache cell loading via disk-backed Blob.slice + FileReaderSync.
@@ -107,6 +111,17 @@ async function openSegmentBlob(name: string, required: boolean): Promise<boolean
     }
     await cache.delete(key);
   }
+
+  try {
+    const reassembled = await reassembleDecomposedRd5(getMechaBlobStorage(), name);
+    if (reassembled && reassembled.byteLength >= MIN_RD5_BYTES) {
+      const blob = new Blob([reassembled as BlobPart]);
+      fileReaderSync.readAsArrayBuffer(blob.slice(0, 8));
+      segmentBlobs.set(name, blob);
+      failedSegments.delete(name);
+      return true;
+    }
+  } catch {}
 
   if (isOfflineMode) {
     failedSegments.add(name);

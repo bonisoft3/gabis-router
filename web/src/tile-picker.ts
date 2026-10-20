@@ -1,6 +1,64 @@
 // Map control button to switch basemap styles (Standard vector, CyclOSM, OpenCycleMap).
 
-import { getBasemap, onBasemapChange, setBasemap, type Basemap } from './basemap.ts';
+import { DEFAULT_THUNDERFOREST_KEY, type Basemap } from './types.ts';
+
+const BASEMAP_STORAGE_KEY = 'rsrouter_basemap';
+const API_KEY_STORAGE = 'rsrouter_thunderforest_key';
+const basemapListeners: Array<() => void> = [];
+
+let currentBasemap: Basemap = (() => {
+  const stored = localStorage.getItem(BASEMAP_STORAGE_KEY);
+  if (stored === 'standard' || stored === 'cyclosm' || stored === 'opencyclemap') return stored;
+  return 'opencyclemap';
+})();
+
+let currentThunderforestKey: string =
+  localStorage.getItem(API_KEY_STORAGE) || DEFAULT_THUNDERFOREST_KEY;
+
+export function getBasemap(): Basemap {
+  return currentBasemap;
+}
+
+export function setBasemap(next: Basemap) {
+  if (currentBasemap === next) return;
+  currentBasemap = next;
+  localStorage.setItem(BASEMAP_STORAGE_KEY, next);
+  basemapListeners.forEach((fn) => fn());
+}
+
+export function getThunderforestKey(): string {
+  return currentThunderforestKey;
+}
+
+export function getCustomThunderforestKey(): string {
+  return localStorage.getItem(API_KEY_STORAGE) || '';
+}
+
+export function setThunderforestKey(key: string) {
+  const trimmed = key.trim();
+  const nextKey = trimmed || DEFAULT_THUNDERFOREST_KEY;
+  if (currentThunderforestKey === nextKey) {
+    if (!trimmed) localStorage.removeItem(API_KEY_STORAGE);
+    return;
+  }
+  currentThunderforestKey = nextKey;
+  if (trimmed && trimmed !== DEFAULT_THUNDERFOREST_KEY) {
+    localStorage.setItem(API_KEY_STORAGE, trimmed);
+  } else {
+    localStorage.removeItem(API_KEY_STORAGE);
+  }
+  if (currentBasemap === 'opencyclemap') {
+    basemapListeners.forEach((fn) => fn());
+  }
+}
+
+export function onBasemapChange(fn: () => void): () => void {
+  basemapListeners.push(fn);
+  return () => {
+    const idx = basemapListeners.indexOf(fn);
+    if (idx !== -1) basemapListeners.splice(idx, 1);
+  };
+}
 
 export class TilePickerControl implements maplibregl.IControl {
   private container?: HTMLElement;

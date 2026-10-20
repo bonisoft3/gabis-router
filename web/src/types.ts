@@ -164,3 +164,79 @@ export function waypointLabel(i: number, n: number): string {
   return kind === 'start' ? 'A' : kind === 'end' ? 'B' : String(i);
 }
 
+export type Units = 'metric' | 'imperial';
+export type Theme = 'auto' | 'light' | 'dark';
+export type Basemap = 'standard' | 'cyclosm' | 'opencyclemap';
+export const DEFAULT_THUNDERFOREST_KEY: string =
+  String((import.meta as any).env?.VITE_THUNDERFOREST_KEY || '').trim();
+
+export interface SegmentHighlight {
+  coordinates: number[][][];
+  color: string;
+}
+
+export interface SegmentData {
+  from: number;
+  to: number;
+  surface: string;
+  highway: string;
+  noise?: number;
+  traffic?: number;
+  maxspeed?: number;
+}
+
+export type SurfaceCategory = 'paved' | 'unpaved' | 'gravel' | 'trail' | 'cobblestone' | 'unknown';
+export type RoadCategory =
+  | 'cycleway'
+  | 'residential'
+  | 'tertiary'
+  | 'secondary'
+  | 'primary'
+  | 'path'
+  | 'unknown';
+export type TrafficCategory = 'traffic_free' | 'low' | 'acceptable' | 'heavy';
+export type NoiseCategory = 'very_quiet' | 'moderate' | 'loud';
+export type SpeedLimitCategory =
+  | 'car_free'
+  | '20mph'
+  | '30mph'
+  | '40mph'
+  | '50mph'
+  | '60mph'
+  | '70mph'
+  | 'untagged';
+
+export interface ComputedElevationModel {
+  specJson: string;
+  profile: { dist: number[]; ele: number[]; coords: number[][] };
+  segments: SegmentData[];
+  totalDist: number;
+  W: number;
+  H: number;
+  padL: number;
+  padR: number;
+  padT: number;
+  padB: number;
+  plotW: number;
+  plotH: number;
+  yMin: number;
+  yRange: number;
+  xOf: (d: number) => number;
+  yOf: (e: number) => number;
+}
+
+export interface BreakdownSegment {
+  label: string;
+  color: string;
+  dist: number;
+  coords: number[][];
+}
+
+export interface BreakdownRowModel {
+  title: string;
+  items: [string, { color: string; dist: number }][];
+  segments: BreakdownSegment[];
+  totalBarDist: number;
+}
+
+

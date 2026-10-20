@@ -1,8 +1,4 @@
-import type React from 'react';
 import type maplibregl from 'maplibre-gl';
-import type { useRouting } from './hooks/useRouting.ts';
-import type { useOffline } from './hooks/useOffline.ts';
-import type { useSettings } from './hooks/useSettings.ts';
 import {
   classifyNoise,
   classifyRoad,
@@ -11,39 +7,98 @@ import {
   classifyTraffic,
   ROAD_META,
   SURFACE_META,
-  type RoadCategory,
-  type SegmentData,
-  type SegmentHighlight,
-  type SurfaceCategory,
-} from './utils/classification.ts';
+} from './pronto/route-domain.js';
 import { buildProfile, nearestIndex } from './utils/geo.ts';
 import { searchPlaces } from './geocoding.ts';
-import type { AvoidArea, LatLon, ProfileName } from './types.ts';
-import type { Basemap } from './basemap.ts';
-import type { Theme } from './theme.ts';
-import type { Units } from './format.ts';
+import type {
+  AvoidArea,
+  Basemap,
+  LatLon,
+  ProfileName,
+  RoadCategory,
+  RouteSlotState,
+  SegmentData,
+  SegmentHighlight,
+  SurfaceCategory,
+  Theme,
+  Units,
+} from './types.ts';
 import { getOfflineStyle, getOnlineStyle } from './utils/map-styles.ts';
+
+export type StateSetter<T> = (next: T | ((prev: T) => T)) => void;
 
 export interface McpUiControls {
   isControlsCollapsed: boolean;
-  setIsControlsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsControlsCollapsed: StateSetter<boolean>;
   isRouteInfoCollapsed: boolean;
-  setIsRouteInfoCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsRouteInfoCollapsed: StateSetter<boolean>;
   isSettingsOpen: boolean;
-  setIsSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsSettingsOpen: StateSetter<boolean>;
   isAboutOpen: boolean;
-  setIsAboutOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsAboutOpen: StateSetter<boolean>;
   hoverPosition: { lat: number; lon: number } | null;
-  setHoverPosition: React.Dispatch<React.SetStateAction<{ lat: number; lon: number } | null>>;
+  setHoverPosition: StateSetter<{ lat: number; lon: number } | null>;
   segmentHighlight: SegmentHighlight | null;
-  setSegmentHighlight: React.Dispatch<React.SetStateAction<SegmentHighlight | null>>;
+  setSegmentHighlight: StateSetter<SegmentHighlight | null>;
+}
+
+export interface McpRoutingController {
+  slots: RouteSlotState[];
+  addProfileSlot: (profile?: ProfileName) => void;
+  removeProfileSlot: (slotIdx: number) => void;
+  setSlotProfile: (slotIdx: number, profile: ProfileName) => void;
+  selectSlotAlternative: (slotIdx: number, altIdx: number) => void;
+  profile: ProfileName;
+  setProfile: (profile: ProfileName) => void;
+  waypoints: LatLon[];
+  setWaypoints: (waypoints: LatLon[], recordHistory?: boolean, fitBounds?: boolean) => void;
+  avoidAreas: AvoidArea[];
+  setAvoidAreas: (avoidAreas: AvoidArea[], recordHistory?: boolean) => void;
+  currentRoute: GeoJSON.FeatureCollection | null;
+  alternativeIdx: number;
+  selectAlternative: (altIdx: number) => void;
+  status: string;
+  isError: boolean;
+  setStatus: (msg: string, isError?: boolean) => void;
+  isRouting: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  triggerFitBounds: () => void;
+  importGpxContent: (gpxXml: string, toleranceM?: number) => void;
+  addWaypoint: (point: LatLon, mode?: 'start' | 'end' | 'via' | 'append') => void;
+  moveWaypoint: (index: number, point: LatLon) => void;
+  removeWaypoint: (index: number) => void;
+  renameWaypoint: (index: number, name: string) => void;
+  reverseRoute: () => void;
+  addAvoidArea: (point: LatLon, radius?: number) => void;
+  removeAvoidArea: (index: number) => void;
+  clearAvoidAreas: () => void;
+  clearRoute: () => void;
+  undo: () => void;
+  redo: () => void;
+}
+
+export interface McpOfflineController {
+  isOfflineMode: boolean;
+  setOfflineMode: (enabled: boolean) => void;
+}
+
+export interface McpSettingsController {
+  units: Units;
+  theme: Theme;
+  basemap: Basemap;
+  thunderforestKey: string;
+  changeUnits: (next: Units) => void;
+  changeTheme: (next: Theme) => void;
+  changeBasemap: (next: Basemap) => void;
+  changeThunderforestKey: (next: string) => void;
 }
 
 export interface McpBridgeContext {
-  mapRef: React.MutableRefObject<maplibregl.Map | null>;
-  routing: ReturnType<typeof useRouting>;
-  offline: ReturnType<typeof useOffline>;
-  settings: ReturnType<typeof useSettings>;
+  mapRef: { current: maplibregl.Map | null };
+  routing: McpRoutingController;
+  offline: McpOfflineController;
+  settings: McpSettingsController;
   ui: McpUiControls;
 }
 
@@ -58,7 +113,22 @@ interface JourneyEntry {
 
 const journeyLog: JourneyEntry[] = [];
 
-function sleep(ms: number): Promise<void> {
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => resolve();
+    ch.port2.postMessage(null);
+  });
+}
+
+async function sleep(ms: number): Promise<void> {
+  if (document.hidden) {
+    const turns = Math.max(1, Math.min(20, Math.ceil(ms / 15)));
+    for (let i = 0; i < turns; i++) {
+      await nextTurn();
+    }
+    return;
+  }
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -189,7 +259,7 @@ function buildStateSnapshot(ctx: McpBridgeContext) {
   };
 }
 
-function pumpMapFrames(map: maplibregl.Map, durationMs = 400): Promise<void> {
+async function pumpMapFrames(map: maplibregl.Map, durationMs = 400): Promise<void> {
   if ((map as any).style && !(map as any).style._loaded && activeCtxRef.current) {
     const cur = activeCtxRef.current;
     const style = cur.offline.isOfflineMode
@@ -202,6 +272,19 @@ function pumpMapFrames(map: maplibregl.Map, durationMs = 400): Promise<void> {
     } catch {
       // ignore
     }
+  }
+  if (document.hidden) {
+    for (let i = 0; i < 12; i++) {
+      try {
+        map.triggerRepaint();
+        (map as any)._renderTaskQueue?.run?.();
+        (map as any)._render?.(performance.now());
+      } catch {
+        // ignore
+      }
+      await nextTurn();
+    }
+    return;
   }
   return new Promise<void>((resolve) => {
     const start = Date.now();
@@ -239,7 +322,7 @@ function pumpMapFrames(map: maplibregl.Map, durationMs = 400): Promise<void> {
 }
 
 async function waitForRoutingIdle(
-  ctxRef: React.MutableRefObject<McpBridgeContext>,
+  ctxRef: { current: McpBridgeContext },
   timeoutMs = 15000,
 ): Promise<void> {
   // Let React state updates and worker postMessage flush first
@@ -437,14 +520,25 @@ async function captureCompositeScreenshot(ctx: McpBridgeContext): Promise<{
   // 1. Draw MapLibre WebGL canvas
   const map = ctx.mapRef.current;
   if (map) {
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, 300);
-      map.once('render', () => {
-        clearTimeout(timer);
-        resolve();
+    if (document.hidden) {
+      try {
+        map.triggerRepaint();
+        (map as any)._renderTaskQueue?.run?.();
+        (map as any)._render?.(performance.now());
+      } catch {
+        // ignore
+      }
+      await nextTurn();
+    } else {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 300);
+        map.once('render', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        map.triggerRepaint();
       });
-      map.triggerRepaint();
-    });
+    }
     const mapCanvas = map.getCanvas();
     outCtx.drawImage(mapCanvas, 0, 0, width, height);
   }
@@ -519,9 +613,10 @@ async function handleMcpCommand(payload: {
 
   try {
     if (!activeCtxRef.current) {
-      throw new Error('App context not mounted yet');
+      const rootText = document.getElementById('root')?.innerText?.slice(0, 600) || '';
+      throw new Error(`App context not mounted yet${rootText ? `: ${rootText}` : ''}`);
     }
-    const ctxRef = activeCtxRef as React.MutableRefObject<McpBridgeContext>;
+    const ctxRef = activeCtxRef as { current: McpBridgeContext };
     let result: any;
 
     if (command === 'get_state') {

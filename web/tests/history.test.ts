@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HistoryStack } from '../src/history.ts';
+import { HistoryStack } from '../src/pronto/route-domain.js';
 
 test('HistoryStack initial state', () => {
   const stack = new HistoryStack<string>(5);

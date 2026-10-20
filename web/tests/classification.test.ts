@@ -5,9 +5,8 @@ import {
   classifySpeedLimit,
   ROAD_META,
   SPEED_LIMIT_META,
-  type RoadCategory,
-  type SpeedLimitCategory,
-} from '../src/utils/classification.ts';
+} from '../src/pronto/route-domain.js';
+import type { RoadCategory, SpeedLimitCategory } from '../src/types.ts';
 
 test('classifyRoad: maps OSM highway tags to road categories', () => {
   assert.equal(classifyRoad('cycleway'), 'cycleway');

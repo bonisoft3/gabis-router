@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeFilteredElevation, routeToGpx } from '../src/utils/gpx.ts';
+import { computeFilteredElevation, routeToGpx } from '../src/pronto/route-domain.js';
 
 describe('computeFilteredElevation', () => {
   it('accumulates gentle climbs with < 0.5 m steps without dropping them', () => {

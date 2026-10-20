@@ -1,5 +1,4 @@
 import { defineConfig, type Connect } from 'vite';
-import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
@@ -103,9 +102,18 @@ const serveMapTiles: Connect.NextHandleFunction = async (req, res, next) => {
 };
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@omnishell': path.resolve(__dirname, '../subrepos/omnishell/interpreter'),
+      '@mecha/rclone-js': path.resolve(__dirname, '../subrepos/mecha/packages/rclone-js/src/index.ts'),
+    },
+  },
   server: {
     host: '0.0.0.0',
     port: 3000,
+    fs: {
+      allow: [path.resolve(__dirname, '..')],
+    },
     https: hasHttpsCerts
       ? {
           key: fs.readFileSync(keyPath),
@@ -138,7 +146,6 @@ export default defineConfig({
     },
   },
   plugins: [
-    react(),
     {
       // Fill the service worker precache list with the built files so the app opens offline.
       name: 'sw-precache',
@@ -153,6 +160,13 @@ export default defineConfig({
           '/icon-192.png',
           '/icon-512.png',
           '/apple-touch-icon.png',
+          '/shell/shell.json',
+          '/shell/screens/router.html',
+          '/shell/screens/router.css',
+          '/shell/handlers/ui-action.js',
+          '/shell/renderers/elevation-chart.js',
+          '/shell/renderers/surface-breakdown.js',
+          '/shell/hatches/router-host.js',
         ];
         const version = createHash('sha256').update(files.sort().join('\n')).digest('hex').slice(0, 12);
         const src = fs.readFileSync(swPath, 'utf8');

@@ -5,8 +5,8 @@ import {
   type AvoidArea,
   type LatLon,
   type RouteSlotState,
+  type SegmentHighlight,
 } from '../types.ts';
-import type { SegmentHighlight } from './classification.ts';
 import { createCirclePolygon } from './geo.ts';
 
 const ROUTE_HIT_PX = 8;

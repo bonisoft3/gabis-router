@@ -3,6 +3,12 @@
  */
 
 import { getSegmentDownloadUrl } from './platform.ts';
+import {
+  deleteDecomposedRd5,
+  getDecomposedRd5Meta,
+  getMechaBlobStorage,
+  writeDecomposedRd5,
+} from './pronto/decomposed-storage.ts';
 
 export const SEGMENT_CACHE_NAME = 'rsrouter-segments-v3';
 export const MAP_TILES_CACHE_NAME = 'rsrouter-map-tiles-v1';
@@ -57,6 +63,17 @@ export function notifyCacheUpdated(): void {
  * Reads the creation date of a cached segment without loading full data if headers exist.
  */
 export async function getCachedSegmentDate(cache: Cache, segmentId: string): Promise<Date | null> {
+  try {
+    const meta = await getDecomposedRd5Meta(getMechaBlobStorage(), segmentId);
+    if (meta?.creationDate) {
+      const d = new Date(meta.creationDate);
+      if (!isNaN(d.getTime())) {
+        segmentDateMemo.set(segmentId, d);
+        return d;
+      }
+    }
+  } catch {}
+
   const match = await cache.match(`/segments4/${segmentId}.rd5`);
   if (!match) {
     segmentDateMemo.delete(segmentId);
@@ -96,9 +113,13 @@ export async function getCachedSegmentDate(cache: Cache, segmentId: string): Pro
 }
 
 /**
- * Size of a cached routing segment from response headers.
+ * Size of a cached routing segment from response headers or decomposed metadata.
  */
 export async function getCachedSegmentSize(cache: Cache, segmentId: string): Promise<number> {
+  try {
+    const meta = await getDecomposedRd5Meta(getMechaBlobStorage(), segmentId);
+    if (meta && meta.size > 0) return meta.size;
+  } catch {}
   const match = await cache.match(`/segments4/${segmentId}.rd5`);
   return Number(match?.headers.get('content-length')) || 0;
 }
@@ -185,6 +206,9 @@ export async function fetchAndCacheSegment(
   };
 
   await cache.put(key, new Response(bytes, { headers }));
+  try {
+    await writeDecomposedRd5(getMechaBlobStorage(), segmentId, bytes, creationDate.toISOString());
+  } catch {}
   notifyCacheUpdated();
   return bytes;
 }
@@ -247,6 +271,9 @@ export async function clearAllCachedSegments(): Promise<void> {
   }
   for (const segId of UK_SEGMENTS) {
     await cache.delete(`/segments4/${segId}.rd5`);
+    try {
+      await deleteDecomposedRd5(getMechaBlobStorage(), segId);
+    } catch {}
   }
   try {
     await caches.delete('rsrouter-segments-v2');

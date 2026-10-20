@@ -10,7 +10,7 @@ Bicycle route planner and offline-capable web application powered by [`brouter-r
 | `route-tools` | `crates/route-tools/` | Product routing utilities: GPX / GPS track map-matching, minimal waypoint extraction, and surface/road segment breakdowns |
 | `rsrouter-wasm` | `crates/rsrouter-wasm/` | WebAssembly bindings for browser routing and GPX waypoint extraction |
 | `profiles` | `profiles/` | Custom product `.brf` profiles (`gabis-*`) and standard BRouter profiles |
-| `web` | `web/` | Argon + MapLibre PWA frontend. See [web/README.md](web/README.md) |
+| `web` | `web/` | Omnishell + MapLibre PWA frontend. See [web/README.md](web/README.md) |
 | `tools` | `tools/` | Data updater, PMTiles extractor, and Frontend MCP server (`mcp-frontend.mjs`). See [tools/README.md](tools/README.md) |
 
 ## Quick Start
@@ -63,7 +63,7 @@ Items to revisit before public release or commercial deployment:
 
 | Area | Current State | Production Requirement |
 | :--- | :--- | :--- |
-| Basemap API Keys | Thunderforest key hardcoded in client bundle | Use a backend tile proxy or require user-supplied keys to avoid quota depletion |
+| Basemap API Keys | Thunderforest key read from `VITE_THUNDERFOREST_KEY` at build time | Restrict allowed HTTP Referer in Thunderforest dashboard or supply user key |
 | Tile Usage Limits | Free tier on Thunderforest: 150,000 tiles per month, public CyclOSM | Verify commercial license and tile caching compliance under production traffic |
 | Tile and Routing Data CDN | Local files and test mirrors | Set up a production CDN with cache-control headers for `.rd5` and `.pmtiles` archives |
 | Error and Usage Telemetry | Local console error filtering only | Establish privacy-respecting error tracking with user opt-in |

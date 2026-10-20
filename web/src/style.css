@@ -61,6 +61,10 @@ body,
   position: relative;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 /* Controls Panel */
 #controls {
   position: absolute;
@@ -1958,12 +1962,11 @@ body,
 }
 
 .ec-area {
-  fill: rgba(37, 99, 235, 0.12);
+  fill: var(--slot-fill, rgba(37, 99, 235, 0.12));
 }
 
 .ec-line {
   fill: none;
-  stroke: #2563eb;
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;

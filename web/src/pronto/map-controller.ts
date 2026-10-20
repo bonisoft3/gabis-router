@@ -1,22 +1,20 @@
-import React, { useEffect, useRef, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as pmtiles from 'pmtiles';
-import { DEFAULT_AVOID_RADIUS_M } from '../hooks/useRouting.ts';
 import {
   AVOID_RADIUS_PRESETS,
   waypointKind,
   waypointLabel,
   type AvoidArea,
+  type Basemap,
   type LatLon,
   type RouteSlotState,
+  type SegmentHighlight,
 } from '../types.ts';
-import type { Basemap } from '../basemap.ts';
-import type { SegmentHighlight } from '../utils/classification.ts';
 import { getOfflineStyle, getOnlineStyle, UK_CENTER, UK_BOUNDS } from '../utils/map-styles.ts';
 import { tilePickerControl } from '../tile-picker.ts';
 import { centerRouteControl } from '../center-control.ts';
-import { loadedPMTiles, archivesReady } from '../hooks/useOffline.ts';
+import { loadedPMTiles, archivesReady } from './offline-controller.ts';
 import { MAP_TILES_CACHE_NAME } from '../segment-cache.ts';
 import { showMenu, hideMenu, menuClosedWithin, type MenuItem } from '../menu.ts';
 import { distanceMeters, legIndexAt, nearestVertex } from '../utils/geo.ts';
@@ -27,7 +25,10 @@ import {
   fitRouteBounds,
 } from '../utils/map-layers.ts';
 
-// Register PMTiles protocols once globally
+export const DEFAULT_AVOID_RADIUS_M = 50;
+const LONG_PRESS_MS = 550;
+const DRAG_THRESHOLD_PX = 8;
+
 function registerProtocols() {
   if ((window as any).__rsrouterProtocolsRegistered) return;
   (window as any).__rsrouterProtocolsRegistered = true;
@@ -73,19 +74,7 @@ function registerProtocols() {
   });
 }
 
-const LONG_PRESS_MS = 550;
-const DRAG_THRESHOLD_PX = 8;
-
-interface MapViewProps {
-  waypoints: LatLon[];
-  avoidAreas: AvoidArea[];
-  slots: RouteSlotState[];
-  segmentHighlight: SegmentHighlight | null;
-  hoverPosition: { lat: number; lon: number } | null;
-  isOfflineMode: boolean;
-  basemap: Basemap;
-  thunderforestKey: string;
-  fitBoundsSeq: number;
+export interface MapControllerCallbacks {
   onAddWaypoint: (point: LatLon, action?: 'start' | 'end' | 'via' | 'append') => void;
   onInsertWaypointAtLeg: (point: LatLon, index: number) => void;
   onMoveWaypoint: (index: number, point: LatLon) => void;
@@ -97,139 +86,99 @@ interface MapViewProps {
   onRemoveAvoidArea: (index: number) => void;
   onHoverPosition?: (pos: { lat: number; lon: number } | null) => void;
   onStatusChange: (status: string) => void;
-  onMapInstance?: (map: maplibregl.Map) => void;
 }
 
-export const MapView: React.FC<MapViewProps> = ({
-  waypoints,
-  avoidAreas,
-  slots,
-  segmentHighlight,
-  hoverPosition,
-  isOfflineMode,
-  basemap,
-  thunderforestKey,
-  fitBoundsSeq,
-  onAddWaypoint,
-  onInsertWaypointAtLeg,
-  onMoveWaypoint,
-  onRemoveWaypoint,
-  onRenameWaypoint,
-  onRequestInlineRename,
-  onAddAvoidArea,
-  onUpdateAvoidAreaRadius,
-  onRemoveAvoidArea,
-  onHoverPosition,
-  onStatusChange,
-  onMapInstance,
-}) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const styleReadyRef = useRef<boolean>(false);
-  const markersRef = useRef<maplibregl.Marker[]>([]);
-  const hoverMarkerRef = useRef<maplibregl.Marker | null>(null);
-  const draggingMarkerIndexRef = useRef<number | null>(null);
-  const lastOpenedMarkerIndexRef = useRef<number | null>(null);
-
-  const waypointsRef = useRef(waypoints);
-  waypointsRef.current = waypoints;
-  const avoidAreasRef = useRef(avoidAreas);
-  avoidAreasRef.current = avoidAreas;
-  const slotsRef = useRef(slots);
-  slotsRef.current = slots;
-
-  const onAddWaypointRef = useRef(onAddWaypoint);
-  onAddWaypointRef.current = onAddWaypoint;
-  const onInsertWaypointAtLegRef = useRef(onInsertWaypointAtLeg);
-  onInsertWaypointAtLegRef.current = onInsertWaypointAtLeg;
-  const onMoveWaypointRef = useRef(onMoveWaypoint);
-  onMoveWaypointRef.current = onMoveWaypoint;
-  const onRemoveWaypointRef = useRef(onRemoveWaypoint);
-  onRemoveWaypointRef.current = onRemoveWaypoint;
-  const onRenameWaypointRef = useRef(onRenameWaypoint);
-  onRenameWaypointRef.current = onRenameWaypoint;
-  const onRequestInlineRenameRef = useRef(onRequestInlineRename);
-  onRequestInlineRenameRef.current = onRequestInlineRename;
-  const onAddAvoidAreaRef = useRef(onAddAvoidArea);
-  onAddAvoidAreaRef.current = onAddAvoidArea;
-  const onUpdateAvoidAreaRadiusRef = useRef(onUpdateAvoidAreaRadius);
-  onUpdateAvoidAreaRadiusRef.current = onUpdateAvoidAreaRadius;
-  const onRemoveAvoidAreaRef = useRef(onRemoveAvoidArea);
-  onRemoveAvoidAreaRef.current = onRemoveAvoidArea;
-  const onHoverPositionRef = useRef(onHoverPosition);
-  onHoverPositionRef.current = onHoverPosition;
-  const onStatusChangeRef = useRef(onStatusChange);
-  onStatusChangeRef.current = onStatusChange;
-  const onMapInstanceRef = useRef(onMapInstance);
-  onMapInstanceRef.current = onMapInstance;
-
-  const pendingFitRouteRef = useRef<boolean>(false);
-
-  const insertDragRef = useRef<{
+export class MapController {
+  public map: maplibregl.Map;
+  private styleReady = false;
+  private pendingFitRoute = false;
+  private markers: maplibregl.Marker[] = [];
+  private hoverMarker: maplibregl.Marker | null = null;
+  private draggingMarkerIndex: number | null = null;
+  private lastOpenedMarkerIndex: number | null = null;
+  private suppressClickUntil = 0;
+  private insertDrag: {
     leg: number;
     startPoint: { x: number; y: number };
     ghost: maplibregl.Marker | null;
     hasDragged: boolean;
-  } | null>(null);
+  } | null = null;
 
-  const suppressClickUntilRef = useRef<number>(0);
+  private waypoints: LatLon[] = [];
+  private avoidAreas: AvoidArea[] = [];
+  private slots: RouteSlotState[] = [];
+  private segmentHighlight: SegmentHighlight | null = null;
+  private prevStyleProps: { isOfflineMode: boolean; basemap: Basemap; thunderforestKey: string };
+  private finishInsertBound: () => void;
 
-  const drawAllLayers = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || !styleReadyRef.current) return;
-    syncAvoidAreasLayer(map, avoidAreasRef.current);
-    syncRoutesLayers(map, slotsRef.current);
-    syncHighlightLayer(map, segmentHighlight);
-  }, [segmentHighlight]);
-
-  // Map initialization
-  useEffect(() => {
-    if (!containerRef.current) return;
+  constructor(
+    container: HTMLElement,
+    initialOfflineMode: boolean,
+    initialBasemap: Basemap,
+    initialThunderforestKey: string,
+    private callbacks: MapControllerCallbacks,
+  ) {
     registerProtocols();
+    this.prevStyleProps = {
+      isOfflineMode: initialOfflineMode,
+      basemap: initialBasemap,
+      thunderforestKey: initialThunderforestKey,
+    };
 
     const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: isOfflineMode ? getOfflineStyle() : getOnlineStyle(basemap, thunderforestKey),
+      container,
+      style: initialOfflineMode
+        ? getOfflineStyle()
+        : getOnlineStyle(initialBasemap, initialThunderforestKey),
       center: UK_CENTER,
       zoom: 6,
-      maxBounds: isOfflineMode ? UK_BOUNDS : undefined,
+      maxBounds: initialOfflineMode ? UK_BOUNDS : undefined,
       attributionControl: false,
       preserveDrawingBuffer: true,
     });
-    mapRef.current = map;
+    this.map = map;
     (window as any).map = map;
+    (window as any).__rsrouterMap = map;
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.addControl(
       new maplibregl.GeolocateControl({
-        positionOptions: { enableHighAccuracy: true },
+        positionOptions: { enableHighAccuracy: false, maximumAge: 60000 },
         trackUserLocation: true,
         showAccuracyCircle: true,
       }),
       'top-right',
     );
     map.addControl(tilePickerControl, 'top-right');
-    tilePickerControl.setOffline(isOfflineMode);
+    tilePickerControl.setOffline(initialOfflineMode);
     map.addControl(centerRouteControl, 'top-right');
     map.addControl(new maplibregl.AttributionControl({ compact: false }), 'bottom-right');
 
     centerRouteControl.setOnCenter(() => {
-      const currentMap = mapRef.current;
-      if (!currentMap) return;
-      fitRouteBounds(currentMap, slotsRef.current, waypointsRef.current, true);
+      fitRouteBounds(this.map, this.slots, this.waypoints, true);
     });
 
-    onMapInstanceRef.current?.(map);
-
     const onStyleLoad = () => {
-      styleReadyRef.current = true;
-      drawAllLayers();
-      if (pendingFitRouteRef.current) {
-        pendingFitRouteRef.current = false;
-        fitRouteBounds(map, slotsRef.current, waypointsRef.current, false);
+      this.styleReady = true;
+      this.drawAllLayers();
+      if (this.pendingFitRoute) {
+        this.pendingFitRoute = false;
+        fitRouteBounds(map, this.slots, this.waypoints, false);
       }
     };
     map.on('style.load', onStyleLoad);
+    if ((map as any).style && !(map as any).style._loaded && document.hidden) {
+      const style = initialOfflineMode
+        ? getOfflineStyle()
+        : getOnlineStyle(initialBasemap, initialThunderforestKey);
+      try {
+        (map as any).style._frameRequest?.abort?.();
+        (map as any).style._frameRequest = null;
+        (map as any).style._load?.(style, { validate: false });
+      } catch {
+        // ignore
+      }
+    }
     (map as any)._renderTaskQueue?.run?.();
     if (map.isStyleLoaded() || (map as any).style?._loaded) {
       onStyleLoad();
@@ -250,7 +199,6 @@ export const MapView: React.FC<MapViewProps> = ({
       }
     });
 
-    // Gesture & Click handling
     let singleClickTimer: ReturnType<typeof setTimeout> | undefined;
     let pressTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -269,7 +217,7 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const findAvoidAreaAt = (p: LatLon, screenPoint?: { x: number; y: number }): number => {
-      const currentAvoids = avoidAreasRef.current;
+      const currentAvoids = this.avoidAreas;
       if (screenPoint) {
         for (let i = currentAvoids.length - 1; i >= 0; i--) {
           const pt = map.project([currentAvoids[i].lon, currentAvoids[i].lat]);
@@ -286,9 +234,9 @@ export const MapView: React.FC<MapViewProps> = ({
       const text = `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`;
       try {
         await navigator.clipboard.writeText(text);
-        onStatusChangeRef.current(`Copied ${text}`);
+        this.callbacks.onStatusChange(`Copied ${text}`);
       } catch (err: any) {
-        onStatusChangeRef.current(`Could not copy: ${err?.message || String(err)}`);
+        this.callbacks.onStatusChange(`Could not copy: ${err?.message || String(err)}`);
       }
     };
 
@@ -301,28 +249,28 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const showMapContextMenu = (p: LatLon, x: number, y: number) => {
-      lastOpenedMarkerIndexRef.current = null;
-      const wps = waypointsRef.current;
+      this.lastOpenedMarkerIndex = null;
+      const wps = this.waypoints;
       const coordHeader = `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`;
       const items: MenuItem[] = [
         {
           label: 'Add point',
           hint: wps.length === 0 ? 'Start' : wps.length === 1 ? 'End' : 'Along route',
-          onSelect: () => onAddWaypointRef.current(p, wps.length >= 2 ? 'via' : 'append'),
+          onSelect: () => this.callbacks.onAddWaypoint(p, wps.length >= 2 ? 'via' : 'append'),
         },
         {
           label: 'Start here',
           hint: 'A',
-          onSelect: () => onAddWaypointRef.current(p, 'start'),
+          onSelect: () => this.callbacks.onAddWaypoint(p, 'start'),
         },
         {
           label: 'Via here',
-          onSelect: () => onAddWaypointRef.current(p, 'via'),
+          onSelect: () => this.callbacks.onAddWaypoint(p, 'via'),
         },
         {
           label: 'End here',
           hint: 'B',
-          onSelect: () => onAddWaypointRef.current(p, 'end'),
+          onSelect: () => this.callbacks.onAddWaypoint(p, 'end'),
         },
       ];
 
@@ -330,7 +278,7 @@ export const MapView: React.FC<MapViewProps> = ({
         items.push({
           label: 'Extend destination',
           hint: '+B',
-          onSelect: () => onAddWaypointRef.current(p, 'append'),
+          onSelect: () => this.callbacks.onAddWaypoint(p, 'append'),
         });
       }
 
@@ -339,7 +287,7 @@ export const MapView: React.FC<MapViewProps> = ({
           label: 'Avoid here',
           hint: `${DEFAULT_AVOID_RADIUS_M} m`,
           dividerBefore: true,
-          onSelect: () => onAddAvoidAreaRef.current(p, DEFAULT_AVOID_RADIUS_M),
+          onSelect: () => this.callbacks.onAddAvoidArea(p, DEFAULT_AVOID_RADIUS_M),
         },
         {
           label: 'See on Google Street View',
@@ -356,21 +304,21 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const showAvoidContextMenu = (index: number, x: number, y: number) => {
-      lastOpenedMarkerIndexRef.current = null;
-      const area = avoidAreasRef.current[index];
+      this.lastOpenedMarkerIndex = null;
+      const area = this.avoidAreas[index];
       if (!area) return;
       const items: MenuItem[] = [
         ...AVOID_RADIUS_PRESETS.map((r) => ({
           label: `Radius: ${r} m`,
           active: Math.round(area.radius) === r,
           hint: Math.round(area.radius) === r ? 'Active' : undefined,
-          onSelect: () => onUpdateAvoidAreaRadiusRef.current(index, r),
+          onSelect: () => this.callbacks.onUpdateAvoidAreaRadius(index, r),
         })),
         {
           label: 'Remove avoid area',
           danger: true,
           dividerBefore: true,
-          onSelect: () => onRemoveAvoidAreaRef.current(index),
+          onSelect: () => this.callbacks.onRemoveAvoidArea(index),
         },
         {
           label: 'See on Google Street View',
@@ -387,8 +335,8 @@ export const MapView: React.FC<MapViewProps> = ({
 
     map.on('click', (e) => {
       if (
-        draggingMarkerIndexRef.current !== null ||
-        performance.now() < suppressClickUntilRef.current ||
+        this.draggingMarkerIndex !== null ||
+        performance.now() < this.suppressClickUntil ||
         menuClosedWithin(300)
       ) {
         return;
@@ -401,8 +349,8 @@ export const MapView: React.FC<MapViewProps> = ({
       singleClickTimer = setTimeout(() => {
         singleClickTimer = undefined;
         if (
-          draggingMarkerIndexRef.current !== null ||
-          performance.now() < suppressClickUntilRef.current ||
+          this.draggingMarkerIndex !== null ||
+          performance.now() < this.suppressClickUntil ||
           menuClosedWithin(300)
         ) {
           return;
@@ -440,15 +388,14 @@ export const MapView: React.FC<MapViewProps> = ({
       hideMenu();
     });
 
-    // Touch long-press
     map.on('touchstart', (e) => {
       clearSingleClick();
       cancelPress();
       if (e.points.length > 1 || (e.originalEvent.touches && e.originalEvent.touches.length > 1)) {
-        suppressClickUntilRef.current = performance.now() + 600;
-        if (insertDragRef.current) {
-          insertDragRef.current.ghost?.remove();
-          insertDragRef.current = null;
+        this.suppressClickUntil = performance.now() + 600;
+        if (this.insertDrag) {
+          this.insertDrag.ghost?.remove();
+          this.insertDrag = null;
           map.getCanvas().style.cursor = '';
         }
         return;
@@ -456,10 +403,10 @@ export const MapView: React.FC<MapViewProps> = ({
       if ((e.originalEvent.target as HTMLElement)?.closest('.wp-marker')) return;
       const touch = e.originalEvent.touches[0];
       pressTimer = setTimeout(() => {
-        suppressClickUntilRef.current = performance.now() + 500;
-        if (insertDragRef.current) {
-          insertDragRef.current.ghost?.remove();
-          insertDragRef.current = null;
+        this.suppressClickUntil = performance.now() + 500;
+        if (this.insertDrag) {
+          this.insertDrag.ghost?.remove();
+          this.insertDrag = null;
         }
         const p = { lat: e.lngLat.lat, lon: e.lngLat.lng };
         const avoidIdx = findAvoidAreaAt(p, e.point);
@@ -476,16 +423,16 @@ export const MapView: React.FC<MapViewProps> = ({
     map.on('touchcancel', cancelPress);
 
     const cancelInsert = () => {
-      if (!insertDragRef.current) return;
-      insertDragRef.current.ghost?.remove();
-      insertDragRef.current = null;
+      if (!this.insertDrag) return;
+      this.insertDrag.ghost?.remove();
+      this.insertDrag = null;
       map.getCanvas().style.cursor = '';
     };
 
     const findClosestRouteCoords = (lng: number, lat: number): number[][] | undefined => {
       let bestCoords: number[][] | undefined;
       let bestDistSq = Infinity;
-      for (const slot of slotsRef.current) {
+      for (const slot of this.slots) {
         const coords = (
           slot.route?.features[0]?.geometry as GeoJSON.LineString | undefined
         )?.coordinates;
@@ -502,18 +449,17 @@ export const MapView: React.FC<MapViewProps> = ({
       return bestCoords;
     };
 
-    // Route dragging insert logic
     const beginInsert = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
-      if (draggingMarkerIndexRef.current !== null) return;
+      if (this.draggingMarkerIndex !== null) return;
       const orig = e.originalEvent;
       if ('touches' in orig && orig.touches.length > 1) return;
       if (orig instanceof MouseEvent && orig.button !== 0) return;
       if ((orig.target as HTMLElement)?.closest('.wp-marker')) return;
       const coords = findClosestRouteCoords(e.lngLat.lng, e.lngLat.lat);
-      const leg = legIndexAt(coords, waypointsRef.current, e.lngLat.lng, e.lngLat.lat);
+      const leg = legIndexAt(coords, this.waypoints, e.lngLat.lng, e.lngLat.lat);
       if (leg < 0) return;
       e.preventDefault();
-      insertDragRef.current = {
+      this.insertDrag = {
         leg,
         startPoint: { x: e.point.x, y: e.point.y },
         ghost: null,
@@ -522,8 +468,8 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const moveInsert = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
-      if (draggingMarkerIndexRef.current !== null) return;
-      const drag = insertDragRef.current;
+      if (this.draggingMarkerIndex !== null) return;
+      const drag = this.insertDrag;
       if (!drag) return;
       if ('touches' in e.originalEvent && e.originalEvent.touches.length > 1) {
         cancelInsert();
@@ -536,7 +482,7 @@ export const MapView: React.FC<MapViewProps> = ({
         drag.hasDragged = true;
         cancelPress();
         clearSingleClick();
-        onHoverPositionRef.current?.(null);
+        this.callbacks.onHoverPosition?.(null);
         map.getCanvas().style.cursor = 'grabbing';
         const el = document.createElement('div');
         el.className = 'wp-marker ghost';
@@ -548,16 +494,17 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const finishInsert = () => {
-      const drag = insertDragRef.current;
+      const drag = this.insertDrag;
       if (!drag) return;
       drag.ghost?.remove();
-      insertDragRef.current = null;
+      this.insertDrag = null;
       map.getCanvas().style.cursor = '';
       if (!drag.hasDragged || !drag.ghost) return;
-      suppressClickUntilRef.current = performance.now() + 400;
+      this.suppressClickUntil = performance.now() + 400;
       const { lat, lng } = drag.ghost.getLngLat();
-      onInsertWaypointAtLegRef.current({ lat, lon: lng }, drag.leg + 1);
+      this.callbacks.onInsertWaypointAtLeg({ lat, lon: lng }, drag.leg + 1);
     };
+    this.finishInsertBound = finishInsert;
 
     map.on('mousedown', 'route-hit', beginInsert);
     map.on('touchstart', 'route-hit', beginInsert);
@@ -566,93 +513,40 @@ export const MapView: React.FC<MapViewProps> = ({
     map.on('mouseup', finishInsert);
     map.on('touchend', finishInsert);
     map.on('touchcancel', cancelInsert);
-    window.addEventListener('mouseup', finishInsert);
+    window.addEventListener('mouseup', this.finishInsertBound);
 
     map.on('mouseenter', 'route-hit', () => {
-      if (draggingMarkerIndexRef.current === null) {
+      if (this.draggingMarkerIndex === null) {
         map.getCanvas().style.cursor = 'grab';
       }
     });
     map.on('mousemove', 'route-hit', (e) => {
-      if (insertDragRef.current?.hasDragged || draggingMarkerIndexRef.current !== null) return;
+      if (this.insertDrag?.hasDragged || this.draggingMarkerIndex !== null) return;
       const coords = findClosestRouteCoords(e.lngLat.lng, e.lngLat.lat);
       if (coords && coords.length > 0) {
         const idx = nearestVertex(coords, e.lngLat.lng, e.lngLat.lat);
-        onHoverPositionRef.current?.({ lon: coords[idx][0], lat: coords[idx][1] });
+        this.callbacks.onHoverPosition?.({ lon: coords[idx][0], lat: coords[idx][1] });
       }
     });
     map.on('mouseleave', 'route-hit', () => {
-      if (!insertDragRef.current?.hasDragged) map.getCanvas().style.cursor = '';
-      onHoverPositionRef.current?.(null);
+      if (!this.insertDrag?.hasDragged) map.getCanvas().style.cursor = '';
+      this.callbacks.onHoverPosition?.(null);
     });
     map.on('mouseenter', 'nogo-areas-fill', () => (map.getCanvas().style.cursor = 'pointer'));
     map.on('mouseleave', 'nogo-areas-fill', () => (map.getCanvas().style.cursor = ''));
     map.on('mouseenter', 'nogo-areas-center', () => (map.getCanvas().style.cursor = 'pointer'));
     map.on('mouseleave', 'nogo-areas-center', () => (map.getCanvas().style.cursor = ''));
+  }
 
-    return () => {
-      window.removeEventListener('mouseup', finishInsert);
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
-      hoverMarkerRef.current?.remove();
-      hoverMarkerRef.current = null;
-      map.remove();
-      mapRef.current = null;
-    };
-  }, []); // Run once on mount
+  private drawAllLayers() {
+    if (!this.styleReady) return;
+    syncAvoidAreasLayer(this.map, this.avoidAreas);
+    syncRoutesLayers(this.map, this.slots);
+    syncHighlightLayer(this.map, this.segmentHighlight);
+  }
 
-  // Sync layers when props change
-  useEffect(() => {
-    if (mapRef.current && styleReadyRef.current) {
-      syncAvoidAreasLayer(mapRef.current, avoidAreas);
-    }
-  }, [avoidAreas]);
-
-  useEffect(() => {
-    if (mapRef.current && styleReadyRef.current) {
-      syncRoutesLayers(mapRef.current, slots);
-      const anyRoute = slots.some((s) => Boolean(s.route?.features?.length));
-      if (anyRoute && pendingFitRouteRef.current) {
-        pendingFitRouteRef.current = false;
-        fitRouteBounds(mapRef.current, slots, waypointsRef.current, true);
-      }
-    }
-  }, [slots]);
-
-  // Fit bounds only when explicitly requested via fitBoundsSeq (initial load, import GPX, etc.)
-  useEffect(() => {
-    if (fitBoundsSeq === 0) return;
-    const map = mapRef.current;
-    const anyRoute = slotsRef.current.some((s) => Boolean(s.route?.features?.length));
-    if (anyRoute && map && styleReadyRef.current) {
-      pendingFitRouteRef.current = false;
-      fitRouteBounds(map, slotsRef.current, waypointsRef.current, true);
-    } else {
-      pendingFitRouteRef.current = true;
-      if (map && styleReadyRef.current) {
-        fitRouteBounds(map, [], waypointsRef.current, true);
-      }
-    }
-  }, [fitBoundsSeq]);
-
-  useEffect(() => {
-    const canCenter =
-      waypoints.length > 0 || slots.some((s) => Boolean(s.route?.features?.length));
-    centerRouteControl.setEnabled(canCenter);
-  }, [waypoints, slots]);
-
-  useEffect(() => {
-    if (mapRef.current && styleReadyRef.current) {
-      syncHighlightLayer(mapRef.current, segmentHighlight);
-    }
-  }, [segmentHighlight]);
-
-  // Update styles when basemap/offline mode changes
-  const prevStylePropsRef = useRef({ isOfflineMode, basemap, thunderforestKey });
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const prev = prevStylePropsRef.current;
+  updateStyleSettings(isOfflineMode: boolean, basemap: Basemap, thunderforestKey: string) {
+    const prev = this.prevStyleProps;
     if (
       prev.isOfflineMode === isOfflineMode &&
       prev.basemap === basemap &&
@@ -660,32 +554,102 @@ export const MapView: React.FC<MapViewProps> = ({
     ) {
       return;
     }
-    prevStylePropsRef.current = { isOfflineMode, basemap, thunderforestKey };
-
-    styleReadyRef.current = false;
-    map.setMaxBounds(isOfflineMode ? UK_BOUNDS : null);
+    this.prevStyleProps = { isOfflineMode, basemap, thunderforestKey };
+    this.styleReady = false;
+    this.map.setMaxBounds(isOfflineMode ? UK_BOUNDS : null);
     tilePickerControl.setOffline(isOfflineMode);
-    map.setStyle(
+    this.map.setStyle(
       isOfflineMode ? getOfflineStyle() : getOnlineStyle(basemap, thunderforestKey),
       { diff: false },
     );
-  }, [isOfflineMode, basemap, thunderforestKey]);
+  }
 
-  // Waypoint markers synchronization (reuses existing Marker instances so active drags are never interrupted)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+  updateSlots(slots: RouteSlotState[]) {
+    this.slots = slots;
+    const canCenter =
+      this.waypoints.length > 0 || slots.some((s) => Boolean(s.route?.features?.length));
+    centerRouteControl.setEnabled(canCenter);
 
-    const n = waypoints.length;
-    const currentMarkers = markersRef.current;
+    if (this.styleReady) {
+      syncRoutesLayers(this.map, slots);
+      const anyRoute = slots.some((s) => Boolean(s.route?.features?.length));
+      if (anyRoute && this.pendingFitRoute) {
+        this.pendingFitRoute = false;
+        fitRouteBounds(this.map, slots, this.waypoints, true);
+      }
+    }
+  }
 
-    // Remove excess markers from the end if waypoints were removed
+  updateWaypoints(waypoints: LatLon[]) {
+    this.waypoints = waypoints;
+    const canCenter =
+      waypoints.length > 0 || this.slots.some((s) => Boolean(s.route?.features?.length));
+    centerRouteControl.setEnabled(canCenter);
+    this.syncWaypointMarkers();
+  }
+
+  updateAvoidAreas(avoidAreas: AvoidArea[]) {
+    this.avoidAreas = avoidAreas;
+    if (this.styleReady) {
+      syncAvoidAreasLayer(this.map, avoidAreas);
+    }
+  }
+
+  updateSegmentHighlight(highlight: SegmentHighlight | null) {
+    this.segmentHighlight = highlight;
+    if (this.styleReady) {
+      syncHighlightLayer(this.map, highlight);
+    }
+  }
+
+  updateHoverPosition(hoverPosition: { lat: number; lon: number } | null) {
+    if (!hoverPosition) {
+      this.hoverMarker?.remove();
+      this.hoverMarker = null;
+      return;
+    }
+    if (!this.hoverMarker) {
+      const el = document.createElement('div');
+      el.className = 'hover-dot';
+      this.hoverMarker = new maplibregl.Marker({ element: el })
+        .setLngLat([hoverPosition.lon, hoverPosition.lat])
+        .addTo(this.map);
+    } else {
+      this.hoverMarker.setLngLat([hoverPosition.lon, hoverPosition.lat]);
+    }
+  }
+
+  triggerFitBounds() {
+    const anyRoute = this.slots.some((s) => Boolean(s.route?.features?.length));
+    if (anyRoute && this.styleReady) {
+      this.pendingFitRoute = false;
+      fitRouteBounds(this.map, this.slots, this.waypoints, true);
+    } else {
+      this.pendingFitRoute = true;
+      if (this.styleReady) {
+        fitRouteBounds(this.map, [], this.waypoints, true);
+      }
+    }
+  }
+
+  flyTo(lon: number, lat: number, zoom = 14) {
+    this.map.flyTo({
+      center: [lon, lat],
+      zoom,
+      duration: 600,
+    });
+  }
+
+  private syncWaypointMarkers() {
+    const n = this.waypoints.length;
+    const currentMarkers = this.markers;
+
     while (currentMarkers.length > n) {
       const removed = currentMarkers.pop();
       removed?.remove();
     }
 
-    waypoints.forEach((w, index) => {
+    this.waypoints.forEach((w, index) => {
       const label = waypointLabel(index, n);
       const kind = waypointKind(index, n);
       const titleText = w.name
@@ -699,7 +663,7 @@ export const MapView: React.FC<MapViewProps> = ({
         el.classList.add('maplibregl-marker', 'maplibregl-marker-anchor-center', 'wp-marker', kind);
         el.textContent = label;
         el.title = titleText;
-        if (draggingMarkerIndexRef.current !== index) {
+        if (this.draggingMarkerIndex !== index) {
           existing.setLngLat([w.lon, w.lat]);
         }
         return;
@@ -713,33 +677,35 @@ export const MapView: React.FC<MapViewProps> = ({
       let wasDragged = false;
       const marker = new maplibregl.Marker({ element: el, draggable: true, clickTolerance: 4 })
         .setLngLat([w.lon, w.lat])
-        .addTo(map);
+        .addTo(this.map);
 
       marker.on('dragstart', () => {
         wasDragged = true;
-        draggingMarkerIndexRef.current = index;
-        suppressClickUntilRef.current = performance.now() + 10000;
-        onHoverPositionRef.current?.(null);
+        this.draggingMarkerIndex = index;
+        this.suppressClickUntil = performance.now() + 10000;
+        this.callbacks.onHoverPosition?.(null);
         hideMenu();
       });
 
       marker.on('dragend', () => {
-        draggingMarkerIndexRef.current = null;
-        suppressClickUntilRef.current = performance.now() + 300;
+        this.draggingMarkerIndex = null;
+        this.suppressClickUntil = performance.now() + 300;
         const { lat, lng } = marker.getLngLat();
-        onMoveWaypointRef.current(index, { lat, lon: lng });
+        this.callbacks.onMoveWaypoint(index, { lat, lon: lng });
         setTimeout(() => {
           wasDragged = false;
         }, 150);
       });
 
       const showMarkerContextMenu = (e: MouseEvent) => {
-        const currentWp = waypointsRef.current[index];
+        const currentWp = this.waypoints[index];
         if (!currentWp) return;
-        const currentN = waypointsRef.current.length;
+        const currentN = this.waypoints.length;
         const currentLabel = waypointLabel(index, currentN);
-        const headerTitle = currentWp.name ? `${currentLabel} · ${currentWp.name}` : `Point ${currentLabel}`;
-        lastOpenedMarkerIndexRef.current = index;
+        const headerTitle = currentWp.name
+          ? `${currentLabel} · ${currentWp.name}`
+          : `Point ${currentLabel}`;
+        this.lastOpenedMarkerIndex = index;
         const rect = el.getBoundingClientRect();
         const x = e.clientX || rect.left + rect.width / 2;
         const y = e.clientY || rect.bottom + 4;
@@ -748,13 +714,13 @@ export const MapView: React.FC<MapViewProps> = ({
             {
               label: 'Rename point',
               onSelect: () => {
-                if (onRequestInlineRenameRef.current) {
-                  onRequestInlineRenameRef.current(index);
+                if (this.callbacks.onRequestInlineRename) {
+                  this.callbacks.onRequestInlineRename(index);
                 } else {
-                  const currentName = waypointsRef.current[index]?.name || '';
+                  const currentName = this.waypoints[index]?.name || '';
                   const nextName = window.prompt('Rename point:', currentName);
                   if (nextName !== null) {
-                    onRenameWaypointRef.current(index, nextName);
+                    this.callbacks.onRenameWaypoint(index, nextName);
                   }
                 }
               },
@@ -762,13 +728,13 @@ export const MapView: React.FC<MapViewProps> = ({
             {
               label: 'Remove point',
               danger: true,
-              onSelect: () => onRemoveWaypointRef.current(index),
+              onSelect: () => this.callbacks.onRemoveWaypoint(index),
             },
             {
               label: 'See on Google Street View',
               dividerBefore: true,
               onSelect: () => {
-                const wp = waypointsRef.current[index];
+                const wp = this.waypoints[index];
                 if (!wp) return;
                 window.open(
                   `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${wp.lat.toFixed(6)},${wp.lon.toFixed(6)}`,
@@ -780,11 +746,11 @@ export const MapView: React.FC<MapViewProps> = ({
             {
               label: 'Copy coordinates',
               onSelect: async () => {
-                const wp = waypointsRef.current[index];
+                const wp = this.waypoints[index];
                 if (!wp) return;
                 const text = `${wp.lat.toFixed(5)}, ${wp.lon.toFixed(5)}`;
                 await navigator.clipboard.writeText(text);
-                onStatusChangeRef.current(`Copied ${text}`);
+                this.callbacks.onStatusChange(`Copied ${text}`);
               },
             },
           ],
@@ -797,8 +763,8 @@ export const MapView: React.FC<MapViewProps> = ({
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         if (wasDragged) return;
-        if (lastOpenedMarkerIndexRef.current === index && menuClosedWithin(250)) {
-          lastOpenedMarkerIndexRef.current = null;
+        if (this.lastOpenedMarkerIndex === index && menuClosedWithin(250)) {
+          this.lastOpenedMarkerIndex = null;
           return;
         }
         showMarkerContextMenu(e);
@@ -812,28 +778,14 @@ export const MapView: React.FC<MapViewProps> = ({
 
       currentMarkers.push(marker);
     });
-  }, [waypoints]);
+  }
 
-  // Hover marker
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (!hoverPosition) {
-      hoverMarkerRef.current?.remove();
-      hoverMarkerRef.current = null;
-      return;
-    }
-    if (!hoverMarkerRef.current) {
-      const el = document.createElement('div');
-      el.className = 'hover-dot';
-      hoverMarkerRef.current = new maplibregl.Marker({ element: el })
-        .setLngLat([hoverPosition.lon, hoverPosition.lat])
-        .addTo(map);
-    } else {
-      hoverMarkerRef.current.setLngLat([hoverPosition.lon, hoverPosition.lat]);
-    }
-  }, [hoverPosition]);
-
-  return <div id="map" ref={containerRef} />;
-};
-
+  destroy() {
+    window.removeEventListener('mouseup', this.finishInsertBound);
+    this.markers.forEach((m) => m.remove());
+    this.markers = [];
+    this.hoverMarker?.remove();
+    this.hoverMarker = null;
+    this.map.remove();
+  }
+}
