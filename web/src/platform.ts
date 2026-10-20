@@ -16,6 +16,8 @@ declare global {
 }
 
 const env = (import.meta as any).env || {};
+const DEFAULT_R2_BASE_URL = 'https://pub-e1f100f08a474ccc895e99f913d1049d.r2.dev';
+const DEFAULT_PUBLIC_WEB_URL = 'https://router.surita.dev';
 
 /**
  * Returns true when running inside a native Capacitor WebView shell (Android/iOS).
@@ -32,7 +34,10 @@ export function isNativePlatform(): boolean {
  * Note: CacheStorage always keys segments under `/segments4/<id>.rd5` regardless of download URL.
  */
 export function getSegmentDownloadUrl(segmentId: string): string {
-  const base = env.VITE_SEGMENTS_BASE_URL ? String(env.VITE_SEGMENTS_BASE_URL).replace(/\/+$/, '') : '/segments4';
+  const defaultBase = env.DEV ? '/segments4' : `${DEFAULT_R2_BASE_URL}/segments4`;
+  const base = env.VITE_SEGMENTS_BASE_URL
+    ? String(env.VITE_SEGMENTS_BASE_URL).replace(/\/+$/, '')
+    : defaultBase;
   return `${base}/${segmentId}.rd5`;
 }
 
@@ -40,7 +45,10 @@ export function getSegmentDownloadUrl(segmentId: string): string {
  * Resolves the network URL used to download a 5°×5° `.pmtiles` offline map archive.
  */
 export function getMapTileDownloadUrl(segmentId: string): string {
-  const base = env.VITE_MAP_TILES_BASE_URL ? String(env.VITE_MAP_TILES_BASE_URL).replace(/\/+$/, '') : '/map-tiles';
+  const defaultBase = env.DEV ? '/map-tiles' : `${DEFAULT_R2_BASE_URL}/map-tiles`;
+  const base = env.VITE_MAP_TILES_BASE_URL
+    ? String(env.VITE_MAP_TILES_BASE_URL).replace(/\/+$/, '')
+    : defaultBase;
   return `${base}/${segmentId}.pmtiles`;
 }
 
@@ -54,7 +62,7 @@ export function getShareableRouteUrl(): string {
   if (isNativePlatform() || window.location.hostname === 'localhost') {
     const publicBase = env.VITE_PUBLIC_WEB_URL
       ? String(env.VITE_PUBLIC_WEB_URL).replace(/\/+$/, '')
-      : window.location.origin;
+      : DEFAULT_PUBLIC_WEB_URL;
     return `${publicBase}${window.location.pathname}${window.location.search}${window.location.hash}`;
   }
   return window.location.href;
