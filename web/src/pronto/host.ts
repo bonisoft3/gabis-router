@@ -1,5 +1,4 @@
 import {
-  AVOID_RADIUS_PRESETS,
   MAX_ROUTE_SLOTS,
   PROFILE_INFO,
   PROFILE_ORDER,
@@ -912,14 +911,6 @@ export function installRouterHost() {
       }, 30);
     };
 
-    const reorderWaypoints = (fromIndex: number, toIndex: number) => {
-      if (toIndex < 0 || toIndex >= waypoints.length) return;
-      const next = [...waypoints];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      setWaypoints(next, true);
-    };
-
     const reverseRoute = () => {
       if (waypoints.length < 2) return;
       const next = [...waypoints].reverse();
@@ -1088,8 +1079,11 @@ export function installRouterHost() {
     });
 
     let isSyncingStore = false;
+    let syncPendingCount = 0;
+    let hasInitialSynced = false;
     let syncChain = Promise.resolve();
     const syncAll = () => {
+      syncPendingCount++;
       const primaryProfile = slots[0]?.profile || 'fastbike-lowtraffic';
       const isRouting = slots.some((s) => s.isRouting);
       const isBusy = isRouting || offlineController.downloadProgress.active;
@@ -1326,6 +1320,9 @@ export function installRouterHost() {
       const searchRows = searchResults.map((r, idx) => ({
         id: `sr_${idx}`,
         idx,
+        lat: r.lat,
+        lon: r.lon,
+        name: r.name || r.title || '',
         item_class: idx === activeSearchIdx ? 'search-item active' : 'search-item',
         title: r.title || r.name,
         subtitle: r.subtitle || '',
@@ -1346,6 +1343,11 @@ export function installRouterHost() {
         return {
           id: `wp_${idx}`,
           idx,
+          lat: wp.lat,
+          lon: wp.lon,
+          name: wp.name || '',
+          is_geocoding: isGeocoding ? 'true' : 'false',
+          is_editing: isEditing ? 'true' : 'false',
           badge_class: `wp-badge ${kind}`,
           badge_label: badgeLabel,
           title_attr: titleAttr,
@@ -1364,6 +1366,10 @@ export function installRouterHost() {
       const avoidRows = avoidAreas.map((a, idx) => ({
         id: `av_${idx}`,
         idx,
+        lat: a.lat,
+        lon: a.lon,
+        radius: Math.max(10, a.radius),
+        weight: a.weight !== undefined && a.weight !== null ? String(a.weight) : '',
         locate_title: `Center on avoid area (${a.lat.toFixed(4)}, ${a.lon.toFixed(4)})`,
         name_label: `Avoid #${idx + 1}`,
         radius_label: `${Math.round(a.radius)} m`,
@@ -1465,11 +1471,16 @@ export function installRouterHost() {
             await syncTableRows(store, 'waypoint', wpRows);
             await syncTableRows(store, 'avoid_area', avoidRows);
             await syncTableRows(store, 'route_bar', barRows);
+            hasInitialSynced = true;
           } finally {
             isSyncingStore = false;
+            syncPendingCount = Math.max(0, syncPendingCount - 1);
           }
         })
-        .catch((err) => console.error('Omnishell store sync error:', err));
+        .catch((err) => {
+          syncPendingCount = Math.max(0, syncPendingCount - 1);
+          console.error('Omnishell store sync error:', err);
+        });
     };
 
     // Initial load from Hash or LocalStorage
@@ -1578,19 +1589,15 @@ export function installRouterHost() {
         case 'refresh-offline-status':
           offlineController.refreshStatus();
           break;
-        case 'clear-search':
-          searchQuery = '';
-          searchResults = [];
-          isSearchOpen = false;
-          searchStatusText = null;
-          syncAll();
+        case 'fly-to': {
+          const lat = Number(parsed.lat);
+          const lon = Number(parsed.lon);
+          const zoom = parsed.zoom !== undefined ? Number(parsed.zoom) : undefined;
+          if (validPoint(lat, lon)) {
+            mapController.flyTo(lon, lat, zoom);
+          }
           break;
-        case 'add-profile':
-          addProfileSlot();
-          break;
-        case 'remove-profile':
-          removeProfileSlot(Number(parsed.slotIdx ?? 0));
-          break;
+        }
         case 'select-alt':
           selectSlotAlternative(Number(parsed.slotIdx ?? 0), Number(parsed.altIdx ?? 0));
           break;
@@ -1600,65 +1607,14 @@ export function installRouterHost() {
         case 'redo':
           redo();
           break;
-        case 'reverse-route':
-          reverseRoute();
-          break;
-        case 'clear-route':
-          clearRoute();
-          break;
-        case 'clear-avoids':
-          clearAvoidAreas();
-          break;
         case 'wp-locate': {
           const wp = waypoints[Number(parsed.idx ?? -1)];
           if (wp) mapController.flyTo(wp.lon, wp.lat);
           break;
         }
-        case 'wp-edit':
-          startInlineRename(Number(parsed.idx ?? -1));
-          break;
-        case 'wp-reorder':
-          reorderWaypoints(Number(parsed.fromIdx ?? 0), Number(parsed.toIdx ?? 0));
-          break;
-        case 'wp-delete':
-          removeWaypoint(Number(parsed.idx ?? 0));
-          break;
         case 'avoid-locate': {
           const area = avoidAreas[Number(parsed.idx ?? -1)];
           if (area) mapController.flyTo(area.lon, area.lat);
-          break;
-        }
-        case 'avoid-radius': {
-          const idx = Number(parsed.idx ?? -1);
-          const area = avoidAreas[idx];
-          if (area) {
-            const r = Math.round(area.radius);
-            const nextRadius =
-              AVOID_RADIUS_PRESETS[
-                (AVOID_RADIUS_PRESETS.indexOf(r) + 1) % AVOID_RADIUS_PRESETS.length
-              ] || AVOID_RADIUS_PRESETS[0];
-            updateAvoidAreaRadius(idx, nextRadius);
-          }
-          break;
-        }
-        case 'avoid-delete':
-          removeAvoidArea(Number(parsed.idx ?? 0));
-          break;
-        case 'search-pick': {
-          const idx = Number(parsed.idx ?? -1);
-          const action = parsed.action as 'start' | 'via' | 'end' | 'append' | undefined;
-          const item = searchResults[idx];
-          if (item) {
-            searchQuery = '';
-            searchResults = [];
-            isSearchOpen = false;
-            searchStatusText = null;
-            addWaypoint(
-              { lat: item.lat, lon: item.lon, name: item.name },
-              action === 'append' ? undefined : action,
-            );
-            mapController.flyTo(item.lon, item.lat, 14);
-          }
           break;
         }
         case 'my-location': {
@@ -1764,76 +1720,279 @@ export function installRouterHost() {
       }
     };
 
-    const unsubStoreUi = store?.subscribe?.('ui_state', async () => {
-      const rows = (await store.query('ui_state', null, { filter: 'id=eq.main', current: true })) ?? [];
-      const row = rows[0];
-      if (!row) return;
+    let reconcileScheduled = false;
+    const reconcileFromStore = async () => {
+      if (!store || !hasInitialSynced || isSyncingStore || syncPendingCount > 0) return;
 
-      if (row.host_cmd) {
-        const cmdStr = String(row.host_cmd);
+      const [uiRows, wpRows, avRows, slotRows, barRows] = await Promise.all([
+        store.query('ui_state', null, { filter: 'id=eq.main', current: true }),
+        store.query('waypoint', 'idx.asc', { current: true }),
+        store.query('avoid_area', 'idx.asc', { current: true }),
+        store.query('profile_slot', 'slot_idx.asc', { current: true }),
+        store.query('route_bar', 'slot_idx.asc', { current: true }),
+      ]);
+
+      if (isSyncingStore || syncPendingCount > 0) return;
+
+      const uiRow = (uiRows ?? [])[0];
+      let pendingCmd = '';
+      if (uiRow?.host_cmd) {
+        pendingCmd = String(uiRow.host_cmd);
         isSyncingStore = true;
         await store.patch('ui_state', [{ key: 'main', changes: { host_cmd: '' } }]);
         isSyncingStore = false;
-        await handleHostCmd(cmdStr);
-        return;
       }
 
-      if (isSyncingStore) return;
-
-      let stateChanged = false;
-      const nextCollapsed = row.controls_class === 'collapsed';
-      if (nextCollapsed !== isControlsCollapsed) {
-        isControlsCollapsed = nextCollapsed;
-        stateChanged = true;
-      }
-      const nextSettings = row.hide_settings_modal === 'false';
-      if (nextSettings !== isSettingsOpen) {
-        isSettingsOpen = nextSettings;
-        stateChanged = true;
-      }
-      const nextAbout = row.hide_about_modal === 'false';
-      if (nextAbout !== isAboutOpen) {
-        isAboutOpen = nextAbout;
-        stateChanged = true;
-      }
-      if (row.units && (row.units === 'metric' || row.units === 'imperial') && row.units !== units) {
-        setUnits(row.units);
-      }
-      if (row.theme && (row.theme === 'auto' || row.theme === 'light' || row.theme === 'dark') && row.theme !== theme) {
-        setTheme(row.theme);
-      }
-      const nextOffline = row.offline_mode === true || row.offline_mode === 'true';
-      if (nextOffline !== offlineController.isOfflineMode && offlineController.bundleStatus.ready) {
-        offlineController.setOfflineMode(nextOffline);
-      }
-      if (stateChanged) {
-        syncAll();
-      }
-    });
-
-    const unsubStoreSlot = store?.subscribe?.('profile_slot', async () => {
-      if (isSyncingStore) return;
-      const rows = (await store.query('profile_slot', null, {})) ?? [];
-      for (const row of rows) {
-        const idx = Number(row.slot_idx ?? String(row.id || '').replace('slot_', ''));
-        if (
-          !Number.isNaN(idx) &&
-          idx >= 0 &&
-          idx < slots.length &&
-          validProfile(row.profile) &&
-          slots[idx].profile !== row.profile
-        ) {
-          setSlotProfile(idx, row.profile);
-          break;
+      // 1. Reconcile search clear / selection from Jessie reducer
+      if (uiRow && uiRow.search_query === '' && (searchQuery !== '' || isSearchOpen)) {
+        searchQuery = '';
+        searchResults = [];
+        isSearchOpen = false;
+        searchStatusText = null;
+        const searchInput = screen.querySelector('#input-place-search') as HTMLInputElement | null;
+        if (searchInput && searchInput.value !== '') {
+          searchInput.value = '';
         }
       }
-    });
 
-    const unsubStoreBar = store?.subscribe?.('route_bar', async () => {
-      if (isSyncingStore) return;
-      const rows = (await store.query('route_bar', null, {})) ?? [];
-      let changed = false;
-      for (const row of rows) {
+      // 2. Reconcile inline waypoint editing initiated by Jessie reducer (`wp-name-{idx}`)
+      const sortedWps = [...(wpRows ?? [])].sort(
+        (a: any, b: any) => Number(a.idx ?? 0) - Number(b.idx ?? 0),
+      );
+      const editRow = sortedWps.find((r: any) => r.is_editing === 'true');
+      if (editRow) {
+        const idx = Number(editRow.idx);
+        if (editingWpIdx !== idx) {
+          editingWpIdx = idx;
+          editWpValue = String(editRow.edit_value ?? editRow.name ?? '');
+          setTimeout(() => {
+            const inp = screen.querySelector(
+              `.wp-rename-input[data-wp-idx="${idx}"]`,
+            ) as HTMLInputElement | null;
+            inp?.focus();
+            inp?.select();
+          }, 30);
+        }
+      }
+
+      // 3. Reconcile waypoints & avoid areas mutated directly by Jessie reducer (`ui-action.js`)
+      const storeWps: LatLon[] = sortedWps
+        .map((r: any) => ({
+          lat: Number(r.lat),
+          lon: Number(r.lon),
+          ...(r.name ? { name: String(r.name) } : {}),
+        }))
+        .filter((w) => validPoint(w.lat, w.lon));
+
+      const sortedAvoids = [...(avRows ?? [])].sort(
+        (a: any, b: any) => Number(a.idx ?? 0) - Number(b.idx ?? 0),
+      );
+      const storeAvoids: AvoidArea[] = sortedAvoids
+        .map((r: any) => ({
+          lat: Number(r.lat),
+          lon: Number(r.lon),
+          radius: Math.max(10, Number(r.radius ?? DEFAULT_AVOID_RADIUS_M)),
+          ...(r.weight !== undefined && r.weight !== '' && r.weight !== null
+            ? { weight: Number(r.weight) }
+            : {}),
+        }))
+        .filter((a) => validPoint(a.lat, a.lon));
+
+      const wpsCoordsChanged =
+        storeWps.length !== waypoints.length ||
+        storeWps.some(
+          (w, i) =>
+            Math.abs(w.lat - waypoints[i].lat) > 1e-6 ||
+            Math.abs(w.lon - waypoints[i].lon) > 1e-6,
+        );
+      const wpsNamesChanged =
+        !wpsCoordsChanged &&
+        storeWps.some((w, i) => (w.name || '') !== (waypoints[i].name || ''));
+      const avoidsChanged =
+        storeAvoids.length !== avoidAreas.length ||
+        storeAvoids.some(
+          (a, i) =>
+            Math.abs(a.lat - avoidAreas[i].lat) > 1e-6 ||
+            Math.abs(a.lon - avoidAreas[i].lon) > 1e-6 ||
+            Math.round(a.radius) !== Math.round(avoidAreas[i].radius),
+        );
+
+      let routeTriggered = false;
+      if (wpsCoordsChanged || avoidsChanged) {
+        history.record({
+          waypoints: waypoints.map((w) => ({ ...w })),
+          avoidAreas: avoidAreas.map((a) => ({ ...a })),
+        });
+        updateUndoRedo();
+        editingWpIdx = null;
+        waypoints = storeWps;
+        avoidAreas = storeAvoids;
+
+        if (waypoints.length === 0 && avoidAreas.length === 0) {
+          activeImportId = null;
+          activeSlotRouteId = slots.map(() => null);
+          requestedSlotAlt = slots.map(() => 0);
+          shownSlotAlt = slots.map(() => 0);
+          slots = slots.map((s) => ({
+            ...s,
+            alternativeIdx: 0,
+            route: null,
+            isRouting: false,
+          }));
+          isError = false;
+          activeHighlights.clear();
+          segmentHighlight = null;
+          mapController.updateSegmentHighlight(null);
+          saveToUrlAndStorage(
+            [],
+            slots.map((s) => s.profile),
+            [],
+          );
+          status =
+            uiRow?.status_text === 'Route cleared.'
+              ? 'Route cleared.'
+              : 'Click on the map or search to set start and end points.';
+          syncAll();
+          routeTriggered = true;
+        } else {
+          if (wpsCoordsChanged) {
+            activeHighlights.clear();
+            segmentHighlight = null;
+            mapController.updateSegmentHighlight(null);
+            geocodeUnnamedWaypoints(waypoints);
+          }
+          saveToUrlAndStorage(
+            waypoints,
+            slots.map((s) => s.profile),
+            avoidAreas,
+          );
+          requestAllSlots(waypoints, slots, avoidAreas, true);
+          routeTriggered = true;
+        }
+      } else if (wpsNamesChanged) {
+        waypoints = storeWps;
+        saveToUrlAndStorage(
+          waypoints,
+          slots.map((s) => s.profile),
+          avoidAreas,
+        );
+        syncAll();
+        routeTriggered = true;
+      }
+
+      // 4. Reconcile profile slots mutated by Jessie reducer (`ui-action.js`) or `<form data-action="update">`
+      const sortedSlots = [...(slotRows ?? [])].sort(
+        (a: any, b: any) => Number(a.slot_idx ?? 0) - Number(b.slot_idx ?? 0),
+      );
+      const storeProfiles = sortedSlots
+        .map((r: any) => r.profile)
+        .filter(validProfile)
+        .slice(0, MAX_ROUTE_SLOTS);
+
+      if (storeProfiles.length > 0) {
+        if (storeProfiles.length > slots.length) {
+          const hasWps = waypoints.length >= 2;
+          const prevLen = slots.length;
+          for (let i = prevLen; i < storeProfiles.length; i++) {
+            slots.push({
+              profile: storeProfiles[i],
+              alternativeIdx: 0,
+              route: null,
+              isRouting: hasWps,
+            });
+            activeSlotRouteId.push(null);
+            requestedSlotAlt.push(0);
+            shownSlotAlt.push(0);
+          }
+          saveToUrlAndStorage(
+            waypoints,
+            slots.map((s) => s.profile),
+            avoidAreas,
+          );
+          if (hasWps) {
+            status = 'Calculating route...';
+            isError = false;
+            syncAll();
+            for (let i = prevLen; i < slots.length; i++) {
+              postSlotRouteRequest(i, waypoints, slots[i].profile, avoidAreas, 0);
+            }
+          } else {
+            syncAll();
+          }
+          routeTriggered = true;
+        } else if (storeProfiles.length < slots.length) {
+          let removeIdx = slots.findIndex((s, i) => s.profile !== storeProfiles[i]);
+          if (removeIdx === -1) removeIdx = slots.length - 1;
+          slots = slots.filter((_, idx) => idx !== removeIdx);
+          activeSlotRouteId.splice(removeIdx, 1);
+          requestedSlotAlt.splice(removeIdx, 1);
+          shownSlotAlt.splice(removeIdx, 1);
+          saveToUrlAndStorage(
+            waypoints,
+            slots.map((s) => s.profile),
+            avoidAreas,
+          );
+          if (!slots.some((s) => s.isRouting)) {
+            status = '';
+          }
+          syncAll();
+          routeTriggered = true;
+        } else {
+          for (let idx = 0; idx < slots.length; idx++) {
+            if (slots[idx].profile !== storeProfiles[idx]) {
+              setSlotProfile(idx, storeProfiles[idx]);
+              routeTriggered = true;
+              break;
+            }
+          }
+        }
+      }
+
+      // 5. Reconcile UI chrome & route bar collapse state
+      let stateChanged = false;
+      if (uiRow) {
+        const nextCollapsed = uiRow.controls_class === 'collapsed';
+        if (nextCollapsed !== isControlsCollapsed) {
+          isControlsCollapsed = nextCollapsed;
+          stateChanged = true;
+        }
+        const nextSettings = uiRow.hide_settings_modal === 'false';
+        if (nextSettings !== isSettingsOpen) {
+          isSettingsOpen = nextSettings;
+          stateChanged = true;
+        }
+        const nextAbout = uiRow.hide_about_modal === 'false';
+        if (nextAbout !== isAboutOpen) {
+          isAboutOpen = nextAbout;
+          stateChanged = true;
+        }
+        if (
+          uiRow.units &&
+          (uiRow.units === 'metric' || uiRow.units === 'imperial') &&
+          uiRow.units !== units
+        ) {
+          setUnits(uiRow.units);
+          routeTriggered = true;
+        }
+        if (
+          uiRow.theme &&
+          (uiRow.theme === 'auto' || uiRow.theme === 'light' || uiRow.theme === 'dark') &&
+          uiRow.theme !== theme
+        ) {
+          setTheme(uiRow.theme);
+          routeTriggered = true;
+        }
+        const nextOffline = uiRow.offline_mode === true || uiRow.offline_mode === 'true';
+        if (
+          nextOffline !== offlineController.isOfflineMode &&
+          offlineController.bundleStatus.ready
+        ) {
+          offlineController.setOfflineMode(nextOffline);
+          routeTriggered = true;
+        }
+      }
+
+      for (const row of barRows ?? []) {
         const idx = Number(row.slot_idx ?? String(row.id || '').replace('bar_', ''));
         if (Number.isNaN(idx)) continue;
         const barCollapsed = String(row.card_class || '').includes('collapsed');
@@ -1841,17 +2000,37 @@ export function installRouterHost() {
           if (Boolean(collapsedSlots[idx]) !== barCollapsed) {
             collapsedSlots[idx] = barCollapsed;
             isRouteInfoCollapsed = slots.every((_, i) => Boolean(collapsedSlots[i]));
-            changed = true;
+            stateChanged = true;
           }
         } else if (idx === 0 && isRouteInfoCollapsed !== barCollapsed) {
           isRouteInfoCollapsed = barCollapsed;
-          changed = true;
+          stateChanged = true;
         }
       }
-      if (changed) {
+
+      if (stateChanged && !routeTriggered) {
         syncAll();
       }
-    });
+
+      if (pendingCmd) {
+        await handleHostCmd(pendingCmd);
+      }
+    };
+
+    const queueStoreReconcile = () => {
+      if (isSyncingStore || reconcileScheduled) return;
+      reconcileScheduled = true;
+      queueMicrotask(() => {
+        reconcileScheduled = false;
+        void reconcileFromStore();
+      });
+    };
+
+    const unsubStoreUi = store?.subscribe?.('ui_state', queueStoreReconcile);
+    const unsubStoreWp = store?.subscribe?.('waypoint', queueStoreReconcile);
+    const unsubStoreAvoid = store?.subscribe?.('avoid_area', queueStoreReconcile);
+    const unsubStoreSlot = store?.subscribe?.('profile_slot', queueStoreReconcile);
+    const unsubStoreBar = store?.subscribe?.('route_bar', queueStoreReconcile);
 
     // DOM Event Delegation on `screen` (only for browser-gesture file input, tooltip positioning,
     // modal backdrop click, and interactive SVG chart segment highlight)
@@ -1904,14 +2083,6 @@ export function installRouterHost() {
       if (btn?.id === 'btn-import-gpx') {
         const fileInput = screen.querySelector('#input-import-gpx') as HTMLInputElement | null;
         fileInput?.click();
-        return;
-      }
-
-      // Header click when collapsed -> expand controls
-      const headerEl = target.closest('.header') as HTMLElement | null;
-      if (headerEl && isControlsCollapsed && !target.closest('button')) {
-        isControlsCollapsed = false;
-        syncAll();
         return;
       }
 
@@ -2234,6 +2405,8 @@ export function installRouterHost() {
     const cleanup = () => {
       unsubBasemap();
       unsubStoreUi?.();
+      unsubStoreWp?.();
+      unsubStoreAvoid?.();
       unsubStoreSlot?.();
       unsubStoreBar?.();
       window.removeEventListener('hashchange', onHashChange);

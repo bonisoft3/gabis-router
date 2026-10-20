@@ -86,6 +86,9 @@ code: pronto.#App & {
 				{ordinal: 4, name: "title", type: "string"},
 				{ordinal: 5, name: "subtitle", type: "string"},
 				{ordinal: 6, name: "hide_subtitle", type: "string"},
+				{ordinal: 7, name: "lat", type: "double"},
+				{ordinal: 8, name: "lon", type: "double"},
+				{ordinal: 9, name: "name", type: "string"},
 			]
 		}
 		Waypoint: {
@@ -106,6 +109,11 @@ code: pronto.#App & {
 				{ordinal: 11, name: "hide_coords", type: "string"},
 				{ordinal: 12, name: "disable_up", type: "string"},
 				{ordinal: 13, name: "disable_down", type: "string"},
+				{ordinal: 14, name: "lat", type: "double"},
+				{ordinal: 15, name: "lon", type: "double"},
+				{ordinal: 16, name: "name", type: "string"},
+				{ordinal: 17, name: "is_geocoding", type: "string"},
+				{ordinal: 18, name: "is_editing", type: "string"},
 			]
 		}
 		AvoidArea: {
@@ -116,6 +124,10 @@ code: pronto.#App & {
 				{ordinal: 1, name: "id", type: "string", pk: true},
 				{ordinal: 2, name: "idx", type: "int32"},
 				{ordinal: 3, name: "label", type: "string"},
+				{ordinal: 4, name: "lat", type: "double"},
+				{ordinal: 5, name: "lon", type: "double"},
+				{ordinal: 6, name: "radius", type: "double"},
+				{ordinal: 7, name: "weight", type: "string"},
 			]
 		}
 		RouteBar: {

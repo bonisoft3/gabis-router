@@ -1,11 +1,11 @@
 <div id="router-shell" class="screen" data-screen="router">
   <div id="map"></div>
 
-  <div id="router-ui" data-live="ui_state" data-filter="id=eq.main" data-reads="route_bar">
+  <div id="router-ui" data-live="ui_state" data-filter="id=eq.main" data-reads="ui_state,waypoint,avoid_area,profile_slot,search_result,route_bar">
     <div id="controls" class="{controls_class}">
       <div class="header">
         <div class="header-top">
-          <div class="header-title-wrap">
+          <div id="header-title-wrap" class="header-title-wrap" data-on-click="ui-action">
             <h1>
               <span class="header-logo" aria-hidden="true">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -57,7 +57,7 @@
             </button>
           </div>
 
-          <div id="profile-compare-stack" class="profile-slots-list" data-live="profile_slot" data-order="slot_idx.asc" data-empty="">
+          <div id="profile-compare-stack" class="profile-slots-list" data-live="profile_slot" data-order="slot_idx.asc" data-reads="ui_state,waypoint,avoid_area,profile_slot,search_result,route_bar" data-on-mutation="ui-action" data-exit-motion="none" data-empty="">
             <template data-item>
               <div class="profile-slot-row" data-slot-idx="{slot_idx}">
                 <span class="profile-slot-dot" style="{dot_style}" title="{dot_title}"></span>
@@ -113,7 +113,7 @@
 
           <div id="search-results-list" class="search-results" role="listbox" aria-label="Search results" hidden="{hide_search_results}">
             <div class="search-status-item" hidden="{hide_search_status}" data-text="{search_status}"></div>
-            <div id="search-results-items" data-live="search_result" data-order="idx.asc" data-empty="">
+            <div id="search-results-items" data-live="search_result" data-order="idx.asc" data-reads="ui_state,waypoint,avoid_area,profile_slot,search_result,route_bar" data-exit-motion="none" data-empty="">
               <template data-item>
                 <div role="option" class="{item_class}" data-result-idx="{idx}">
                   <div id="sr-title-{idx}" class="search-item-info" data-on-click="ui-action">
@@ -172,7 +172,7 @@
         </div>
 
         <div class="waypoints-container">
-          <div id="waypoint-list" data-live="waypoint" data-order="idx.asc" data-handler="ui-action" data-empty="">
+          <div id="waypoint-list" data-live="waypoint" data-order="idx.asc" data-handler="ui-action" data-on-mutation="ui-action" data-reads="ui_state,waypoint,avoid_area,profile_slot,search_result,route_bar" data-exit-motion="none" data-empty="">
             <template data-item>
               <div class="wp-row" data-index="{idx}" data-wp-idx="{idx}">
                 <span class="wp-drag-handle" data-drag-handle title="Drag to reorder" aria-label="Drag to reorder">
@@ -222,7 +222,7 @@
               <span class="avoid-list-title" data-text="{avoid_header_title}"></span>
               <button id="btn-clear-avoids" type="button" class="avoid-clear-btn" data-on-click="ui-action">Clear all</button>
             </div>
-            <div id="avoid-chips" class="avoid-chips" aria-label="Avoid areas" data-live="avoid_area" data-order="idx.asc" data-empty="">
+            <div id="avoid-chips" class="avoid-chips" aria-label="Avoid areas" data-live="avoid_area" data-order="idx.asc" data-on-mutation="ui-action" data-reads="ui_state,waypoint,avoid_area,profile_slot,search_result,route_bar" data-exit-motion="none" data-empty="">
               <template data-item>
                 <div class="avoid-chip" data-avoid-idx="{idx}">
                   <button id="avoid-loc-{idx}" type="button" class="avoid-chip-locate" title="{locate_title}" data-avoid-idx="{idx}" data-on-click="ui-action">
@@ -276,7 +276,7 @@
       </div>
     </div>
 
-    <div id="route-info" class="{route_info_class}" aria-live="polite" hidden="{hide_route_info}" data-live="route_bar" data-order="slot_idx.asc" data-reads="ui_state" data-empty="">
+    <div id="route-info" class="{route_info_class}" aria-live="polite" hidden="{hide_route_info}" data-live="route_bar" data-order="slot_idx.asc" data-reads="ui_state,waypoint,avoid_area,profile_slot,search_result,route_bar" data-exit-motion="none" data-empty="">
       <template data-item>
         <div id="{bar_id}" class="{card_class}" style="{card_style}" data-slot-idx="{slot_idx}">
           <div class="ri-bar-header" data-slot-idx="{slot_idx}">

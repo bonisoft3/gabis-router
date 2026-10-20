@@ -173,21 +173,33 @@
       "durability": "tab",
       "fields": [
         { "name": "id", "pk": true, "type": "string", "required": true },
-        { "name": "idx", "type": "int32", "required": true }
+        { "name": "idx", "type": "int32", "required": true },
+        { "name": "lat", "type": "double" },
+        { "name": "lon", "type": "double" },
+        { "name": "name", "type": "string" }
       ]
     },
     "waypoint": {
       "durability": "tab",
       "fields": [
         { "name": "id", "pk": true, "type": "string", "required": true },
-        { "name": "idx", "type": "int32", "required": true }
+        { "name": "idx", "type": "int32", "required": true },
+        { "name": "lat", "type": "double" },
+        { "name": "lon", "type": "double" },
+        { "name": "name", "type": "string" },
+        { "name": "is_geocoding", "type": "string" },
+        { "name": "is_editing", "type": "string" }
       ]
     },
     "avoid_area": {
       "durability": "tab",
       "fields": [
         { "name": "id", "pk": true, "type": "string", "required": true },
-        { "name": "idx", "type": "int32", "required": true }
+        { "name": "idx", "type": "int32", "required": true },
+        { "name": "lat", "type": "double" },
+        { "name": "lon", "type": "double" },
+        { "name": "radius", "type": "double" },
+        { "name": "weight", "type": "string" }
       ]
     },
     "route_bar": {

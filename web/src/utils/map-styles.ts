@@ -1,6 +1,6 @@
 import type maplibregl from 'maplibre-gl';
 import * as protomapsThemesBase from 'protomaps-themes-base';
-import type { Basemap } from '../basemap.ts';
+import type { Basemap } from '../types.ts';
 
 export const FONT_BASE_URL = 'https://cdn.protomaps.com/fonts/pbf/';
 export const FONT_NAMES = ['Noto Sans Regular', 'Noto Sans Medium', 'Noto Sans Italic'];
