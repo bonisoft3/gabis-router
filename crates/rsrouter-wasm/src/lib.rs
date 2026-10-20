@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
-use rsrouter_core::dsl::lookups::LookupData;
-use rsrouter_core::dsl::parser::Profile;
-use rsrouter_core::graph::routing_graph::RoutingGraph;
-use rsrouter_core::rd5::rd5_slice::{LazyRd5Provider, Rd5SegmentReader};
-use rsrouter_core::routing::search::AStarRouter;
+use brouter_rs::dsl::lookups::LookupData;
+use brouter_rs::dsl::parser::Profile;
+use brouter_rs::graph::routing_graph::RoutingGraph;
+use brouter_rs::rd5::rd5_slice::{LazyRd5Provider, Rd5SegmentReader};
+use brouter_rs::routing::nogo::{parse_lonlats, parse_nogos};
+use brouter_rs::routing::search::{AStarRouter, RouteRequest, RoutingOptions};
+use route_tools::{to_geojson_with_segments, GpxMatchRequest, MapMatchOptions, RouteMatcherExt};
 
 struct JsRd5SegmentReader {
     size_fn: js_sys::Function,
@@ -135,7 +137,7 @@ impl WasmRouter {
     }
 
     /// Computes a route for given waypoints ("lon,lat|lon,lat") and returns a GeoJSON string.
-    pub fn find_route(
+    pub fn route(
         &mut self,
         waypoints_str: &str,
         profile_name: &str,
@@ -149,45 +151,26 @@ impl WasmRouter {
             return Err(JsValue::from_str(&format!("Profile not found: {profile_name}")));
         };
 
-        let mut waypoints = Vec::new();
-        for pair in waypoints_str.split('|') {
-            let parts: Vec<&str> = pair.split(',').collect();
-            if parts.len() != 2 {
-                return Err(JsValue::from_str(&format!("Invalid waypoint format: {pair}")));
-            }
-            let lon: f64 = parts[0]
-                .trim()
-                .parse()
-                .map_err(|e| JsValue::from_str(&format!("Invalid lon: {e}")))?;
-            let lat: f64 = parts[1]
-                .trim()
-                .parse()
-                .map_err(|e| JsValue::from_str(&format!("Invalid lat: {e}")))?;
-            waypoints.push((lon, lat));
-        }
-
-        if waypoints.len() < 2 {
-            return Err(JsValue::from_str("At least two waypoints required"));
-        }
-
-        let nogos = nogos_str
-            .as_deref()
-            .map(rsrouter_core::routing::parse_nogos)
-            .unwrap_or_default();
+        let parsed = parse_lonlats(waypoints_str, None).map_err(|e| JsValue::from_str(&e))?;
+        let nogos = nogos_str.as_deref().map(parse_nogos).unwrap_or_default();
 
         let route = self
             .router
-            .find_multi_route_with_alternative_and_nogos_lazy(
-                &mut self.graph,
+            .route(RouteRequest {
+                graph: &mut self.graph,
                 lookups,
                 profile,
-                &waypoints,
-                alternative_idx,
-                &nogos,
-            )
+                waypoints: &parsed.waypoints,
+                options: RoutingOptions {
+                    alternative_idx,
+                    nogos: &nogos,
+                    direct_legs: &parsed.direct_legs,
+                    ..Default::default()
+                },
+            })
             .map_err(|e| JsValue::from_str(&format!("Routing failed: {e}")))?;
 
-        Ok(route.to_geojson(profile_name))
+        Ok(to_geojson_with_segments(&route, profile_name))
     }
 
     /// Snaps a GPX XML track to the road network, extracts the minimal set of waypoints
@@ -205,27 +188,28 @@ impl WasmRouter {
         let Some(profile) = self.profiles.get(profile_name) else {
             return Err(JsValue::from_str(&format!("Profile not found: {profile_name}")));
         };
-        let mut opts = rsrouter_core::routing::MapMatchOptions::default();
+        let mut options = MapMatchOptions::default();
         if tolerance_m > 0.0 {
-            opts.deviation_tolerance_m = tolerance_m;
+            options.deviation_tolerance_m = tolerance_m;
         }
         let (waypoints, route) = self
             .router
-            .match_gpx_with_minimal_waypoints_lazy(
-                &mut self.graph,
+            .extract_gpx_waypoints(GpxMatchRequest {
+                graph: &mut self.graph,
                 lookups,
                 profile,
                 gpx_xml,
-                &opts,
-            )
+                options,
+            })
             .map_err(|e| JsValue::from_str(&format!("Map-matching failed: {e}")))?;
 
         let wps_json: Vec<serde_json::Value> = waypoints
             .into_iter()
             .map(|(lon, lat)| serde_json::json!({ "lon": lon, "lat": lat }))
             .collect();
-        let route_val: serde_json::Value = serde_json::from_str(&route.to_geojson(profile_name))
-            .map_err(|e| JsValue::from_str(&format!("Failed to serialize route GeoJSON: {e}")))?;
+        let route_val: serde_json::Value =
+            serde_json::from_str(&to_geojson_with_segments(&route, profile_name))
+                .map_err(|e| JsValue::from_str(&format!("Failed to serialize route GeoJSON: {e}")))?;
 
         let out = serde_json::json!({
             "waypoints": wps_json,

@@ -319,7 +319,7 @@ async function handleMessage(msg: WorkerMessage): Promise<void> {
 
         status(`Calculating route (${waypoints.length} points, ${profile})...`);
         const geojsonStr = await runWithLazySegments(waypoints, (r) =>
-          r.find_route(waypointsStr, profile, alternativeIdx ?? 0, nogosStr),
+          r.route(waypointsStr, profile, alternativeIdx ?? 0, nogosStr),
         );
         if (latestSlotRouteIds.get(slotIdx) !== msg.id) return;
 

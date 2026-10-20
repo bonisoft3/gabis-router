@@ -12,16 +12,17 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+BROUTER_RS_ROOT = REPO_ROOT / "subrepos" / "brouter-rs"
 SEGMENTS_DIR = REPO_ROOT / "data" / "segments4"
 FIXTURES_DIR = REPO_ROOT / "fixtures" / "brouter_de"
-ROUTING_TESTS_PATH = REPO_ROOT / "crates" / "rsrouter-core" / "tests" / "routing_tests.rs"
-RD5_TESTS_PATH = REPO_ROOT / "crates" / "rsrouter-core" / "tests" / "rd5_tests.rs"
+ROUTING_TESTS_PATH = BROUTER_RS_ROOT / "tests" / "routing_tests.rs"
+RD5_TESTS_PATH = BROUTER_RS_ROOT / "tests" / "rd5_tests.rs"
 
 DEFAULT_SEGMENTS = ["E0_N50", "W5_N50"]
 SEGMENTS_URL = "https://brouter.de/brouter/segments4"
 ROUTING_URL = "https://brouter.de/brouter"
 
-CORRIDORS = {
+ROUTES = {
     "clapham_hackney": "-0.143613,51.462414|-0.055296,51.544998",
     "london_brighton": "-0.127818,51.507392|-0.136913,50.822431",
     "london_oxford": "-0.127818,51.507392|-1.257704,51.751988",
@@ -116,8 +117,8 @@ def update_fixtures():
     FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
     print(f"Updating {len(FIXTURES)} fixture(s) in {FIXTURES_DIR}...")
 
-    for filename, corridor, profile, alt in FIXTURES:
-        lonlats = CORRIDORS[corridor]
+    for filename, route_key, profile, alt in FIXTURES:
+        lonlats = ROUTES[route_key]
         url = f"{ROUTING_URL}?lonlats={lonlats}&profile={profile}&format=geojson"
         if alt is not None:
             url += f"&alternativeidx={alt}"
@@ -192,8 +193,8 @@ def update_test_assertions():
     # 2. Update rd5_tests.rs node and link counts by running test output
     if RD5_TESTS_PATH.exists():
         proc = subprocess.run(
-            ["cargo", "test", "-p", "rsrouter-core", "--test", "rd5_tests", "--", "test_rd5_slice_in_memory_parity", "--nocapture"],
-            cwd=REPO_ROOT,
+            ["cargo", "test", "--test", "rd5_tests", "--", "test_rd5_slice_in_memory_parity", "--nocapture"],
+            cwd=BROUTER_RS_ROOT,
             capture_output=True,
             text=True,
         )
@@ -204,21 +205,21 @@ def update_test_assertions():
             content = re.sub(r"assert_eq!\(total_nodes, \d+\);", f"assert_eq!(total_nodes, {nodes});", content)
             content = re.sub(r"assert_eq!\(total_links, \d+\);", f"assert_eq!(total_links, {links});", content)
             RD5_TESTS_PATH.write_text(content)
-            print(f"Updated crates/rsrouter-core/tests/rd5_tests.rs: nodes={nodes}, links={links}.")
+            print(f"Updated subrepos/brouter-rs/tests/rd5_tests.rs: nodes={nodes}, links={links}.")
 
 
 def run_checks():
     """Run cargo test and compare_routes to verify parity."""
     print("Running cargo test...")
-    proc_test = subprocess.run(["cargo", "test"], cwd=REPO_ROOT)
+    proc_test = subprocess.run(["cargo", "test"], cwd=BROUTER_RS_ROOT)
     if proc_test.returncode != 0:
         print("ERROR: cargo test failed.")
         sys.exit(proc_test.returncode)
 
     print("Running compare_routes...")
     proc_bench = subprocess.run(
-        ["cargo", "run", "--release", "-p", "rsrouter-server", "--bin", "compare_routes"],
-        cwd=REPO_ROOT,
+        ["cargo", "run", "--release", "--example", "compare_routes"],
+        cwd=BROUTER_RS_ROOT,
     )
     if proc_bench.returncode != 0:
         print("ERROR: compare_routes failed.")

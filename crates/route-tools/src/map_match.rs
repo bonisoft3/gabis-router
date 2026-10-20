@@ -3,21 +3,21 @@
 //! # Summary
 //! Parses recorded GPX tracks or coordinate sequences, filters GPS jitter and junction
 //! side-street snaps using Ramer-Douglas-Peucker simplification and bearing-consistent
-//! candidate snapping, routes along the matched corridor, and trims retraced via-point
+//! candidate snapping, routes along the matched path, and trims retraced via-point
 //! spikes via `RouteResult::merge_with_via_correction`.
 
-use crate::dsl::evaluator::ProfileEvaluator;
-use crate::dsl::lookups::LookupData;
-use crate::dsl::parser::Profile;
-use crate::graph::routing_graph::RoutingGraph;
-use crate::graph::spatial::{
+use brouter_rs::dsl::evaluator::ProfileEvaluator;
+use brouter_rs::dsl::lookups::LookupData;
+use brouter_rs::dsl::parser::Profile;
+use brouter_rs::graph::routing_graph::RoutingGraph;
+use brouter_rs::graph::spatial::{
     self, distance, get_difference_from_direction, get_direction, lat_to_ilat, lon_to_ilon,
 };
-use crate::types::Point2D;
+use brouter_rs::types::Point2D;
 
-use super::cost::KinematicConfig;
-use super::search::{AStarRouter, GraphRef};
-use super::track::RouteResult;
+use brouter_rs::routing::cost::KinematicConfig;
+use brouter_rs::routing::search::{AStarRouter, GraphRef};
+use brouter_rs::routing::track::RouteResult;
 
 /// Configuration parameters for snapping a recorded GPS track to the routing graph.
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ pub struct MapMatchOptions {
     pub max_snap_distance_m: f64,
     /// Maximum retraced stub length (m) to trim when correcting misplaced via points at junctions.
     pub via_correction_max_dist_m: f64,
-    /// Maximum corridor deviation (m) allowed when extracting minimal profile-matching via points.
+    /// Maximum route deviation (m) allowed when extracting minimal profile-matching via points.
     pub deviation_tolerance_m: f64,
     /// Optional turn instruction mode override (`0..=9`).
     pub turn_instruction_mode: Option<i32>,
@@ -257,7 +257,7 @@ fn snap_track_point_to_road(
     let min_lat = wp_lat - max_dlat;
     let max_lat = wp_lat + max_dlat;
 
-    let grid_cell_size = crate::graph::routing_graph::GRID_CELL_SIZE;
+    let grid_cell_size = brouter_rs::graph::routing_graph::GRID_CELL_SIZE;
     let min_cx = (min_lon - 20000).div_euclid(grid_cell_size);
     let max_cx = (max_lon + 20000).div_euclid(grid_cell_size);
     let min_cy = (min_lat - 20000).div_euclid(grid_cell_size);
@@ -295,13 +295,13 @@ fn snap_track_point_to_road(
     };
 
     let mut way_lookup_buf = vec![0i32; lookups.way.names.len()];
-    let mut poly: Vec<crate::types::Point3D> = Vec::with_capacity(32);
+    let mut poly: Vec<brouter_rs::types::Point3D> = Vec::with_capacity(32);
 
     let mut best_score = f64::INFINITY;
     let mut best_cand: Option<(SnappedCandidate, u64, u64)> = None;
 
     for s_id in node_iter {
-        let s_pos = crate::graph::node::unpack_node_id(s_id);
+        let s_pos = brouter_rs::graph::node::unpack_node_id(s_id);
         if s_pos.lon < min_lon - 50000
             || s_pos.lon > max_lon + 50000
             || s_pos.lat < min_lat - 50000
@@ -351,7 +351,7 @@ fn snap_track_point_to_road(
                 t_elev,
             );
 
-            let mut evaluated_way: Option<crate::dsl::evaluator::WayCostResult> = None;
+            let mut evaluated_way: Option<brouter_rs::dsl::evaluator::WayCostResult> = None;
 
             for i in 0..poly.len() - 1 {
                 let p1 = poly[i].to_2d();
@@ -656,438 +656,451 @@ fn extract_control_waypoints_ref(
     Ok(filtered.into_iter().map(|c| c.coord).collect())
 }
 
-impl AStarRouter {
-    /// Snaps a recorded GPX XML track to the routing graph network and returns the matched `RouteResult`.
-    pub fn match_gpx_track(
-        &self,
-        graph: &RoutingGraph,
-        lookups: &LookupData,
-        profile: &Profile,
-        gpx_xml: &str,
-        options: &MapMatchOptions,
-    ) -> Result<RouteResult, String> {
-        let track_points = parse_gpx_points(gpx_xml)?;
-        self.match_track_points(graph, lookups, profile, &track_points, options)
-    }
+/// Named parameters for GPX map-matching and minimal waypoint extraction via [`RouteMatcherExt`].
+pub struct GpxMatchRequest<'a, G = &'a mut RoutingGraph> {
+    pub graph: G,
+    pub lookups: &'a LookupData,
+    pub profile: &'a Profile,
+    pub gpx_xml: &'a str,
+    pub options: MapMatchOptions,
+}
 
-    /// Snaps a recorded GPX XML track using lazy on-demand cell loading.
-    pub fn match_gpx_track_lazy(
+/// Named parameters for coordinate-sequence map-matching and minimal waypoint extraction via [`RouteMatcherExt`].
+pub struct TrackMatchRequest<'a, G = &'a mut RoutingGraph> {
+    pub graph: G,
+    pub lookups: &'a LookupData,
+    pub profile: &'a Profile,
+    pub track_points: &'a [(f64, f64)],
+    pub options: MapMatchOptions,
+}
+
+/// Extension trait on [`AStarRouter`] for GPX / GPS track map-matching and minimal waypoint extraction.
+pub trait RouteMatcherExt {
+    /// Snaps a recorded GPX XML track to the routing graph network and returns the matched [`RouteResult`].
+    fn match_gpx<'a, G: Into<GraphRef<'a>>>(
         &self,
-        graph: &mut RoutingGraph,
-        lookups: &LookupData,
-        profile: &Profile,
-        gpx_xml: &str,
-        options: &MapMatchOptions,
-    ) -> Result<RouteResult, String> {
-        let track_points = parse_gpx_points(gpx_xml)?;
-        let mut graph_ref = GraphRef::Mutable(graph);
-        self.match_track_points_ref(&mut graph_ref, lookups, profile, &track_points, options)
-    }
+        request: GpxMatchRequest<'a, G>,
+    ) -> Result<RouteResult, String>;
 
     /// Snaps a sequence of recorded `(lon, lat)` GPS coordinates to the routing graph network.
-    pub fn match_track_points(
+    fn match_track<'a, G: Into<GraphRef<'a>>>(
         &self,
-        graph: &RoutingGraph,
-        lookups: &LookupData,
-        profile: &Profile,
-        track_points: &[(f64, f64)],
-        options: &MapMatchOptions,
+        request: TrackMatchRequest<'a, G>,
+    ) -> Result<RouteResult, String>;
+
+    /// Snaps a GPX XML track to the road network and extracts the minimal sequence of
+    /// `(lon, lat)` waypoints needed for `profile` to reproduce the track within `options.deviation_tolerance_m`.
+    fn extract_gpx_waypoints<'a, G: Into<GraphRef<'a>>>(
+        &self,
+        request: GpxMatchRequest<'a, G>,
+    ) -> Result<(Vec<(f64, f64)>, RouteResult), String>;
+
+    /// Snaps a coordinate sequence to the road network and extracts the minimal sequence of
+    /// `(lon, lat)` waypoints needed for `profile` to reproduce the track within `options.deviation_tolerance_m`.
+    fn extract_track_waypoints<'a, G: Into<GraphRef<'a>>>(
+        &self,
+        request: TrackMatchRequest<'a, G>,
+    ) -> Result<(Vec<(f64, f64)>, RouteResult), String>;
+}
+
+impl RouteMatcherExt for AStarRouter {
+    fn match_gpx<'a, G: Into<GraphRef<'a>>>(
+        &self,
+        request: GpxMatchRequest<'a, G>,
     ) -> Result<RouteResult, String> {
-        let mut graph_ref = GraphRef::Shared(graph);
-        self.match_track_points_ref(&mut graph_ref, lookups, profile, track_points, options)
+        let track_points = parse_gpx_points(request.gpx_xml)?;
+        let mut graph_ref = request.graph.into();
+        match_track_points_ref(
+            self,
+            &mut graph_ref,
+            request.lookups,
+            request.profile,
+            &track_points,
+            &request.options,
+        )
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn route_control_span_adaptive(
+    fn match_track<'a, G: Into<GraphRef<'a>>>(
         &self,
-        graph: &mut GraphRef<'_>,
-        lookups: &LookupData,
-        profile: &Profile,
-        dedup: &[(f64, f64)],
-        dedup_2d: &[Point2D],
-        start_cand: &SnappedCandidate,
-        end_cand: &SnappedCandidate,
-        options: &MapMatchOptions,
-        timode: i32,
-        depth: usize,
-        out_legs: &mut Vec<RouteResult>,
-    ) -> bool {
-        if let Ok(leg) = self.find_route_leg_ref(
+        request: TrackMatchRequest<'a, G>,
+    ) -> Result<RouteResult, String> {
+        let mut graph_ref = request.graph.into();
+        match_track_points_ref(
+            self,
+            &mut graph_ref,
+            request.lookups,
+            request.profile,
+            request.track_points,
+            &request.options,
+        )
+    }
+
+    fn extract_gpx_waypoints<'a, G: Into<GraphRef<'a>>>(
+        &self,
+        request: GpxMatchRequest<'a, G>,
+    ) -> Result<(Vec<(f64, f64)>, RouteResult), String> {
+        let track_points = parse_gpx_points(request.gpx_xml)?;
+        let mut graph_ref = request.graph.into();
+        match_track_with_minimal_waypoints_ref(
+            self,
+            &mut graph_ref,
+            request.lookups,
+            request.profile,
+            &track_points,
+            &request.options,
+        )
+    }
+
+    fn extract_track_waypoints<'a, G: Into<GraphRef<'a>>>(
+        &self,
+        request: TrackMatchRequest<'a, G>,
+    ) -> Result<(Vec<(f64, f64)>, RouteResult), String> {
+        let mut graph_ref = request.graph.into();
+        match_track_with_minimal_waypoints_ref(
+            self,
+            &mut graph_ref,
+            request.lookups,
+            request.profile,
+            request.track_points,
+            &request.options,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn route_control_span_adaptive(
+    router: &AStarRouter,
+    graph: &mut GraphRef<'_>,
+    lookups: &LookupData,
+    profile: &Profile,
+    dedup: &[(f64, f64)],
+    dedup_2d: &[Point2D],
+    start_cand: &SnappedCandidate,
+    end_cand: &SnappedCandidate,
+    options: &MapMatchOptions,
+    timode: i32,
+    depth: usize,
+    out_legs: &mut Vec<RouteResult>,
+) -> bool {
+    if let Ok(leg) = router.route_leg_ref(
+        graph,
+        lookups,
+        profile,
+        start_cand.coord,
+        end_cand.coord,
+        0,
+        &[],
+        None,
+        false,
+        timode,
+    ) {
+        let tol = options.deviation_tolerance_m.max(15.0) * 1.4;
+        let mut needs_split = false;
+        if depth < 4 && end_cand.dedup_idx > start_cand.dedup_idx + 1 {
+            let leg_2d: Vec<Point2D> = leg
+                .points
+                .iter()
+                .map(|p| Point2D::new(lon_to_ilon(p.lon), lat_to_ilat(p.lat)))
+                .collect();
+            let gps_slice = &dedup_2d[start_cand.dedup_idx..=end_cand.dedup_idx];
+            for &pt in gps_slice {
+                if min_dist_to_polyline_m(pt, &leg_2d) > tol {
+                    needs_split = true;
+                    break;
+                }
+            }
+            if !needs_split {
+                for &lp in &leg_2d {
+                    if min_dist_to_polyline_m(lp, gps_slice) > tol {
+                        needs_split = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if needs_split {
+            let mid_idx = (start_cand.dedup_idx + end_cand.dedup_idx) / 2;
+            let (lon, lat) = dedup[mid_idx];
+            let track_dir = compute_local_track_dir(dedup_2d, mid_idx);
+            let mut evaluator = ProfileEvaluator::new(profile, &lookups.way, &lookups.node);
+            if let Some(mid_cand) = snap_track_point_to_road(
+                graph,
+                lon,
+                lat,
+                options.max_snap_distance_m,
+                track_dir,
+                false,
+                mid_idx,
+                &mut evaluator,
+                lookups,
+            ) {
+                let prev_len = out_legs.len();
+                if route_control_span_adaptive(
+                    router,
+                    graph,
+                    lookups,
+                    profile,
+                    dedup,
+                    dedup_2d,
+                    start_cand,
+                    &mid_cand,
+                    options,
+                    timode,
+                    depth + 1,
+                    out_legs,
+                ) && route_control_span_adaptive(
+                    router,
+                    graph,
+                    lookups,
+                    profile,
+                    dedup,
+                    dedup_2d,
+                    &mid_cand,
+                    end_cand,
+                    options,
+                    timode,
+                    depth + 1,
+                    out_legs,
+                ) {
+                    return true;
+                }
+                out_legs.truncate(prev_len);
+            }
+        }
+
+        out_legs.push(leg);
+        return true;
+    }
+    false
+}
+
+fn match_track_points_ref(
+    router: &AStarRouter,
+    graph: &mut GraphRef<'_>,
+    lookups: &LookupData,
+    profile: &Profile,
+    track_points: &[(f64, f64)],
+    options: &MapMatchOptions,
+) -> Result<RouteResult, String> {
+    if track_points.len() < 2 {
+        return Err("At least 2 GPS track points are required for map-matching".to_string());
+    }
+    let (dedup, dedup_2d) = deduplicate_track_points(track_points, options.min_point_spacing_m);
+    let control_cands =
+        extract_snapped_candidates_ref(&dedup, &dedup_2d, graph, lookups, profile, options)?;
+    let timode = options
+        .turn_instruction_mode
+        .unwrap_or_else(|| profile.get_global_var("turnInstructionMode", 0.0) as i32);
+    let kinematic_cfg = KinematicConfig::from_profile(profile);
+
+    let mut legs = Vec::with_capacity(control_cands.len());
+    let mut curr_idx = 0usize;
+    while curr_idx + 1 < control_cands.len() {
+        let mut next_idx = curr_idx + 1;
+        let mut matched = false;
+        while next_idx < control_cands.len() {
+            if route_control_span_adaptive(
+                router,
+                graph,
+                lookups,
+                profile,
+                &dedup,
+                &dedup_2d,
+                &control_cands[curr_idx],
+                &control_cands[next_idx],
+                options,
+                timode,
+                0,
+                &mut legs,
+            ) {
+                matched = true;
+                break;
+            }
+            next_idx += 1;
+        }
+        if matched {
+            curr_idx = next_idx;
+        } else {
+            return Err(format!(
+                "Failed to map-match track segment starting at waypoint {}",
+                curr_idx
+            ));
+        }
+    }
+
+    let mut merged =
+        RouteResult::merge_with_via_correction(legs, options.via_correction_max_dist_m)?;
+    merged.turn_instruction_mode = timode;
+    merged.recalc_track(graph, &kinematic_cfg);
+    Ok(merged)
+}
+
+fn match_track_with_minimal_waypoints_ref(
+    router: &AStarRouter,
+    graph: &mut GraphRef<'_>,
+    lookups: &LookupData,
+    profile: &Profile,
+    track_points: &[(f64, f64)],
+    options: &MapMatchOptions,
+) -> Result<(Vec<(f64, f64)>, RouteResult), String> {
+    let ref_route =
+        match_track_points_ref(router, graph, lookups, profile, track_points, options)?;
+    if ref_route.points.len() < 2 {
+        return Err("Map-matched reference route has fewer than 2 points".to_string());
+    }
+
+    let m = ref_route.points.len() - 1;
+    let ref_2d: Vec<Point2D> = ref_route
+        .points
+        .iter()
+        .map(|p| Point2D::new(lon_to_ilon(p.lon), lat_to_ilat(p.lat)))
+        .collect();
+
+    let mut cum_dist = Vec::with_capacity(m + 1);
+    cum_dist.push(0.0f64);
+    for i in 1..=m {
+        let d = distance(ref_2d[i - 1], ref_2d[i]);
+        cum_dist.push(cum_dist[i - 1] + d);
+    }
+
+    let wp_coord = |idx: usize| -> (f64, f64) {
+        if idx == 0 {
+            return (ref_route.points[0].lon, ref_route.points[0].lat);
+        }
+        if idx >= m {
+            return (ref_route.points[m].lon, ref_route.points[m].lat);
+        }
+        let len_prev = distance(ref_2d[idx - 1], ref_2d[idx]);
+        let len_next = distance(ref_2d[idx], ref_2d[idx + 1]);
+        let (other_idx, seg_len) = if len_next >= len_prev {
+            (idx + 1, len_next)
+        } else {
+            (idx - 1, len_prev)
+        };
+        if seg_len >= 4.0 {
+            let frac = (3.5 / seg_len).min(0.5);
+            let lon = ref_route.points[idx].lon
+                + (ref_route.points[other_idx].lon - ref_route.points[idx].lon) * frac;
+            let lat = ref_route.points[idx].lat
+                + (ref_route.points[other_idx].lat - ref_route.points[idx].lat) * frac;
+            (lon, lat)
+        } else {
+            (ref_route.points[idx].lon, ref_route.points[idx].lat)
+        }
+    };
+
+    let tol_m = options.deviation_tolerance_m.max(5.0);
+    let timode = options
+        .turn_instruction_mode
+        .unwrap_or_else(|| profile.get_global_var("turnInstructionMode", 0.0) as i32);
+
+    let mut keep = vec![false; m + 1];
+    keep[0] = true;
+    keep[m] = true;
+
+    let max_initial_span_m = 3500.0;
+    let mut last_seed_dist = 0.0;
+    for i in 1..m {
+        if cum_dist[i] - last_seed_dist >= max_initial_span_m
+            && cum_dist[m] - cum_dist[i] >= max_initial_span_m * 0.5
+        {
+            keep[i] = true;
+            last_seed_dist = cum_dist[i];
+        }
+    }
+    let seed_indices: Vec<usize> = (0..=m).filter(|&i| keep[i]).collect();
+    let mut stack: Vec<(usize, usize)> = seed_indices
+        .windows(2)
+        .rev()
+        .map(|w| (w[0], w[1]))
+        .collect();
+    while let Some((start_idx, end_idx)) = stack.pop() {
+        if end_idx <= start_idx + 1 || cum_dist[end_idx] - cum_dist[start_idx] < tol_m * 2.0 {
+            continue;
+        }
+        let start_c = wp_coord(start_idx);
+        let end_c = wp_coord(end_idx);
+
+        let routed = router.route_leg_ref(
+            graph, lookups, profile, start_c, end_c, 0, &[], None, false, timode,
+        );
+
+        match routed {
+            Ok(leg) => {
+                if let Some(split_k) = find_worst_deviation_index(
+                    &ref_2d,
+                    &cum_dist,
+                    start_idx,
+                    end_idx,
+                    &leg,
+                    tol_m,
+                ) {
+                    keep[split_k] = true;
+                    stack.push((split_k, end_idx));
+                    stack.push((start_idx, split_k));
+                }
+            }
+            Err(_) => {
+                let target_d = (cum_dist[start_idx] + cum_dist[end_idx]) * 0.5;
+                if let Some(mid_k) = ((start_idx + 1)..end_idx).min_by(|&a, &b| {
+                    (cum_dist[a] - target_d)
+                        .abs()
+                        .total_cmp(&(cum_dist[b] - target_d).abs())
+                }) {
+                    if cum_dist[mid_k] - cum_dist[start_idx] >= tol_m
+                        && cum_dist[end_idx] - cum_dist[mid_k] >= tol_m
+                    {
+                        keep[mid_k] = true;
+                        stack.push((mid_k, end_idx));
+                        stack.push((start_idx, mid_k));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut kept: Vec<usize> = (0..=m).filter(|&i| keep[i]).collect();
+    let mut i = 1usize;
+    while i + 1 < kept.len() {
+        let prev_idx = kept[i - 1];
+        let next_idx = kept[i + 1];
+        let bridged = router.route_leg_ref(
             graph,
             lookups,
             profile,
-            start_cand.coord,
-            end_cand.coord,
+            wp_coord(prev_idx),
+            wp_coord(next_idx),
             0,
             &[],
             None,
             false,
             timode,
-        ) {
-            let tol = options.deviation_tolerance_m.max(15.0) * 1.4;
-            let mut needs_split = false;
-            if depth < 4 && end_cand.dedup_idx > start_cand.dedup_idx + 1 {
-                let leg_2d: Vec<Point2D> = leg
-                    .points
-                    .iter()
-                    .map(|p| Point2D::new(lon_to_ilon(p.lon), lat_to_ilat(p.lat)))
-                    .collect();
-                let gps_slice = &dedup_2d[start_cand.dedup_idx..=end_cand.dedup_idx];
-                for &pt in gps_slice {
-                    if min_dist_to_polyline_m(pt, &leg_2d) > tol {
-                        needs_split = true;
-                        break;
-                    }
-                }
-                if !needs_split {
-                    for &lp in &leg_2d {
-                        if min_dist_to_polyline_m(lp, gps_slice) > tol {
-                            needs_split = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if needs_split {
-                let mid_idx = (start_cand.dedup_idx + end_cand.dedup_idx) / 2;
-                let (lon, lat) = dedup[mid_idx];
-                let track_dir = compute_local_track_dir(dedup_2d, mid_idx);
-                let mut evaluator = ProfileEvaluator::new(profile, &lookups.way, &lookups.node);
-                if let Some(mid_cand) = snap_track_point_to_road(
-                    graph,
-                    lon,
-                    lat,
-                    options.max_snap_distance_m,
-                    track_dir,
-                    false,
-                    mid_idx,
-                    &mut evaluator,
-                    lookups,
-                ) {
-                    let prev_len = out_legs.len();
-                    if self.route_control_span_adaptive(
-                        graph,
-                        lookups,
-                        profile,
-                        dedup,
-                        dedup_2d,
-                        start_cand,
-                        &mid_cand,
-                        options,
-                        timode,
-                        depth + 1,
-                        out_legs,
-                    ) && self.route_control_span_adaptive(
-                        graph,
-                        lookups,
-                        profile,
-                        dedup,
-                        dedup_2d,
-                        &mid_cand,
-                        end_cand,
-                        options,
-                        timode,
-                        depth + 1,
-                        out_legs,
-                    ) {
-                        return true;
-                    }
-                    out_legs.truncate(prev_len);
-                }
-            }
-
-            out_legs.push(leg);
-            return true;
-        }
-        false
-    }
-
-    fn match_track_points_ref(
-        &self,
-        graph: &mut GraphRef<'_>,
-        lookups: &LookupData,
-        profile: &Profile,
-        track_points: &[(f64, f64)],
-        options: &MapMatchOptions,
-    ) -> Result<RouteResult, String> {
-        if track_points.len() < 2 {
-            return Err("At least 2 GPS track points are required for map-matching".to_string());
-        }
-        let (dedup, dedup_2d) = deduplicate_track_points(track_points, options.min_point_spacing_m);
-        let control_cands =
-            extract_snapped_candidates_ref(&dedup, &dedup_2d, graph, lookups, profile, options)?;
-        let timode = options
-            .turn_instruction_mode
-            .unwrap_or_else(|| profile.get_global_var("turnInstructionMode", 0.0) as i32);
-        let kinematic_cfg = KinematicConfig::from_profile(profile);
-
-        let mut legs = Vec::with_capacity(control_cands.len());
-        let mut curr_idx = 0usize;
-        while curr_idx + 1 < control_cands.len() {
-            let mut next_idx = curr_idx + 1;
-            let mut matched = false;
-            while next_idx < control_cands.len() {
-                if self.route_control_span_adaptive(
-                    graph,
-                    lookups,
-                    profile,
-                    &dedup,
-                    &dedup_2d,
-                    &control_cands[curr_idx],
-                    &control_cands[next_idx],
-                    options,
-                    timode,
-                    0,
-                    &mut legs,
-                ) {
-                    matched = true;
-                    break;
-                }
-                next_idx += 1;
-            }
-            if matched {
-                curr_idx = next_idx;
-            } else {
-                return Err(format!(
-                    "Failed to map-match track segment starting at waypoint {}",
-                    curr_idx
-                ));
-            }
-        }
-
-        let mut merged =
-            RouteResult::merge_with_via_correction(legs, options.via_correction_max_dist_m)?;
-        merged.turn_instruction_mode = timode;
-        merged.recalc_track(graph, &kinematic_cfg);
-        Ok(merged)
-    }
-
-    /// Snaps a GPX XML track to the road network and extracts the minimal sequence of
-    /// `(lon, lat)` waypoints needed for `profile` to reproduce the track within `options.deviation_tolerance_m`.
-    pub fn match_gpx_with_minimal_waypoints(
-        &self,
-        graph: &RoutingGraph,
-        lookups: &LookupData,
-        profile: &Profile,
-        gpx_xml: &str,
-        options: &MapMatchOptions,
-    ) -> Result<(Vec<(f64, f64)>, RouteResult), String> {
-        let track_points = parse_gpx_points(gpx_xml)?;
-        self.match_track_with_minimal_waypoints(graph, lookups, profile, &track_points, options)
-    }
-
-    /// Snaps a GPX XML track and extracts minimal waypoints using lazy on-demand cell loading.
-    pub fn match_gpx_with_minimal_waypoints_lazy(
-        &self,
-        graph: &mut RoutingGraph,
-        lookups: &LookupData,
-        profile: &Profile,
-        gpx_xml: &str,
-        options: &MapMatchOptions,
-    ) -> Result<(Vec<(f64, f64)>, RouteResult), String> {
-        let track_points = parse_gpx_points(gpx_xml)?;
-        let mut graph_ref = GraphRef::Mutable(graph);
-        self.match_track_with_minimal_waypoints_ref(
-            &mut graph_ref,
-            lookups,
-            profile,
-            &track_points,
-            options,
-        )
-    }
-
-    /// Snaps a coordinate sequence to the road network and extracts the minimal sequence of
-    /// `(lon, lat)` waypoints needed for `profile` to reproduce the track within `options.deviation_tolerance_m`.
-    pub fn match_track_with_minimal_waypoints(
-        &self,
-        graph: &RoutingGraph,
-        lookups: &LookupData,
-        profile: &Profile,
-        track_points: &[(f64, f64)],
-        options: &MapMatchOptions,
-    ) -> Result<(Vec<(f64, f64)>, RouteResult), String> {
-        let mut graph_ref = GraphRef::Shared(graph);
-        self.match_track_with_minimal_waypoints_ref(
-            &mut graph_ref,
-            lookups,
-            profile,
-            track_points,
-            options,
-        )
-    }
-
-    fn match_track_with_minimal_waypoints_ref(
-        &self,
-        graph: &mut GraphRef<'_>,
-        lookups: &LookupData,
-        profile: &Profile,
-        track_points: &[(f64, f64)],
-        options: &MapMatchOptions,
-    ) -> Result<(Vec<(f64, f64)>, RouteResult), String> {
-        let ref_route =
-            self.match_track_points_ref(graph, lookups, profile, track_points, options)?;
-        if ref_route.points.len() < 2 {
-            return Err("Map-matched reference route has fewer than 2 points".to_string());
-        }
-
-        let m = ref_route.points.len() - 1;
-        let ref_2d: Vec<Point2D> = ref_route
-            .points
-            .iter()
-            .map(|p| Point2D::new(lon_to_ilon(p.lon), lat_to_ilat(p.lat)))
-            .collect();
-
-        let mut cum_dist = Vec::with_capacity(m + 1);
-        cum_dist.push(0.0f64);
-        for i in 1..=m {
-            let d = distance(ref_2d[i - 1], ref_2d[i]);
-            cum_dist.push(cum_dist[i - 1] + d);
-        }
-
-        // For interior indices, nudge up to 3.5m into the longer adjacent segment so the waypoint
-        // lies strictly inside a road edge rather than on a multi-way junction node, without
-        // drifting far from `ref_route.points[idx]`.
-        let wp_coord = |idx: usize| -> (f64, f64) {
-            if idx == 0 {
-                return (ref_route.points[0].lon, ref_route.points[0].lat);
-            }
-            if idx >= m {
-                return (ref_route.points[m].lon, ref_route.points[m].lat);
-            }
-            let len_prev = distance(ref_2d[idx - 1], ref_2d[idx]);
-            let len_next = distance(ref_2d[idx], ref_2d[idx + 1]);
-            let (other_idx, seg_len) = if len_next >= len_prev {
-                (idx + 1, len_next)
-            } else {
-                (idx - 1, len_prev)
-            };
-            if seg_len >= 4.0 {
-                let frac = (3.5 / seg_len).min(0.5);
-                let lon = ref_route.points[idx].lon
-                    + (ref_route.points[other_idx].lon - ref_route.points[idx].lon) * frac;
-                let lat = ref_route.points[idx].lat
-                    + (ref_route.points[other_idx].lat - ref_route.points[idx].lat) * frac;
-                (lon, lat)
-            } else {
-                (ref_route.points[idx].lon, ref_route.points[idx].lat)
-            }
+        );
+        let can_drop = match bridged {
+            Ok(leg) => find_worst_deviation_index(
+                &ref_2d, &cum_dist, prev_idx, next_idx, &leg, tol_m,
+            )
+            .is_none(),
+            Err(_) => false,
         };
-
-        let tol_m = options.deviation_tolerance_m.max(5.0);
-        let timode = options
-            .turn_instruction_mode
-            .unwrap_or_else(|| profile.get_global_var("turnInstructionMode", 0.0) as i32);
-
-        let mut keep = vec![false; m + 1];
-        keep[0] = true;
-        keep[m] = true;
-
-        let max_initial_span_m = 3500.0;
-        let mut last_seed_dist = 0.0;
-        for i in 1..m {
-            if cum_dist[i] - last_seed_dist >= max_initial_span_m
-                && cum_dist[m] - cum_dist[i] >= max_initial_span_m * 0.5
-            {
-                keep[i] = true;
-                last_seed_dist = cum_dist[i];
-            }
+        if can_drop {
+            kept.remove(i);
+        } else {
+            i += 1;
         }
-        let seed_indices: Vec<usize> = (0..=m).filter(|&i| keep[i]).collect();
-        let mut stack: Vec<(usize, usize)> = seed_indices
-            .windows(2)
-            .rev()
-            .map(|w| (w[0], w[1]))
-            .collect();
-        while let Some((start_idx, end_idx)) = stack.pop() {
-            if end_idx <= start_idx + 1 || cum_dist[end_idx] - cum_dist[start_idx] < tol_m * 2.0 {
-                continue;
-            }
-            let start_c = wp_coord(start_idx);
-            let end_c = wp_coord(end_idx);
-
-            let routed = self.find_route_leg_ref(
-                graph, lookups, profile, start_c, end_c, 0, &[], None, false, timode,
-            );
-
-            match routed {
-                Ok(leg) => {
-                    if let Some(split_k) = find_worst_deviation_index(
-                        &ref_2d,
-                        &cum_dist,
-                        start_idx,
-                        end_idx,
-                        &leg,
-                        tol_m,
-                    ) {
-                        keep[split_k] = true;
-                        stack.push((split_k, end_idx));
-                        stack.push((start_idx, split_k));
-                    }
-                }
-                Err(_) => {
-                    let target_d = (cum_dist[start_idx] + cum_dist[end_idx]) * 0.5;
-                    if let Some(mid_k) = ((start_idx + 1)..end_idx).min_by(|&a, &b| {
-                        (cum_dist[a] - target_d)
-                            .abs()
-                            .total_cmp(&(cum_dist[b] - target_d).abs())
-                    }) {
-                        if cum_dist[mid_k] - cum_dist[start_idx] >= tol_m
-                            && cum_dist[end_idx] - cum_dist[mid_k] >= tol_m
-                        {
-                            keep[mid_k] = true;
-                            stack.push((mid_k, end_idx));
-                            stack.push((start_idx, mid_k));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Redundancy pruning pass: drop any interior via point whose removal still keeps the
-        // bridged leg within `tol_m` of the reference route.
-        let mut kept: Vec<usize> = (0..=m).filter(|&i| keep[i]).collect();
-        let mut i = 1usize;
-        while i + 1 < kept.len() {
-            let prev_idx = kept[i - 1];
-            let next_idx = kept[i + 1];
-            let bridged = self.find_route_leg_ref(
-                graph,
-                lookups,
-                profile,
-                wp_coord(prev_idx),
-                wp_coord(next_idx),
-                0,
-                &[],
-                None,
-                false,
-                timode,
-            );
-            let can_drop = match bridged {
-                Ok(leg) => find_worst_deviation_index(
-                    &ref_2d, &cum_dist, prev_idx, next_idx, &leg, tol_m,
-                )
-                .is_none(),
-                Err(_) => false,
-            };
-            if can_drop {
-                kept.remove(i);
-            } else {
-                i += 1;
-            }
-        }
-
-        let waypoints: Vec<(f64, f64)> = kept.iter().map(|&idx| wp_coord(idx)).collect();
-        let final_route = self.find_multi_route_with_options_ref(
-            graph,
-            lookups,
-            profile,
-            &waypoints,
-            &super::search::RoutingOptions::default(),
-        )?;
-
-        Ok((waypoints, final_route))
     }
+
+    let waypoints: Vec<(f64, f64)> = kept.iter().map(|&idx| wp_coord(idx)).collect();
+    let final_route = router.route_with_graph_ref(
+        graph,
+        lookups,
+        profile,
+        &waypoints,
+        &brouter_rs::routing::search::RoutingOptions::default(),
+    )?;
+
+    Ok((waypoints, final_route))
 }
 
 fn min_dist_to_polyline_m(pt: Point2D, poly: &[Point2D]) -> f64 {
@@ -1199,7 +1212,7 @@ fn find_worst_deviation_index(
             .unwrap();
         let exc_len = cum_dist[worst_exc.end_k] - cum_dist[worst_exc.start_k];
         if exc_len > 400.0 && worst_exc.end_k > worst_exc.start_k + 2 {
-            // For long corridor divergences, split near the middle [25%, 75%] of the excursion
+            // For long route divergences, split near the middle [25%, 75%] of the excursion
             // to achieve balanced O(log N) subdivision instead of peeling one block at a time.
             let d_low = cum_dist[worst_exc.start_k] + exc_len * 0.25;
             let d_high = cum_dist[worst_exc.start_k] + exc_len * 0.75;

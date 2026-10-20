@@ -1,8 +1,10 @@
 [workspace]
 members = [
-    "crates/rsrouter-core",
-    "crates/rsrouter-server",
+    "crates/route-tools",
     "crates/rsrouter-wasm",
+]
+exclude = [
+    "subrepos/brouter-rs",
 ]
 resolver = "2"
 

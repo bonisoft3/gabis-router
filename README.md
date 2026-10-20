@@ -1,85 +1,61 @@
 # rsrouter
 
-BRouter alternative implemented in Rust.
-
-Reads BRouter `.rd5` tiles and `.brf` profiles, runs 2-pass A* search with elevation and kinematic modeling, and serves routes over HTTP. See [PARITY.md](PARITY.md) for benchmarks against upstream Java BRouter.
+Bicycle route planner and offline-capable web application powered by [`brouter-rs`](subrepos/brouter-rs).
 
 ## Project Structure
 
 | Component | Path | Description |
 | :--- | :--- | :--- |
-| `rsrouter-core` | `crates/rsrouter-core/` | Core library: RD5 decoding, graph topology, profile DSL, guided A* routing, and GPX map matching |
+| `brouter-rs` | `subrepos/brouter-rs/` | Core BRouter engine in Rust (RD5 decoding, profile DSL, 2-pass guided A* search, HTTP server demo, and parity benchmarks). See [subrepos/brouter-rs/README.md](subrepos/brouter-rs/README.md) |
+| `route-tools` | `crates/route-tools/` | Product routing utilities: GPX / GPS track map-matching, minimal waypoint extraction, and surface/road segment breakdowns |
 | `rsrouter-wasm` | `crates/rsrouter-wasm/` | WebAssembly bindings for browser routing and GPX waypoint extraction |
-| `rsrouter-server` | `crates/rsrouter-server/` | HTTP service (`/brouter`), parity benchmarks (`compare_routes`), and visualizer (`plot_routes`) |
-| `web` | `web/` | React + MapLibre PWA frontend. See [web/README.md](web/README.md) |
+| `profiles` | `profiles/` | Custom product `.brf` profiles (`gabis-*`) and standard BRouter profiles |
+| `web` | `web/` | Argon + MapLibre PWA frontend. See [web/README.md](web/README.md) |
 | `tools` | `tools/` | Data updater, PMTiles extractor, and Frontend MCP server (`mcp-frontend.mjs`). See [tools/README.md](tools/README.md) |
 
 ## Quick Start
 
 ### Build and Test
 
+Run product tests (`route-tools` and `rsrouter-wasm`):
+
 ```bash
 cargo test
 ```
 
-### Run Parity Comparison Suite
-
-Evaluate all 15 focus routes against upstream BRouter fixtures:
+Run `brouter-rs` core and parity tests:
 
 ```bash
-cargo run --release -p rsrouter-server --bin compare_routes
+cargo test --manifest-path subrepos/brouter-rs/Cargo.toml
 ```
 
-### Generate Route Visualizations
+### Build WebAssembly Bindings and Run Frontend
 
 ```bash
-cargo run --release -p rsrouter-server --bin plot_routes
+npm --prefix web run build:wasm
+npm --prefix web run dev
 ```
 
-The output is written to `routes_comparison.html`.
-
-### Run the HTTP API Server
-
-Start the server with on-demand tile loading:
+### Run BRouter Server Demo and Parity Tools
 
 ```bash
-cargo run --release -p rsrouter-server --bin server
-```
+# Run drop-in BRouter HTTP server on port 17777
+cargo run --release --manifest-path subrepos/brouter-rs/Cargo.toml --example server
 
-Or preload a regional bounding box at startup:
+# Run parity benchmark suite
+cargo run --release --manifest-path subrepos/brouter-rs/Cargo.toml --example compare_routes
 
-```bash
-cargo run --release -p rsrouter-server --bin server -- --preload-bbox "-3.18,50.82,-0.05,51.75"
-```
-
-Test a routing query:
-
-```bash
-curl "http://localhost:17777/brouter?lonlats=-0.143613,51.462414|-0.055296,51.544998&profile=fastbike&format=geojson"
+# Generate interactive route comparison map (routes_comparison.html)
+cargo run --release --manifest-path subrepos/brouter-rs/Cargo.toml --example plot_routes
 ```
 
 ### Update Data and Fixtures
 
-Download the latest upstream `.rd5` segments and refresh parity test fixtures:
+Download the latest official BRouter `.rd5` segments and refresh parity test fixtures:
 
 ```bash
 python3 tools/update_data.py --update-tests --check
 ```
-
-See [tools/README.md](tools/README.md) for individual component flags.
-
-## Graph Loading Modes
-
-| Mode | Memory | Graph Load Time | Use Case |
-| :--- | :--- | :--- | :--- |
-| Preloaded Regional BBox | ~550 MB | 0 ms | Production, high concurrency |
-| On-Demand Bounding Box | 150 to 450 MB | 2.8 to 4.5 s | Low memory, one-off queries |
-
-## Performance and Parity
-
-15 of 15 primary routes and 2 of 3 alternative routes match upstream BRouter point for point, with 0.00% distance delta, 0.00% cost delta, 0.00% to 0.02% time delta, and identical filtered ascend. Alternative 3 matches total cost (`165368`) and ascend (`859 m`) with 98.6% coordinate overlap.
-
-See [PARITY.md](PARITY.md) for full tables and analysis.
 
 ## Pre-Launch Checklist
 
@@ -91,4 +67,3 @@ Items to revisit before public release or commercial deployment:
 | Tile Usage Limits | Free tier on Thunderforest: 150,000 tiles per month, public CyclOSM | Verify commercial license and tile caching compliance under production traffic |
 | Tile and Routing Data CDN | Local files and test mirrors | Set up a production CDN with cache-control headers for `.rd5` and `.pmtiles` archives |
 | Error and Usage Telemetry | Local console error filtering only | Establish privacy-respecting error tracking with user opt-in |
-

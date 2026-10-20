@@ -44,7 +44,7 @@ export const PROFILE_INFO: Record<ProfileName, ProfileMeta> = {
     id: 'gabis-fast-city',
     label: "Gabi's Fast City",
     shortLabel: 'Fast City',
-    summary: 'Direct urban cycle corridors and bus/cycle lanes, avoids residential zig-zags.',
+    summary: 'Direct urban cycle routes and bus/cycle lanes, avoids residential zig-zags.',
   },
   'gabis-lite-gravel': {
     id: 'gabis-lite-gravel',

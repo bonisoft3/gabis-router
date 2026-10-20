@@ -13,10 +13,6 @@ export class WasmRouter {
      */
     edge_count(): number;
     /**
-     * Computes a route for given waypoints ("lon,lat|lon,lat") and returns a GeoJSON string.
-     */
-    find_route(waypoints_str: string, profile_name: string, alternative_idx: number, nogos_str?: string | null): string;
-    /**
      * Loads the lookups.dat dictionary from a string.
      */
     load_lookups(text: string): void;
@@ -40,6 +36,10 @@ export class WasmRouter {
      */
     node_count(): number;
     /**
+     * Computes a route for given waypoints ("lon,lat|lon,lat") and returns a GeoJSON string.
+     */
+    route(waypoints_str: string, profile_name: string, alternative_idx: number, nogos_str?: string | null): string;
+    /**
      * Attaches JS callbacks `(size_fn(name) -> number, read_fn(name, start, end) -> Uint8Array)`
      * for BRouter-style lazy on-demand `MicroCache` cell loading during waypoint snapping and A* search.
      */
@@ -58,13 +58,13 @@ export interface InitOutput {
     readonly __wbg_wasmrouter_free: (a: number, b: number) => void;
     readonly wasmrouter_clear_graph: (a: number) => void;
     readonly wasmrouter_edge_count: (a: number) => number;
-    readonly wasmrouter_find_route: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly wasmrouter_load_lookups: (a: number, b: number, c: number) => [number, number];
     readonly wasmrouter_load_profile: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly wasmrouter_loaded_cell_count: (a: number) => number;
     readonly wasmrouter_match_gpx_waypoints: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly wasmrouter_new: () => number;
     readonly wasmrouter_node_count: (a: number) => number;
+    readonly wasmrouter_route: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly wasmrouter_set_segment_reader: (a: number, b: any, c: any) => void;
     readonly wasmrouter_take_missing_segments: (a: number) => [number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
