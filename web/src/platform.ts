@@ -16,7 +16,7 @@ declare global {
 }
 
 const env = (import.meta as any).env || {};
-const DEFAULT_R2_BASE_URL = 'https://pub-e1f100f08a474ccc895e99f913d1049d.r2.dev';
+const DEFAULT_R2_BASE_URL = 'https://tiles.surita.dev';
 const DEFAULT_PUBLIC_WEB_URL = 'https://router.surita.dev';
 
 /**

@@ -179,3 +179,18 @@ Place the executable at `tools/pmtiles` and ensure it has execute permissions:
 ```bash
 chmod +x tools/pmtiles
 ```
+
+## R2 CDN Sync (`sync_r2.py`)
+
+Configures the `gbrouter` Cloudflare R2 bucket (`tiles.surita.dev`, CORS rules, `r2.dev` disabled) and uploads all 7 UK `.rd5` and `.pmtiles` archives, including multipart uploads for files larger than 300 MiB. Runs weekly via [`.github/workflows/sync-r2.yml`](../.github/workflows/sync-r2.yml).
+
+```bash
+# Configure bucket + download and upload all 7 UK .rd5 routing segments:
+python3 tools/sync_r2.py --setup-bucket --rd5
+
+# Re-extract and upload all 7 UK .pmtiles vector map archives:
+python3 tools/sync_r2.py --pmtiles
+
+# Upload already-present local files without re-downloading:
+python3 tools/sync_r2.py --rd5 --pmtiles --upload-only
+```

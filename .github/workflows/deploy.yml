@@ -47,8 +47,8 @@ jobs:
 
       - name: Build WASM and web bundle
         env:
-          VITE_SEGMENTS_BASE_URL: https://pub-e1f100f08a474ccc895e99f913d1049d.r2.dev/segments4
-          VITE_MAP_TILES_BASE_URL: https://pub-e1f100f08a474ccc895e99f913d1049d.r2.dev/map-tiles
+          VITE_SEGMENTS_BASE_URL: https://tiles.surita.dev/segments4
+          VITE_MAP_TILES_BASE_URL: https://tiles.surita.dev/map-tiles
           VITE_PUBLIC_WEB_URL: https://router.surita.dev
           VITE_THUNDERFOREST_KEY: ${{ secrets.VITE_THUNDERFOREST_KEY || vars.VITE_THUNDERFOREST_KEY }}
         run: |
