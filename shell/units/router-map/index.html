@@ -1,0 +1,1254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gabi's Bike Router Map</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<style>
+:root {
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --paper: #ffffff;
+  --rule: #e2e8f0;
+  --accent: #2563eb;
+  --danger: #dc2626;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #e2e8f0;
+  color: var(--ink);
+  font: 13px/1.4 var(--font-sans);
+  overflow: hidden;
+}
+#root {
+  position: relative;
+  width: 100%;
+  height: 560px;
+}
+#canvas {
+  position: absolute;
+  inset: 0;
+}
+.map-controls {
+  position: absolute;
+  right: 14px;
+  bottom: 36px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ctrl-group {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+.ctrl-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 600 15px/1 var(--font-sans);
+  cursor: pointer;
+}
+.ctrl-btn + .ctrl-btn {
+  border-top: 1px solid var(--rule);
+}
+.ctrl-btn:hover {
+  background: #f1f5f9;
+}
+.wp-marker {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 2.5px solid #ffffff;
+  background: var(--accent);
+  color: #ffffff;
+  font: 700 12px/1 var(--font-mono);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.32);
+  cursor: grab;
+  user-select: none;
+}
+.wp-marker[data-role="start"] {
+  background: #16a34a;
+}
+.wp-marker[data-role="end"] {
+  background: #dc2626;
+}
+.via-ghost {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 2px dashed #ffffff;
+  background: rgba(37, 99, 235, 0.9);
+  color: #ffffff;
+  font: 700 14px/1 var(--font-mono);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.35);
+  pointer-events: none;
+}
+.ctx-item.danger {
+  color: var(--danger);
+}
+.avoid-marker {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: var(--danger);
+  color: #ffffff;
+  font: 700 11px/1 var(--font-mono);
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.35);
+  cursor: pointer;
+}
+.hover-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2.5px solid #ffffff;
+  background: #f59e0b;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.4);
+  pointer-events: none;
+}
+.ctx-menu {
+  position: absolute;
+  z-index: 10;
+  min-width: 185px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
+  padding: 4px;
+}
+.ctx-menu[hidden],
+.ctx-item[hidden] {
+  display: none !important;
+}
+.ctx-coord {
+  padding: 5px 10px;
+  font: 500 11px/1.3 var(--font-mono);
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule);
+}
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font: 500 12.5px/1.3 var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.ctx-item:hover {
+  background: #f1f5f9;
+}
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="canvas"></div>
+  <div class="map-controls">
+    <div class="ctrl-group">
+      <button type="button" class="ctrl-btn" id="map-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+      <button type="button" class="ctrl-btn" id="map-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+      <button type="button" class="ctrl-btn" id="map-fit-route" title="Fit route" aria-label="Fit route">⊡</button>
+      <button type="button" class="ctrl-btn" id="map-locate" title="My location" aria-label="My location">◎</button>
+    </div>
+  </div>
+  <div id="ctx-menu" class="ctx-menu" hidden>
+    <div id="ctx-coord" class="ctx-coord"></div>
+    <button type="button" class="ctx-item" id="ctx-set-start">⚑ Set start point (A)</button>
+    <button type="button" class="ctx-item" id="ctx-add-via">⊕ Insert via point</button>
+    <button type="button" class="ctx-item" id="ctx-add-wp">＋ Add destination / waypoint</button>
+    <button type="button" class="ctx-item" id="ctx-add-avoid">⊘ Add avoid area (500 m)</button>
+    <button type="button" class="ctx-item" id="ctx-inspect">ⓘ Inspect road tags</button>
+  </div>
+  <div id="wp-menu" class="ctx-menu" hidden>
+    <div id="wp-menu-title" class="ctx-coord"></div>
+    <button type="button" class="ctx-item" id="wp-make-start">⚑ Set as start (A)</button>
+    <button type="button" class="ctx-item" id="wp-make-end">🏁 Set as destination (B)</button>
+    <button type="button" class="ctx-item danger" id="wp-delete">✕ Remove waypoint</button>
+  </div>
+</div>
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/pmtiles.js"></script>
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const post = (message) => parent.postMessage(message, "*");
+const raise = (name, detail) => post({ type: "pronto:event", name, detail });
+const fixed = (n) => Number(n).toFixed(5);
+
+const PMTILES_BASE = "https://tiles.surita.dev/map-tiles";
+const CYCLE_PMTILES_URL = `${PMTILES_BASE}/cycle_routes.pmtiles`;
+let hostOrigin = "";
+let suritaPmtilesEnabled = false;
+let rangeReqSeq = 0;
+const pendingRanges = new Map();
+
+class ParentRangeSource {
+  constructor(url) {
+    this.url = url;
+  }
+  getKey() {
+    return this.url;
+  }
+  getBytes(offset, length) {
+    const id = ++rangeReqSeq;
+    return new Promise((resolve, reject) => {
+      pendingRanges.set(id, { resolve, reject });
+      post({ type: "gabi:pmtiles-range", id, url: this.url, offset, length });
+    });
+  }
+}
+
+function segNameForLonLat(lon, lat) {
+  const lonBase = Math.floor((lon + 180) / 5) * 5 - 180;
+  const latBase = Math.floor((lat + 90) / 5) * 5 - 90;
+  const lonPrefix = lonBase < 0 ? `W${Math.abs(lonBase)}` : `E${lonBase}`;
+  const latPrefix = latBase < 0 ? `S${Math.abs(latBase)}` : `N${latBase}`;
+  return `${lonPrefix}_${latPrefix}`;
+}
+
+function tileZxyToLonLat(z, x, y) {
+  const n = Math.pow(2, z);
+  const lon = ((x + 0.5) / n) * 360 - 180;
+  const latRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + 0.5)) / n)));
+  const lat = (latRad * 180) / Math.PI;
+  return [lon, lat];
+}
+
+if (typeof maplibregl !== "undefined" && typeof pmtiles !== "undefined") {
+  try {
+    const cycleProtocol = new pmtiles.Protocol();
+    const cycleArchive = new pmtiles.PMTiles(new ParentRangeSource(CYCLE_PMTILES_URL));
+    cycleProtocol.add(cycleArchive);
+    maplibregl.addProtocol("pmtiles", cycleProtocol.tile);
+
+    const regionalArchives = new Map();
+    maplibregl.addProtocol("pmtiles-composite", async (params, abortController) => {
+      if (!suritaPmtilesEnabled) return { data: new Uint8Array() };
+      const m = /pmtiles-composite:\/\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
+      if (!m) return { data: new Uint8Array() };
+      const z = parseInt(m[1], 10);
+      const x = parseInt(m[2], 10);
+      const y = parseInt(m[3], 10);
+      const [lon, lat] = tileZxyToLonLat(z, x, y);
+      const seg = segNameForLonLat(lon, lat);
+      let archive = regionalArchives.get(seg);
+      if (!archive) {
+        archive = new pmtiles.PMTiles(new ParentRangeSource(`${PMTILES_BASE}/${seg}.pmtiles`));
+        regionalArchives.set(seg, archive);
+      }
+      try {
+        const res = await archive.getZxy(z, x, y, abortController?.signal);
+        if (res && res.data) {
+          return { data: res.data, cacheControl: res.cacheControl, expires: res.expires };
+        }
+      } catch (_) {}
+      return { data: new Uint8Array() };
+    });
+  } catch (_) {}
+}
+
+function makeShieldImageData(bgHex, borderHex) {
+  const w = 36;
+  const h = 20;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = bgHex;
+  ctx.strokeStyle = borderHex;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(1, 1, w - 2, h - 2, 5);
+  ctx.fill();
+  ctx.stroke();
+  return ctx.getImageData(0, 0, w, h);
+}
+
+function ensureCycleShieldSprites() {
+  if (!map) return;
+  const defs = [
+    ["cycle-shield-ncn", "#be123c", "#ffffff"],
+    ["cycle-shield-rcn", "#6d28d9", "#ffffff"],
+    ["cycle-shield-lcn", "#1d4ed8", "#ffffff"],
+    ["cycle-shield-mtb", "#b45309", "#ffffff"],
+  ];
+  for (const [id, bg, border] of defs) {
+    if (!map.hasImage(id)) {
+      const img = makeShieldImageData(bg, border);
+      if (img) {
+        try {
+          map.addImage(id, img, {
+            pixelRatio: 2,
+            stretchX: [[6, 30]],
+            stretchY: [[6, 14]],
+            content: [6, 4, 30, 16],
+          });
+        } catch (_) {}
+      }
+    }
+  }
+}
+
+const BASEMAP_STYLES = {
+  gbrouter: "https://tiles.openfreemap.org/styles/liberty",
+  light: "https://tiles.openfreemap.org/styles/positron",
+  osm: {
+    version: 8,
+    sources: {
+      osm: {
+        type: "raster",
+        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tileSize: 256,
+        attribution: "© OpenStreetMap contributors",
+      },
+    },
+    layers: [{ id: "osm-layer", type: "raster", source: "osm" }],
+  },
+  cyclosm: {
+    version: 8,
+    sources: {
+      cyclosm: {
+        type: "raster",
+        tiles: ["https://a.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png"],
+        tileSize: 256,
+        attribution: "© CyclOSM · OpenStreetMap contributors",
+      },
+    },
+    layers: [{ id: "cyclosm-layer", type: "raster", source: "cyclosm" }],
+  },
+};
+
+let map = null;
+let mapLoaded = false;
+let currentBasemap = "gbrouter";
+let currentTerrain = "off";
+let lastCenterKey = "";
+let lastRoutesJson = "";
+let lastWaypointsJson = "";
+let lastAvoidJson = "";
+let wpMarkers = [];
+let currentWaypoints = [];
+let avoidMarkers = [];
+let hoverMarker = null;
+let viaGhostMarker = null;
+let routeDragActive = false;
+let routeDragLegIdx = -1;
+let suppressNextClickUntil = 0;
+let markerDraggingUntil = 0;
+let hasFittedOnce = false;
+let ctxLngLat = null;
+let activeWpMenuIdx = -1;
+let lastHeight = -1;
+let activeCoords = [];
+
+function hideMenus() {
+  $("ctx-menu").hidden = true;
+  $("wp-menu").hidden = true;
+}
+
+function pointToSegSq(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return (px - x1) * (px - x1) + (py - y1) * (py - y1);
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return (px - projX) * (px - projX) + (py - projY) * (py - projY);
+}
+
+function closestLegForPoint(lon, lat) {
+  if (currentWaypoints.length < 2) return currentWaypoints.length;
+  let bestIdx = currentWaypoints.length - 1;
+  let bestDistSq = Infinity;
+  for (let i = 0; i < currentWaypoints.length - 1; i++) {
+    const a = currentWaypoints[i];
+    const b = currentWaypoints[i + 1];
+    const dSq = pointToSegSq(lon, lat, Number(a[0]), Number(a[1]), Number(b[0]), Number(b[1]));
+    if (dSq < bestDistSq) {
+      bestDistSq = dSq;
+      bestIdx = i + 1;
+    }
+  }
+  return bestIdx;
+}
+
+function circlePolygon(lon, lat, radiusM, steps = 32) {
+  const coords = [];
+  const dLat = radiusM / 111320;
+  const dLon = radiusM / (111320 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+  for (let i = 0; i <= steps; i++) {
+    const ang = (i / steps) * Math.PI * 2;
+    coords.push([lon + Math.cos(ang) * dLon, lat + Math.sin(ang) * dLat]);
+  }
+  return coords;
+}
+
+function ensureLayers() {
+  if (!map || !mapLoaded) return;
+  if ((currentBasemap === "gbrouter" || currentBasemap === "light") && map.getSource("openmaptiles") && !map.getLayer("ocm-openmap-cycleway")) {
+    try {
+      const beforeId = map.getLayer("routes-inactive") ? "routes-inactive" : undefined;
+      map.addLayer({
+        id: "ocm-openmap-cycleway-halo",
+        type: "line",
+        source: "openmaptiles",
+        "source-layer": "transportation",
+        filter: ["any", ["==", ["get", "subclass"], "cycleway"], ["==", ["get", "bicycle"], "designated"]],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#10b981",
+          "line-opacity": 0.22,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3, 15, 7],
+        },
+      }, beforeId);
+      map.addLayer({
+        id: "ocm-openmap-cycleway",
+        type: "line",
+        source: "openmaptiles",
+        "source-layer": "transportation",
+        filter: ["any", ["==", ["get", "subclass"], "cycleway"], ["==", ["get", "bicycle"], "designated"]],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#059669",
+          "line-opacity": 0.78,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.4, 15, 2.8],
+        },
+      }, beforeId);
+    } catch (_) {}
+  }
+  if (suritaPmtilesEnabled && (currentBasemap === "gbrouter" || currentBasemap === "light") && !map.getSource("cycle_routes")) {
+    try {
+      ensureCycleShieldSprites();
+      map.addSource("cycle_routes", {
+        type: "vector",
+        tiles: [`pmtiles://${CYCLE_PMTILES_URL}/{z}/{x}/{y}`],
+        maxzoom: 14,
+      });
+      const beforeId = map.getLayer("routes-inactive") ? "routes-inactive" : undefined;
+      map.addLayer({
+        id: "ocm-route-lcn-halo",
+        type: "line",
+        source: "cycle_routes",
+        "source-layer": "cycle_routes",
+        filter: ["==", ["get", "network"], "lcn"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#1d4ed8",
+          "line-opacity": 0.2,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4, 15, 8],
+        },
+      }, beforeId);
+      map.addLayer({
+        id: "ocm-route-lcn",
+        type: "line",
+        source: "cycle_routes",
+        "source-layer": "cycle_routes",
+        filter: ["==", ["get", "network"], "lcn"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#2563eb",
+          "line-opacity": 0.78,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 15, 3],
+        },
+      }, beforeId);
+      map.addLayer({
+        id: "ocm-route-rcn-halo",
+        type: "line",
+        source: "cycle_routes",
+        "source-layer": "cycle_routes",
+        filter: ["==", ["get", "network"], "rcn"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#6d28d9",
+          "line-opacity": 0.24,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 4, 15, 9],
+        },
+      }, beforeId);
+      map.addLayer({
+        id: "ocm-route-rcn",
+        type: "line",
+        source: "cycle_routes",
+        "source-layer": "cycle_routes",
+        filter: ["==", ["get", "network"], "rcn"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#7c3aed",
+          "line-opacity": 0.84,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.8, 15, 3.5],
+        },
+      }, beforeId);
+      map.addLayer({
+        id: "ocm-route-ncn-halo",
+        type: "line",
+        source: "cycle_routes",
+        "source-layer": "cycle_routes",
+        filter: ["in", ["get", "network"], ["literal", ["ncn", "icn"]]],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#be123c",
+          "line-opacity": 0.26,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 6, 4, 15, 10],
+        },
+      }, beforeId);
+      map.addLayer({
+        id: "ocm-route-ncn",
+        type: "line",
+        source: "cycle_routes",
+        "source-layer": "cycle_routes",
+        filter: ["in", ["get", "network"], ["literal", ["ncn", "icn"]]],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#e11d48",
+          "line-opacity": 0.88,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 6, 2, 15, 4],
+        },
+      }, beforeId);
+      map.addLayer({
+        id: "ocm-route-mtb",
+        type: "line",
+        source: "cycle_routes",
+        "source-layer": "cycle_routes",
+        filter: ["==", ["get", "network"], "mtb"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#d97706",
+          "line-opacity": 0.82,
+          "line-dasharray": [2, 1.5],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 15, 3],
+        },
+      }, beforeId);
+      map.addLayer({
+        id: "ocm-route-shields",
+        type: "symbol",
+        source: "cycle_routes",
+        "source-layer": "cycle_routes",
+        minzoom: 9,
+        filter: ["has", "ref"],
+        layout: {
+          "symbol-placement": "line",
+          "symbol-spacing": 320,
+          "icon-image": [
+            "match",
+            ["get", "network"],
+            ["ncn", "icn"],
+            "cycle-shield-ncn",
+            "rcn",
+            "cycle-shield-rcn",
+            "mtb",
+            "cycle-shield-mtb",
+            "cycle-shield-lcn",
+          ],
+          "icon-text-fit": "both",
+          "icon-text-fit-padding": [2, 5, 2, 5],
+          "text-field": ["get", "ref"],
+          "text-size": 10,
+          "text-font": ["Noto Sans Bold", "Open Sans Bold", "Arial Unicode MS Bold"],
+        },
+        paint: {
+          "text-color": "#ffffff",
+        },
+      }, beforeId);
+    } catch (_) {}
+  }
+  if (!map.getSource("routes-src")) {
+    map.addSource("routes-src", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    map.addLayer({
+      id: "routes-inactive",
+      type: "line",
+      source: "routes-src",
+      filter: ["==", ["get", "active"], "no"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": ["coalesce", ["get", "color"], "#64748b"],
+        "line-width": 3.5,
+        "line-opacity": 0.65,
+        "line-dasharray": [2, 1.5],
+      },
+    });
+    map.addLayer({
+      id: "routes-active-casing",
+      type: "line",
+      source: "routes-src",
+      filter: ["==", ["get", "active"], "yes"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#ffffff",
+        "line-width": 8,
+        "line-opacity": 0.9,
+      },
+    });
+    map.addLayer({
+      id: "routes-active",
+      type: "line",
+      source: "routes-src",
+      filter: ["==", ["get", "active"], "yes"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": ["coalesce", ["get", "color"], "#2563eb"],
+        "line-width": 5,
+        "line-opacity": 0.96,
+      },
+    });
+    map.addLayer({
+      id: "routes-active-hit",
+      type: "line",
+      source: "routes-src",
+      filter: ["==", ["get", "active"], "yes"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#000000",
+        "line-width": 18,
+        "line-opacity": 0.01,
+      },
+    });
+  }
+  if (!map.getSource("route-segment-highlight")) {
+    map.addSource("route-segment-highlight", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    map.addLayer({
+      id: "route-segment-halo",
+      type: "line",
+      source: "route-segment-highlight",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#ffffff",
+        "line-width": 12,
+        "line-opacity": 0.95,
+      },
+    });
+    map.addLayer({
+      id: "route-segment-line",
+      type: "line",
+      source: "route-segment-highlight",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": ["coalesce", ["get", "color"], "#10b981"],
+        "line-width": 7,
+        "line-opacity": 1,
+      },
+    });
+  }
+  if (!map.getSource("avoid-src")) {
+    map.addSource("avoid-src", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    map.addLayer({
+      id: "avoid-fill",
+      type: "fill",
+      source: "avoid-src",
+      paint: {
+        "fill-color": "#dc2626",
+        "fill-opacity": 0.18,
+      },
+    });
+    map.addLayer({
+      id: "avoid-stroke",
+      type: "line",
+      source: "avoid-src",
+      paint: {
+        "line-color": "#dc2626",
+        "line-width": 2,
+        "line-dasharray": [2, 2],
+      },
+    });
+  }
+}
+
+function fitToCurrentRoute() {
+  if (!map || activeCoords.length < 2) return;
+  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+  for (const c of activeCoords) {
+    if (c[0] < minLon) minLon = c[0];
+    if (c[1] < minLat) minLat = c[1];
+    if (c[0] > maxLon) maxLon = c[0];
+    if (c[1] > maxLat) maxLat = c[1];
+  }
+  if (Number.isFinite(minLon) && Number.isFinite(minLat)) {
+    try {
+      map.fitBounds([[minLon, minLat], [maxLon, maxLat]], { padding: 64, maxZoom: 15, duration: 350 });
+    } catch (_) {}
+  }
+}
+
+function openWaypointMenu(idx, badge, label, clientX, clientY) {
+  hideMenus();
+  activeWpMenuIdx = idx;
+  $("wp-menu-title").textContent = `${badge} · ${label}`;
+  $("wp-make-start").hidden = idx === 0;
+  $("wp-make-end").hidden = idx === currentWaypoints.length - 1;
+  const menu = $("wp-menu");
+  const rect = $("root").getBoundingClientRect();
+  const relX = clientX - rect.left;
+  const relY = clientY - rect.top;
+  menu.style.left = `${Math.min(window.innerWidth - 205, Math.max(8, relX + 10))}px`;
+  menu.style.top = `${Math.min(window.innerHeight - 140, Math.max(8, relY - 10))}px`;
+  menu.hidden = false;
+}
+
+function syncSourcesAndMarkers(props) {
+  if (!map) return;
+  ensureLayers();
+
+  if (props.routes_geojson && props.routes_geojson !== lastRoutesJson && map.getSource("routes-src")) {
+    lastRoutesJson = props.routes_geojson;
+    try {
+      const fc = JSON.parse(props.routes_geojson);
+      map.getSource("routes-src").setData(fc);
+      map.getSource("route-segment-highlight")?.setData({ type: "FeatureCollection", features: [] });
+      const act = (fc.features || []).find((f) => f.properties?.active === "yes") || fc.features?.[0];
+      activeCoords = act?.geometry?.coordinates || [];
+      if (!hasFittedOnce && activeCoords.length >= 2) {
+        hasFittedOnce = true;
+        fitToCurrentRoute();
+      }
+    } catch (_) {}
+  }
+
+  if (props.waypoints_json !== lastWaypointsJson) {
+    lastWaypointsJson = props.waypoints_json || "[]";
+    for (const m of wpMarkers) m.remove();
+    wpMarkers = [];
+    currentWaypoints = [];
+    try {
+      const wps = JSON.parse(lastWaypointsJson);
+      if (Array.isArray(wps)) {
+        currentWaypoints = wps;
+        wps.forEach((wp, idx) => {
+          const lon = Number(Array.isArray(wp) ? wp[0] : wp.lon);
+          const lat = Number(Array.isArray(wp) ? wp[1] : wp.lat);
+          const label = String((Array.isArray(wp) ? wp[2] : wp.label) || `Waypoint ${idx + 1}`);
+          if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+          const role = idx === 0 ? "start" : idx === wps.length - 1 && wps.length > 1 ? "end" : "via";
+          const badge = role === "start" ? "A" : role === "end" ? "B" : String(idx);
+          const el = document.createElement("div");
+          el.className = "wp-marker";
+          el.dataset.role = role;
+          el.dataset.index = String(idx);
+          el.textContent = badge;
+          el.title = `${badge}: ${label} (drag to move, click for options)`;
+          const armMarkerGuard = () => {
+            suppressNextClickUntil = Date.now() + 600;
+          };
+          el.addEventListener("pointerdown", armMarkerGuard);
+          el.addEventListener("mousedown", armMarkerGuard);
+          el.addEventListener("touchstart", armMarkerGuard, { passive: true });
+          el.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            ev.preventDefault();
+            if (Date.now() < markerDraggingUntil) return;
+            suppressNextClickUntil = Date.now() + 400;
+            openWaypointMenu(idx, badge, label, ev.clientX, ev.clientY);
+          });
+          el.addEventListener("contextmenu", (ev) => {
+            ev.stopPropagation();
+            ev.preventDefault();
+            if (Date.now() < markerDraggingUntil) return;
+            suppressNextClickUntil = Date.now() + 400;
+            openWaypointMenu(idx, badge, label, ev.clientX, ev.clientY);
+          });
+          const marker = new maplibregl.Marker({ element: el, draggable: true })
+            .setLngLat([lon, lat])
+            .addTo(map);
+          marker.on("dragstart", () => {
+            hideMenus();
+            markerDraggingUntil = Date.now() + 10000;
+            suppressNextClickUntil = Date.now() + 400;
+          });
+          marker.on("dragend", () => {
+            markerDraggingUntil = Date.now() + 350;
+            suppressNextClickUntil = Date.now() + 350;
+            const pos = marker.getLngLat();
+            raise("map_action", {
+              action: "move_waypoint",
+              index: idx,
+              lon: fixed(pos.lng),
+              lat: fixed(pos.lat),
+              label,
+            });
+          });
+          wpMarkers.push(marker);
+        });
+      }
+    } catch (_) {}
+  }
+
+  const incomingAvoidJson = props.avoids_json ?? props.avoid_json ?? "[]";
+  if (incomingAvoidJson !== lastAvoidJson && map.getSource("avoid-src")) {
+    lastAvoidJson = incomingAvoidJson;
+    for (const m of avoidMarkers) m.remove();
+    avoidMarkers = [];
+    try {
+      const avoids = JSON.parse(lastAvoidJson);
+      const features = [];
+      if (Array.isArray(avoids)) {
+        avoids.forEach((av, idx) => {
+          const lon = Number(Array.isArray(av) ? av[0] : av.lon);
+          const lat = Number(Array.isArray(av) ? av[1] : av.lat);
+          const rad = Number((Array.isArray(av) ? av[2] : av.radius_m) || 500);
+          if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+          features.push({
+            type: "Feature",
+            properties: { id: String(idx) },
+            geometry: {
+              type: "Polygon",
+              coordinates: [circlePolygon(lon, lat, rad)],
+            },
+          });
+          const el = document.createElement("div");
+          el.className = "avoid-marker";
+          el.textContent = "⊘";
+          el.title = `Avoid area ${idx + 1} (${rad}m) — click to remove`;
+          const armAvoidGuard = () => {
+            suppressNextClickUntil = Date.now() + 600;
+          };
+          el.addEventListener("pointerdown", armAvoidGuard);
+          el.addEventListener("mousedown", armAvoidGuard);
+          el.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            suppressNextClickUntil = Date.now() + 400;
+            raise("map_action", {
+              action: "remove_avoid",
+              index: idx,
+              lon: fixed(lon),
+              lat: fixed(lat),
+              label: "",
+            });
+          });
+          const marker = new maplibregl.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
+          avoidMarkers.push(marker);
+        });
+      }
+      map.getSource("avoid-src").setData({ type: "FeatureCollection", features });
+    } catch (_) {}
+  }
+
+  const hoverPermille = Number(props.hover_permille ?? -1);
+  if (hoverPermille >= 0 && hoverPermille <= 1000 && activeCoords.length >= 2) {
+    const idx = Math.min(
+      activeCoords.length - 1,
+      Math.max(0, Math.round((hoverPermille / 1000) * (activeCoords.length - 1))),
+    );
+    const pt = activeCoords[idx];
+    if (!hoverMarker) {
+      const el = document.createElement("div");
+      el.className = "hover-dot";
+      hoverMarker = new maplibregl.Marker({ element: el }).setLngLat([pt[0], pt[1]]).addTo(map);
+    } else {
+      hoverMarker.setLngLat([pt[0], pt[1]]);
+    }
+  } else if (hoverMarker) {
+    hoverMarker.remove();
+    hoverMarker = null;
+  }
+}
+
+function initMap(props) {
+  if (typeof maplibregl === "undefined") return;
+  try {
+    currentBasemap = props.basemap || "gbrouter";
+    map = new maplibregl.Map({
+      container: $("canvas"),
+      style: BASEMAP_STYLES[currentBasemap] || BASEMAP_STYLES.gbrouter,
+      center: [-0.1015, 51.5065],
+      zoom: 12.5,
+      attributionControl: true,
+    });
+    map.on("error", () => {});
+    map.on("styleimagemissing", ({ id }) => {
+      if (!map.hasImage(id)) {
+        map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
+      }
+    });
+    map.on("load", () => {
+      mapLoaded = true;
+      lastRoutesJson = "";
+      lastWaypointsJson = "";
+      lastAvoidJson = "";
+      syncSourcesAndMarkers(latestProps);
+    });
+    map.on("style.load", () => {
+      mapLoaded = true;
+      lastRoutesJson = "";
+      lastAvoidJson = "";
+      syncSourcesAndMarkers(latestProps);
+    });
+    map.on("styledata", () => {
+      if (!map.getStyle()) return;
+      mapLoaded = true;
+      if (!map.getSource("routes-src")) {
+        lastRoutesJson = "";
+        lastAvoidJson = "";
+        ensureLayers();
+        syncSourcesAndMarkers(latestProps);
+      }
+    });
+    map.on("mouseenter", "routes-active-hit", () => {
+      if (!routeDragActive) map.getCanvas().style.cursor = "grab";
+    });
+    map.on("mouseleave", "routes-active-hit", () => {
+      if (!routeDragActive) map.getCanvas().style.cursor = "";
+    });
+    map.on("mousedown", "routes-active-hit", (e) => {
+      if (Date.now() < suppressNextClickUntil) return;
+      if (e.originalEvent && e.originalEvent.button !== 0) return;
+      const origTarget = e.originalEvent?.target;
+      if (origTarget?.closest?.(".wp-marker, .avoid-marker, #wp-menu, #ctx-menu")) return;
+      if (currentWaypoints.length < 2) return;
+      e.preventDefault();
+      hideMenus();
+      routeDragActive = true;
+      routeDragLegIdx = closestLegForPoint(e.lngLat.lng, e.lngLat.lat);
+      map.dragPan.disable();
+      map.getCanvas().style.cursor = "grabbing";
+      if (!viaGhostMarker) {
+        const el = document.createElement("div");
+        el.className = "via-ghost";
+        el.textContent = "+";
+        viaGhostMarker = new maplibregl.Marker({ element: el }).setLngLat(e.lngLat).addTo(map);
+      } else {
+        viaGhostMarker.setLngLat(e.lngLat);
+      }
+    });
+    map.on("mousemove", (e) => {
+      if (!routeDragActive || !viaGhostMarker) return;
+      viaGhostMarker.setLngLat(e.lngLat);
+    });
+    map.on("mouseup", (e) => {
+      if (!routeDragActive) return;
+      routeDragActive = false;
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = "";
+      if (viaGhostMarker) {
+        viaGhostMarker.remove();
+        viaGhostMarker = null;
+      }
+      suppressNextClickUntil = Date.now() + 300;
+      raise("map_action", {
+        action: "add_via",
+        index: routeDragLegIdx,
+        lon: fixed(e.lngLat.lng),
+        lat: fixed(e.lngLat.lat),
+        label: "",
+      });
+    });
+    map.on("click", (e) => {
+      hideMenus();
+      if (Date.now() < suppressNextClickUntil) return;
+      raise("map_action", {
+        action: "add_waypoint",
+        index: -1,
+        lon: fixed(e.lngLat.lng),
+        lat: fixed(e.lngLat.lat),
+        label: "",
+      });
+    });
+    map.on("contextmenu", (e) => {
+      e.preventDefault();
+      hideMenus();
+      ctxLngLat = e.lngLat;
+      const menu = $("ctx-menu");
+      $("ctx-coord").textContent = `${fixed(e.lngLat.lat)}, ${fixed(e.lngLat.lng)}`;
+      menu.style.left = `${Math.min(window.innerWidth - 210, Math.max(8, e.point.x))}px`;
+      menu.style.top = `${Math.min(window.innerHeight - 190, Math.max(8, e.point.y))}px`;
+      menu.hidden = false;
+    });
+  } catch (_) {}
+}
+
+let latestProps = {};
+
+function render(props) {
+  latestProps = props;
+  const avoidRad = Math.round(Number(props.avoid_radius_m || 500));
+  $("ctx-add-avoid").textContent = `Add avoid area (${avoidRad} m)`;
+  if (!map) {
+    initMap(props);
+  } else {
+    const nextBasemap = props.basemap || "gbrouter";
+    if (nextBasemap !== currentBasemap && BASEMAP_STYLES[nextBasemap]) {
+      currentBasemap = nextBasemap;
+      mapLoaded = false;
+      lastRoutesJson = "";
+      lastAvoidJson = "";
+      map.setStyle(BASEMAP_STYLES[currentBasemap]);
+    }
+    const nextTerrain = props.terrain_3d || "off";
+    if (nextTerrain !== currentTerrain) {
+      currentTerrain = nextTerrain;
+      map.easeTo({ pitch: currentTerrain === "on" || currentTerrain === "yes" ? 52 : 0, duration: 350 });
+    }
+    const cLon = Number(props.center_lon);
+    const cLat = Number(props.center_lat);
+    const cZoom = Number(props.zoom || 13);
+    const nextCenterKey = `${cLon.toFixed(4)},${cLat.toFixed(4)},${cZoom.toFixed(1)}`;
+    if (Number.isFinite(cLon) && Number.isFinite(cLat) && nextCenterKey !== lastCenterKey) {
+      lastCenterKey = nextCenterKey;
+      try {
+        map.jumpTo({ center: [cLon, cLat], zoom: Number.isFinite(cZoom) ? cZoom : 13 });
+      } catch (_) {}
+    }
+    if (mapLoaded) syncSourcesAndMarkers(props);
+  }
+  reportHeight();
+}
+
+$("ctx-set-start").addEventListener("click", () => {
+  hideMenus();
+  if (!ctxLngLat) return;
+  raise("map_action", {
+    action: "set_start",
+    index: -1,
+    lon: fixed(ctxLngLat.lng),
+    lat: fixed(ctxLngLat.lat),
+    label: "",
+  });
+});
+
+$("ctx-add-via").addEventListener("click", () => {
+  hideMenus();
+  if (!ctxLngLat) return;
+  raise("map_action", {
+    action: "add_via",
+    index: -1,
+    lon: fixed(ctxLngLat.lng),
+    lat: fixed(ctxLngLat.lat),
+    label: "",
+  });
+});
+
+$("ctx-add-wp").addEventListener("click", () => {
+  hideMenus();
+  if (!ctxLngLat) return;
+  raise("map_action", {
+    action: "add_waypoint",
+    index: -1,
+    lon: fixed(ctxLngLat.lng),
+    lat: fixed(ctxLngLat.lat),
+    label: "",
+  });
+});
+
+$("ctx-add-avoid").addEventListener("click", () => {
+  hideMenus();
+  if (!ctxLngLat) return;
+  raise("map_action", {
+    action: "add_avoid",
+    index: -1,
+    lon: fixed(ctxLngLat.lng),
+    lat: fixed(ctxLngLat.lat),
+    label: "",
+  });
+});
+
+$("ctx-inspect").addEventListener("click", () => {
+  hideMenus();
+  if (!ctxLngLat) return;
+  raise("map_action", {
+    action: "inspect_point",
+    index: -1,
+    lon: fixed(ctxLngLat.lng),
+    lat: fixed(ctxLngLat.lat),
+    label: "",
+  });
+});
+
+$("wp-make-start").addEventListener("click", () => {
+  hideMenus();
+  if (activeWpMenuIdx < 0) return;
+  raise("map_action", {
+    action: "set_start",
+    index: activeWpMenuIdx,
+    lon: "0",
+    lat: "0",
+    label: "",
+  });
+});
+
+$("wp-make-end").addEventListener("click", () => {
+  hideMenus();
+  if (activeWpMenuIdx < 0) return;
+  raise("map_action", {
+    action: "set_end",
+    index: activeWpMenuIdx,
+    lon: "0",
+    lat: "0",
+    label: "",
+  });
+});
+
+$("wp-delete").addEventListener("click", () => {
+  hideMenus();
+  if (activeWpMenuIdx < 0) return;
+  raise("map_action", {
+    action: "delete_waypoint",
+    index: activeWpMenuIdx,
+    lon: "0",
+    lat: "0",
+    label: "",
+  });
+});
+
+$("map-zoom-in").addEventListener("click", () => map?.zoomIn());
+$("map-zoom-out").addEventListener("click", () => map?.zoomOut());
+$("map-fit-route").addEventListener("click", () => fitToCurrentRoute());
+$("map-locate").addEventListener("click", () => {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lon = pos.coords.longitude;
+      const lat = pos.coords.latitude;
+      map?.flyTo({ center: [lon, lat], zoom: 14 });
+      raise("map_action", {
+        action: "add_waypoint",
+        index: -1,
+        lon: fixed(lon),
+        lat: fixed(lat),
+        label: "GPS",
+      });
+    },
+    () => {},
+    { enableHighAccuracy: true, timeout: 6000 },
+  );
+});
+
+function reportHeight() {
+  const height = Math.ceil($("root").getBoundingClientRect().height) || 560;
+  if (height === lastHeight) return;
+  lastHeight = height;
+  post({ type: "pronto:event", name: "height", height });
+}
+
+new ResizeObserver(reportHeight).observe($("root"));
+
+function setHoverDot(lon, lat) {
+  if (!map) return;
+  if (Number.isFinite(lon) && Number.isFinite(lat)) {
+    if (!hoverMarker) {
+      const el = document.createElement("div");
+      el.className = "hover-dot";
+      hoverMarker = new maplibregl.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
+    } else {
+      hoverMarker.setLngLat([lon, lat]);
+    }
+  } else if (hoverMarker) {
+    hoverMarker.remove();
+    hoverMarker = null;
+  }
+}
+
+addEventListener("message", (e) => {
+  if (e.source !== parent) return;
+  const message = e.data;
+  if (message === null || typeof message !== "object") return;
+  if (message.type === "gabi:host-origin") {
+    hostOrigin = String(message.origin || "");
+    const allow = hostOrigin === "https://router.surita.dev";
+    if (allow !== suritaPmtilesEnabled) {
+      suritaPmtilesEnabled = allow;
+      if (allow && map && mapLoaded) ensureLayers();
+    }
+    return;
+  }
+  if (message.type === "gabi:pmtiles-range-res") {
+    const pending = pendingRanges.get(message.id);
+    if (pending) {
+      pendingRanges.delete(message.id);
+      if (message.error) {
+        pending.reject(new Error(String(message.error)));
+      } else {
+        pending.resolve({ data: message.data, etag: message.etag });
+      }
+    }
+    return;
+  }
+  if (message.type === "pronto:props") {
+    render(message.props || {});
+    return;
+  }
+  if (message.type === "gabi:highlight") {
+    ensureLayers();
+    const src = map?.getSource("route-segment-highlight");
+    if (!src) return;
+    const coords = Array.isArray(message.coordinates) ? message.coordinates : [];
+    if (coords.length === 0) {
+      src.setData({ type: "FeatureCollection", features: [] });
+    } else {
+      src.setData({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {
+              color: message.color || "#10b981",
+              label: message.label || "",
+            },
+            geometry: {
+              type: "MultiLineString",
+              coordinates: coords,
+            },
+          },
+        ],
+      });
+    }
+    return;
+  }
+  if (message.type === "gabi:hover-point") {
+    const lon = typeof message.lon === "number" ? message.lon : NaN;
+    const lat = typeof message.lat === "number" ? message.lat : NaN;
+    if (Number.isFinite(lon) && Number.isFinite(lat)) {
+      setHoverDot(lon, lat);
+    } else if (typeof message.permille === "number" && message.permille >= 0 && activeCoords.length >= 2) {
+      const idx = Math.min(
+        activeCoords.length - 1,
+        Math.max(0, Math.round((message.permille / 1000) * (activeCoords.length - 1))),
+      );
+      const pt = activeCoords[idx];
+      setHoverDot(pt[0], pt[1]);
+    } else {
+      setHoverDot(NaN, NaN);
+    }
+  }
+});
+
+post({ type: "pronto:ready" });
+post({ type: "gabi:query-origin" });
+reportHeight();
+</script>
+</body>
+</html>

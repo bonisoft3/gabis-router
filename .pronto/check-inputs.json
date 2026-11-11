@@ -1,0 +1,2316 @@
+{
+  "cortex": {
+    "gabi_router": {
+      "id": "gabi_router",
+      "initial": "routing",
+      "meta": {
+        "host": "omnishell"
+      },
+      "on": {
+        "route:router": {
+          "reenter": true,
+          "target": ".router"
+        }
+      },
+      "states": {
+        "routing": {},
+        "router": {
+          "initial": "loading",
+          "meta": {
+            "screen": "router"
+          },
+          "invoke": {
+            "src": "routerRows"
+          },
+          "states": {
+            "loading": {
+              "invoke": {
+                "src": "navigate",
+                "onDone": "ready",
+                "onError": "failed"
+              }
+            },
+            "ready": {},
+            "failed": {}
+          }
+        }
+      }
+    }
+  },
+  "cortexImplementations": {
+    "gabi_router": {
+      "actors": {
+        "navigate": {
+          "via": "navigation"
+        },
+        "routerRows": {
+          "via": "rows",
+          "lifetime": "attachment",
+          "screen": "router",
+          "charts": {
+            "device": [
+              {
+                "field": "theme",
+                "initial": "auto",
+                "states": {
+                  "auto": {
+                    "on": {
+                      "click@theme-light": "light",
+                      "click@theme-dark": "dark"
+                    }
+                  },
+                  "light": {
+                    "on": {
+                      "click@theme-auto": "auto",
+                      "click@theme-dark": "dark"
+                    }
+                  },
+                  "dark": {
+                    "on": {
+                      "click@theme-auto": "auto",
+                      "click@theme-light": "light"
+                    }
+                  }
+                }
+              },
+              {
+                "field": "units",
+                "initial": "metric",
+                "states": {
+                  "metric": {
+                    "on": {
+                      "click@units-imperial": "imperial"
+                    }
+                  },
+                  "imperial": {
+                    "on": {
+                      "click@units-metric": "metric"
+                    }
+                  }
+                }
+              }
+            ],
+            "planner": [
+              {
+                "field": "drawer",
+                "initial": "open",
+                "states": {
+                  "open": {
+                    "on": {
+                      "click@btn-drawer-toggle": "collapsed"
+                    }
+                  },
+                  "collapsed": {
+                    "on": {
+                      "click@btn-drawer-toggle": "open"
+                    }
+                  }
+                }
+              },
+              {
+                "field": "modal",
+                "initial": "none",
+                "on": {
+                  "click@btn-modal-custom": "custom",
+                  "click@btn-modal-offline": "offline",
+                  "click@btn-modal-about": "about",
+                  "click@btn-modal-close": "none"
+                },
+                "states": {
+                  "none": {},
+                  "custom": {},
+                  "offline": {},
+                  "about": {}
+                }
+              },
+              {
+                "field": "breakdown_tab",
+                "initial": "surface",
+                "on": {
+                  "click@tab-surface": "surface",
+                  "click@tab-road": "road",
+                  "click@tab-traffic": "traffic",
+                  "click@tab-noise": "noise",
+                  "click@tab-speed": "speed",
+                  "click@tab-warnings": "warnings"
+                },
+                "states": {
+                  "surface": {},
+                  "road": {},
+                  "traffic": {},
+                  "noise": {},
+                  "speed": {},
+                  "warnings": {}
+                }
+              },
+              {
+                "field": "basemap",
+                "initial": "gbrouter",
+                "on": {
+                  "click@basemap-gbrouter": "gbrouter",
+                  "click@basemap-light": "light",
+                  "click@basemap-osm": "osm",
+                  "click@basemap-cyclosm": "cyclosm"
+                },
+                "states": {
+                  "gbrouter": {},
+                  "light": {},
+                  "osm": {},
+                  "cyclosm": {}
+                }
+              },
+              {
+                "field": "terrain_3d",
+                "initial": "off",
+                "states": {
+                  "off": {
+                    "on": {
+                      "click@btn-terrain-toggle": "on"
+                    }
+                  },
+                  "on": {
+                    "on": {
+                      "click@btn-terrain-toggle": "off"
+                    }
+                  }
+                }
+              },
+              {
+                "field": "legend_open",
+                "initial": "closed",
+                "states": {
+                  "closed": {
+                    "on": {
+                      "click@btn-legend-toggle": "open"
+                    }
+                  },
+                  "open": {
+                    "on": {
+                      "click@btn-legend-toggle": "closed"
+                    }
+                  }
+                }
+              },
+              {
+                "field": "clear_confirm",
+                "initial": "idle",
+                "states": {
+                  "idle": {
+                    "on": {
+                      "click@btn-clear-route": "armed"
+                    }
+                  },
+                  "armed": {
+                    "on": {
+                      "click@btn-clear-confirm": "idle",
+                      "click@btn-clear-cancel": "idle"
+                    },
+                    "after": {
+                      "4000": "idle"
+                    }
+                  }
+                }
+              },
+              {
+                "field": "share_status",
+                "initial": "idle",
+                "states": {
+                  "idle": {
+                    "on": {
+                      "click@btn-share-route": "copied"
+                    }
+                  },
+                  "copied": {
+                    "after": {
+                      "2000": "idle"
+                    }
+                  }
+                }
+              },
+              {
+                "field": "search_step",
+                "initial": "idle",
+                "on": {
+                  "focus@search-input": "open",
+                  "click@search-input": "open",
+                  "input@search-input": {
+                    "target": "open",
+                    "assign": {
+                      "search_text": {
+                        "type": "event",
+                        "params": {
+                          "field": "value"
+                        }
+                      }
+                    }
+                  },
+                  "keydown@search-input": {
+                    "guard": {
+                      "type": "is_key",
+                      "params": {
+                        "key": "Enter"
+                      }
+                    },
+                    "target": "open",
+                    "assign": {
+                      "search_q": {
+                        "type": "search_submitted"
+                      }
+                    }
+                  },
+                  "click@btn-search-submit": {
+                    "target": "open",
+                    "assign": {
+                      "search_q": {
+                        "type": "search_submitted"
+                      }
+                    }
+                  },
+                  "click@btn-search-close": "idle",
+                  "pointermove@elevation-stage": {
+                    "assign": {
+                      "hover_permille": {
+                        "type": "event",
+                        "params": {
+                          "field": "pointerX"
+                        }
+                      }
+                    }
+                  },
+                  "pointerleave@elevation-stage": {
+                    "assign": {
+                      "hover_permille": -1
+                    }
+                  }
+                },
+                "states": {
+                  "idle": {},
+                  "open": {}
+                }
+              }
+            ]
+          }
+        }
+      },
+      "guards": {},
+      "actions": {}
+    }
+  },
+  "version": 1,
+  "terminal": true,
+  "types": {
+    "types": {
+      "string": {
+        "pg": "text",
+        "column": "plain",
+        "subset": true,
+        "base": [
+          "text",
+          "varchar",
+          "bpchar",
+          "tsvector"
+        ],
+        "json": "string",
+        "refuse": "\\x00",
+        "order": "text",
+        "beyond": [
+          "scalar-values"
+        ]
+      },
+      "bool": {
+        "pg": "boolean",
+        "column": "plain",
+        "subset": true,
+        "base": [
+          "bool",
+          "boolean"
+        ],
+        "json": "boolean",
+        "order": "boolean",
+        "beyond": []
+      },
+      "int32": {
+        "pg": "integer",
+        "column": "plain",
+        "subset": true,
+        "base": [
+          "int2",
+          "int4",
+          "integer",
+          "smallint"
+        ],
+        "json": "number",
+        "min": -2147483648,
+        "max": 2147483647,
+        "order": "number",
+        "beyond": []
+      },
+      "int64": {
+        "pg": "bigint",
+        "column": "domain",
+        "subset": false,
+        "sql": "portable_int64",
+        "base": [
+          "int8",
+          "bigint"
+        ],
+        "json": "string",
+        "pattern": "^(0|-?[1-9][0-9]*)$",
+        "order": "integer",
+        "beyond": [
+          "int64-range"
+        ]
+      },
+      "double": {
+        "pg": "double precision",
+        "column": "checked",
+        "subset": true,
+        "base": [
+          "float4",
+          "float8",
+          "double precision",
+          "real"
+        ],
+        "json": "number",
+        "order": "number",
+        "beyond": []
+      },
+      "bytes": {
+        "pg": "bytea",
+        "column": "domain",
+        "subset": false,
+        "sql": "portable_bytes",
+        "base": [
+          "bytea"
+        ],
+        "json": "string",
+        "pattern": "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+        "order": "none",
+        "beyond": []
+      },
+      "uuid": {
+        "pg": "uuid",
+        "column": "plain",
+        "subset": true,
+        "base": [
+          "uuid"
+        ],
+        "json": "string",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "order": "text",
+        "beyond": []
+      },
+      "timestamp": {
+        "pg": "timestamptz",
+        "column": "domain",
+        "subset": false,
+        "sql": "portable_timestamp",
+        "base": [
+          "timestamptz",
+          "timestamp with time zone"
+        ],
+        "json": "string",
+        "pattern": "^(000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|[1-9][0-9]{3})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{6}Z$",
+        "order": "text",
+        "beyond": [
+          "calendar"
+        ]
+      },
+      "duration": {
+        "pg": "interval",
+        "column": "domain",
+        "subset": false,
+        "sql": "portable_duration",
+        "base": [
+          "interval"
+        ],
+        "json": "string",
+        "pattern": "^PT(0|[1-9][0-9]*)(\\.[0-9]{0,5}[1-9])?S$",
+        "order": "duration",
+        "beyond": [
+          "duration-range"
+        ]
+      },
+      "decimal": {
+        "pg": "numeric",
+        "column": "domain",
+        "subset": false,
+        "base": [
+          "numeric",
+          "decimal"
+        ],
+        "json": "string",
+        "pattern": "^(0|-?[1-9][0-9]*|-?(0|[1-9][0-9]*)\\.[0-9]*[1-9])$",
+        "order": "decimal",
+        "beyond": [
+          "decimal-profile"
+        ]
+      },
+      "date": {
+        "pg": "date",
+        "column": "checked",
+        "subset": true,
+        "base": [
+          "date"
+        ],
+        "json": "string",
+        "pattern": "^(000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|[1-9][0-9]{3})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$",
+        "order": "text",
+        "beyond": [
+          "calendar"
+        ]
+      },
+      "time": {
+        "pg": "time(6)",
+        "column": "domain",
+        "subset": false,
+        "sql": "portable_time",
+        "base": [
+          "time",
+          "time without time zone"
+        ],
+        "json": "string",
+        "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{6}$",
+        "order": "text",
+        "beyond": []
+      },
+      "timezone": {
+        "pg": "text",
+        "column": "checked",
+        "subset": true,
+        "base": [
+          "text"
+        ],
+        "json": "string",
+        "pattern": "^[A-Za-z0-9+_/-]+$",
+        "order": "none",
+        "beyond": [
+          "tzdb"
+        ]
+      },
+      "json": {
+        "pg": "json",
+        "column": "checked",
+        "subset": false,
+        "base": [
+          "json",
+          "jsonb"
+        ],
+        "json": "value",
+        "order": "none",
+        "beyond": [
+          "scalar-values",
+          "finite-numbers"
+        ]
+      },
+      "geojson": {
+        "pg": "json",
+        "column": "checked",
+        "subset": false,
+        "base": [
+          "json",
+          "jsonb",
+          "geometry",
+          "geography"
+        ],
+        "json": "value",
+        "order": "none",
+        "beyond": [
+          "scalar-values",
+          "finite-numbers",
+          "ring-closure"
+        ]
+      }
+    },
+    "aliases": {
+      "text": "string",
+      "int": "int32",
+      "bigint": "int64",
+      "timestamptz": "timestamp",
+      "tsvector": "string"
+    }
+  },
+  "entities": {
+    "Device": {
+      "name": "Device",
+      "ir": "Device",
+      "table": "device",
+      "id": "0x8b1100a1b2c3d4e5",
+      "fields": [
+        {
+          "name": "id",
+          "ordinal": 1,
+          "retired": false,
+          "type": "string",
+          "pk": true,
+          "required": true,
+          "cel": "this == 'device'"
+        },
+        {
+          "name": "theme",
+          "ordinal": 2,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "default": "'auto'",
+          "cel": "this in ['auto', 'light', 'dark']"
+        },
+        {
+          "name": "units",
+          "ordinal": 3,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "default": "'metric'",
+          "cel": "this in ['metric', 'imperial']"
+        }
+      ],
+      "seed": [],
+      "durability": "device",
+      "level": "ephemeral",
+      "server": false,
+      "writers": [
+        {
+          "by": "router",
+          "kind": "screen",
+          "ops": [
+            "reduce"
+          ]
+        },
+        {
+          "by": "Device-theme",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        },
+        {
+          "by": "Device-units",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        }
+      ],
+      "cel": {
+        "checks": {},
+        "enums": {
+          "id": [
+            "device"
+          ],
+          "theme": [
+            "auto",
+            "light",
+            "dark"
+          ],
+          "units": [
+            "metric",
+            "imperial"
+          ]
+        },
+        "bounds": {}
+      },
+      "uniques": [],
+      "validations": {}
+    },
+    "PlannerState": {
+      "name": "PlannerState",
+      "ir": "PlannerState",
+      "table": "planner_state",
+      "id": "0x8b1100a1b2c3d4e6",
+      "fields": [
+        {
+          "name": "id",
+          "ordinal": 1,
+          "retired": false,
+          "type": "string",
+          "pk": true,
+          "required": true,
+          "cel": "this == 'planner'"
+        },
+        {
+          "name": "drawer",
+          "ordinal": 2,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['open', 'collapsed']"
+        },
+        {
+          "name": "modal",
+          "ordinal": 3,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['none', 'custom', 'offline', 'about']"
+        },
+        {
+          "name": "breakdown_tab",
+          "ordinal": 4,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['surface', 'road', 'traffic', 'noise', 'speed', 'warnings']"
+        },
+        {
+          "name": "basemap",
+          "ordinal": 5,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['gbrouter', 'light', 'osm', 'cyclosm']"
+        },
+        {
+          "name": "terrain_3d",
+          "ordinal": 6,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['off', 'on']"
+        },
+        {
+          "name": "legend_open",
+          "ordinal": 7,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['closed', 'open']"
+        },
+        {
+          "name": "clear_confirm",
+          "ordinal": 8,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['idle', 'armed']"
+        },
+        {
+          "name": "share_status",
+          "ordinal": 9,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['idle', 'copied']"
+        },
+        {
+          "name": "search_step",
+          "ordinal": 10,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['idle', 'open']"
+        },
+        {
+          "name": "search_text",
+          "ordinal": 11,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 240"
+        },
+        {
+          "name": "search_q",
+          "ordinal": 12,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 240"
+        },
+        {
+          "name": "waypoints_json",
+          "ordinal": 13,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 16384"
+        },
+        {
+          "name": "waypoint_count",
+          "ordinal": 14,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0 && this <= 64"
+        },
+        {
+          "name": "avoids_json",
+          "ordinal": 15,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 8192"
+        },
+        {
+          "name": "avoid_count",
+          "ordinal": 16,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0 && this <= 32"
+        },
+        {
+          "name": "avoid_radius_m",
+          "ordinal": 17,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this in [250, 500, 1000, 2500, 5000]"
+        },
+        {
+          "name": "active_slot",
+          "ordinal": 18,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this in [0, 1, 2]"
+        },
+        {
+          "name": "active_profile",
+          "ordinal": 19,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['gabis-fast-city', 'gabis-safe-road', 'gabis-lite-gravel', 'fastbike-lowtraffic', 'fastbike-verylowtraffic', 'fastbike', 'gravel', 'trekking', 'mtb', 'shortest', 'custom']"
+        },
+        {
+          "name": "custom_brf",
+          "ordinal": 20,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32768"
+        },
+        {
+          "name": "request_key",
+          "ordinal": 21,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 65536"
+        },
+        {
+          "name": "routes_geojson",
+          "ordinal": 22,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 131072"
+        },
+        {
+          "name": "active_gpx",
+          "ordinal": 23,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 131072"
+        },
+        {
+          "name": "gpx_import_xml",
+          "ordinal": 24,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 131072"
+        },
+        {
+          "name": "hover_permille",
+          "ordinal": 25,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= -1 && this <= 1000"
+        },
+        {
+          "name": "hover_lon",
+          "ordinal": 26,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32"
+        },
+        {
+          "name": "hover_lat",
+          "ordinal": 27,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32"
+        },
+        {
+          "name": "inspect_lon",
+          "ordinal": 28,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32"
+        },
+        {
+          "name": "inspect_lat",
+          "ordinal": 29,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32"
+        },
+        {
+          "name": "inspect_summary",
+          "ordinal": 30,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 4096"
+        },
+        {
+          "name": "center_lat",
+          "ordinal": 31,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32"
+        },
+        {
+          "name": "center_lon",
+          "ordinal": 32,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32"
+        },
+        {
+          "name": "zoom",
+          "ordinal": 33,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32"
+        },
+        {
+          "name": "start_label",
+          "ordinal": 34,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 240"
+        },
+        {
+          "name": "end_label",
+          "ordinal": 35,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 240"
+        },
+        {
+          "name": "active_distance_label",
+          "ordinal": 36,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "active_ascent_label",
+          "ordinal": 37,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "active_descent_label",
+          "ordinal": 38,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "active_duration_label",
+          "ordinal": 39,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "active_energy_label",
+          "ordinal": 40,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "active_warnings_count",
+          "ordinal": 41,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0 && this <= 200"
+        },
+        {
+          "name": "active_elevation_json",
+          "ordinal": 42,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 65536"
+        },
+        {
+          "name": "active_breakdown_json",
+          "ordinal": 43,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 65536"
+        },
+        {
+          "name": "offline_seq",
+          "ordinal": 44,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0"
+        }
+      ],
+      "seed": [
+        {
+          "id": "planner",
+          "drawer": "open",
+          "modal": "none",
+          "breakdown_tab": "surface",
+          "basemap": "gbrouter",
+          "terrain_3d": "off",
+          "legend_open": "closed",
+          "clear_confirm": "idle",
+          "share_status": "idle",
+          "search_step": "idle",
+          "search_text": "",
+          "search_q": "",
+          "waypoints_json": "[[-0.1276,51.5072,\"Trafalgar Square, London\"],[-0.0754,51.5055,\"Tower Bridge, London\"]]",
+          "waypoint_count": 2,
+          "avoids_json": "[]",
+          "avoid_count": 0,
+          "avoid_radius_m": 500,
+          "active_slot": 0,
+          "active_profile": "gabis-fast-city",
+          "custom_brf": "# Custom BRouter profile\n---context:global\nassign processUnusedTags = true\n---context:way\nassign costfactor = 1.0",
+          "request_key": "{\"w\":[[-0.1276,51.5072,\"Trafalgar Square, London\"],[-0.0754,51.5055,\"Tower Bridge, London\"]],\"a\":[],\"p\":[\"gabis-fast-city\",\"gabis-safe-road\",\"gabis-lite-gravel\"],\"alt\":[0,0,0],\"active\":0,\"brf\":\"# Custom BRouter profile\\n---context:global\\nassign processUnusedTags = true\\n---context:way\\nassign costfactor = 1.0\"}",
+          "routes_geojson": "{\"type\":\"FeatureCollection\",\"features\":[]}",
+          "active_gpx": "",
+          "gpx_import_xml": "",
+          "hover_permille": -1,
+          "hover_lon": "0.0",
+          "hover_lat": "0.0",
+          "inspect_lon": "0.0",
+          "inspect_lat": "0.0",
+          "inspect_summary": "Right-click map -> Inspect road segment to view OSM tags and cost factors.",
+          "center_lat": "51.5082",
+          "center_lon": "-0.095",
+          "zoom": "13.0",
+          "start_label": "Trafalgar Square, London",
+          "end_label": "Tower Bridge, London",
+          "active_distance_label": "4.7 km",
+          "active_ascent_label": "6 m",
+          "active_descent_label": "10 m",
+          "active_duration_label": "13m",
+          "active_energy_label": "19 kcal",
+          "active_warnings_count": 0,
+          "active_elevation_json": "{\"points\":[[0,6,0],[1.2,11,0.5],[2.4,15,0.4],[3.6,12,-0.3],[4.7,2,-0.8]],\"ascent_m\":6,\"descent_m\":10,\"distance_m\":4661,\"units\":\"metric\"}",
+          "active_breakdown_json": "{\"breakdown\":{\"surface\":[{\"label\":\"Paved Smooth\",\"distance_m\":4428,\"pct\":95},{\"label\":\"Paved Rough\",\"distance_m\":233,\"pct\":5}],\"road\":[{\"label\":\"Protected Cycleway\",\"distance_m\":3120,\"pct\":67},{\"label\":\"Cycle Lane / Shared\",\"distance_m\":840,\"pct\":18},{\"label\":\"Local Street\",\"distance_m\":701,\"pct\":15}],\"traffic\":[{\"label\":\"Quiet / Traffic-Free\",\"distance_m\":3120,\"pct\":67},{\"label\":\"Low Traffic\",\"distance_m\":1165,\"pct\":25},{\"label\":\"Moderate Traffic\",\"distance_m\":376,\"pct\":8}],\"noise\":[{\"label\":\"Quiet\",\"distance_m\":3496,\"pct\":75},{\"label\":\"Moderate\",\"distance_m\":1165,\"pct\":25}],\"speed\":[{\"label\":\"Off-road / Cycleway\",\"distance_m\":3120,\"pct\":67},{\"label\":\"≤ 30 km/h\",\"distance_m\":1541,\"pct\":33}],\"warnings\":[]},\"units\":\"metric\"}",
+          "offline_seq": 0
+        }
+      ],
+      "durability": "tab",
+      "level": "ephemeral",
+      "server": false,
+      "writers": [
+        {
+          "by": "router",
+          "kind": "screen",
+          "ops": [
+            "reduce"
+          ]
+        },
+        {
+          "by": "PlannerState-drawer",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        },
+        {
+          "by": "PlannerState-modal",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        },
+        {
+          "by": "PlannerState-breakdown_tab",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        },
+        {
+          "by": "PlannerState-basemap",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        },
+        {
+          "by": "PlannerState-terrain_3d",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        },
+        {
+          "by": "PlannerState-legend_open",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        },
+        {
+          "by": "PlannerState-clear_confirm",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        },
+        {
+          "by": "PlannerState-share_status",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        },
+        {
+          "by": "PlannerState-search_step",
+          "kind": "chart",
+          "ops": [
+            "update"
+          ]
+        }
+      ],
+      "cel": {
+        "checks": {},
+        "enums": {
+          "id": [
+            "planner"
+          ],
+          "drawer": [
+            "open",
+            "collapsed"
+          ],
+          "modal": [
+            "none",
+            "custom",
+            "offline",
+            "about"
+          ],
+          "breakdown_tab": [
+            "surface",
+            "road",
+            "traffic",
+            "noise",
+            "speed",
+            "warnings"
+          ],
+          "basemap": [
+            "gbrouter",
+            "light",
+            "osm",
+            "cyclosm"
+          ],
+          "terrain_3d": [
+            "off",
+            "on"
+          ],
+          "legend_open": [
+            "closed",
+            "open"
+          ],
+          "clear_confirm": [
+            "idle",
+            "armed"
+          ],
+          "share_status": [
+            "idle",
+            "copied"
+          ],
+          "search_step": [
+            "idle",
+            "open"
+          ],
+          "avoid_radius_m": [
+            "250",
+            "500",
+            "1000",
+            "2500",
+            "5000"
+          ],
+          "active_slot": [
+            "0",
+            "1",
+            "2"
+          ],
+          "active_profile": [
+            "gabis-fast-city",
+            "gabis-safe-road",
+            "gabis-lite-gravel",
+            "fastbike-lowtraffic",
+            "fastbike-verylowtraffic",
+            "fastbike",
+            "gravel",
+            "trekking",
+            "mtb",
+            "shortest",
+            "custom"
+          ]
+        },
+        "bounds": {
+          "search_text": {
+            "sizeMax": 240
+          },
+          "search_q": {
+            "sizeMax": 240
+          },
+          "waypoints_json": {
+            "sizeMax": 16384
+          },
+          "waypoint_count": {
+            "intMin": 0,
+            "intMax": 64
+          },
+          "avoids_json": {
+            "sizeMax": 8192
+          },
+          "avoid_count": {
+            "intMin": 0,
+            "intMax": 32
+          },
+          "custom_brf": {
+            "sizeMax": 32768
+          },
+          "request_key": {
+            "sizeMax": 65536
+          },
+          "routes_geojson": {
+            "sizeMax": 131072
+          },
+          "active_gpx": {
+            "sizeMax": 131072
+          },
+          "gpx_import_xml": {
+            "sizeMax": 131072
+          },
+          "hover_permille": {
+            "intMin": -1,
+            "intMax": 1000
+          },
+          "hover_lon": {
+            "sizeMax": 32
+          },
+          "hover_lat": {
+            "sizeMax": 32
+          },
+          "inspect_lon": {
+            "sizeMax": 32
+          },
+          "inspect_lat": {
+            "sizeMax": 32
+          },
+          "inspect_summary": {
+            "sizeMax": 4096
+          },
+          "center_lat": {
+            "sizeMax": 32
+          },
+          "center_lon": {
+            "sizeMax": 32
+          },
+          "zoom": {
+            "sizeMax": 32
+          },
+          "start_label": {
+            "sizeMax": 240
+          },
+          "end_label": {
+            "sizeMax": 240
+          },
+          "active_distance_label": {
+            "sizeMax": 64
+          },
+          "active_ascent_label": {
+            "sizeMax": 64
+          },
+          "active_descent_label": {
+            "sizeMax": 64
+          },
+          "active_duration_label": {
+            "sizeMax": 64
+          },
+          "active_energy_label": {
+            "sizeMax": 64
+          },
+          "active_warnings_count": {
+            "intMin": 0,
+            "intMax": 200
+          },
+          "active_elevation_json": {
+            "sizeMax": 65536
+          },
+          "active_breakdown_json": {
+            "sizeMax": 65536
+          },
+          "offline_seq": {
+            "intMin": 0
+          }
+        }
+      },
+      "uniques": [],
+      "validations": {}
+    },
+    "RouteSlot": {
+      "name": "RouteSlot",
+      "ir": "RouteSlot",
+      "table": "route_slot",
+      "id": "0x8b1100a1b2c3d4e7",
+      "fields": [
+        {
+          "name": "id",
+          "ordinal": 1,
+          "retired": false,
+          "type": "string",
+          "pk": true,
+          "required": true,
+          "cel": "this in ['slot-0', 'slot-1', 'slot-2']"
+        },
+        {
+          "name": "slot_index",
+          "ordinal": 2,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this in [0, 1, 2]"
+        },
+        {
+          "name": "active",
+          "ordinal": 3,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['yes', 'no']"
+        },
+        {
+          "name": "profile",
+          "ordinal": 4,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['gabis-fast-city', 'gabis-safe-road', 'gabis-lite-gravel', 'fastbike-lowtraffic', 'fastbike-verylowtraffic', 'fastbike', 'gravel', 'trekking', 'mtb', 'shortest', 'custom']"
+        },
+        {
+          "name": "profile_label",
+          "ordinal": 5,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "alt",
+          "ordinal": 6,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this in [0, 1, 2]"
+        },
+        {
+          "name": "alt_label",
+          "ordinal": 7,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32"
+        },
+        {
+          "name": "status",
+          "ordinal": 8,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['ready', 'empty']"
+        },
+        {
+          "name": "distance_m",
+          "ordinal": 9,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0"
+        },
+        {
+          "name": "distance_label",
+          "ordinal": 10,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "ascent_m",
+          "ordinal": 11,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0"
+        },
+        {
+          "name": "ascent_label",
+          "ordinal": 12,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "descent_m",
+          "ordinal": 13,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0"
+        },
+        {
+          "name": "descent_label",
+          "ordinal": 14,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "time_s",
+          "ordinal": 15,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0"
+        },
+        {
+          "name": "duration_label",
+          "ordinal": 16,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "energy_kcal",
+          "ordinal": 17,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0"
+        },
+        {
+          "name": "warnings_count",
+          "ordinal": 18,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0"
+        },
+        {
+          "name": "elevation_json",
+          "ordinal": 19,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 65536"
+        },
+        {
+          "name": "breakdown_json",
+          "ordinal": 20,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 65536"
+        }
+      ],
+      "seed": [
+        {
+          "id": "slot-0",
+          "slot_index": 0,
+          "active": "yes",
+          "profile": "gabis-fast-city",
+          "profile_label": "profile_gabis_fast_city",
+          "alt": 0,
+          "alt_label": "Alt 1",
+          "status": "ready",
+          "distance_m": 4661,
+          "distance_label": "4.7 km",
+          "ascent_m": 6,
+          "ascent_label": "6 m",
+          "descent_m": 10,
+          "descent_label": "10 m",
+          "time_s": 806,
+          "duration_label": "13m",
+          "energy_kcal": 19,
+          "warnings_count": 0,
+          "elevation_json": "[[0,6,0],[1.2,11,0.5],[2.4,15,0.4],[3.6,12,-0.3],[4.7,2,-0.8]]",
+          "breakdown_json": "{\"surface\":[{\"label\":\"Paved Smooth\",\"distance_m\":4428,\"pct\":95},{\"label\":\"Paved Rough\",\"distance_m\":233,\"pct\":5}],\"road\":[{\"label\":\"Protected Cycleway\",\"distance_m\":3120,\"pct\":67},{\"label\":\"Cycle Lane / Shared\",\"distance_m\":840,\"pct\":18},{\"label\":\"Local Street\",\"distance_m\":701,\"pct\":15}],\"traffic\":[{\"label\":\"Quiet / Traffic-Free\",\"distance_m\":3120,\"pct\":67},{\"label\":\"Low Traffic\",\"distance_m\":1165,\"pct\":25},{\"label\":\"Moderate Traffic\",\"distance_m\":376,\"pct\":8}],\"noise\":[{\"label\":\"Quiet\",\"distance_m\":3496,\"pct\":75},{\"label\":\"Moderate\",\"distance_m\":1165,\"pct\":25}],\"speed\":[{\"label\":\"Off-road / Cycleway\",\"distance_m\":3120,\"pct\":67},{\"label\":\"≤ 30 km/h\",\"distance_m\":1541,\"pct\":33}],\"warnings\":[]}"
+        },
+        {
+          "id": "slot-1",
+          "slot_index": 1,
+          "active": "no",
+          "profile": "gabis-safe-road",
+          "profile_label": "profile_gabis_safe_road",
+          "alt": 0,
+          "alt_label": "Alt 1",
+          "status": "ready",
+          "distance_m": 5282,
+          "distance_label": "5.3 km",
+          "ascent_m": 1,
+          "ascent_label": "1 m",
+          "descent_m": 5,
+          "descent_label": "5 m",
+          "time_s": 900,
+          "duration_label": "15m",
+          "energy_kcal": 22,
+          "warnings_count": 0,
+          "elevation_json": "[[0,6,0],[1.3,8,0.2],[2.6,9,0.1],[3.9,5,-0.3],[5.3,2,-0.3]]",
+          "breakdown_json": "{\"surface\":[{\"label\":\"Paved Smooth\",\"distance_m\":5018,\"pct\":95},{\"label\":\"Paved Rough\",\"distance_m\":264,\"pct\":5}],\"road\":[{\"label\":\"Protected Cycleway\",\"distance_m\":3697,\"pct\":70},{\"label\":\"Local Street\",\"distance_m\":1585,\"pct\":30}],\"traffic\":[{\"label\":\"Quiet / Traffic-Free\",\"distance_m\":3697,\"pct\":70},{\"label\":\"Low Traffic\",\"distance_m\":1585,\"pct\":30}],\"noise\":[{\"label\":\"Quiet\",\"distance_m\":4226,\"pct\":80},{\"label\":\"Moderate\",\"distance_m\":1056,\"pct\":20}],\"speed\":[{\"label\":\"Off-road / Cycleway\",\"distance_m\":3697,\"pct\":70},{\"label\":\"≤ 30 km/h\",\"distance_m\":1585,\"pct\":30}],\"warnings\":[]}"
+        },
+        {
+          "id": "slot-2",
+          "slot_index": 2,
+          "active": "no",
+          "profile": "gabis-lite-gravel",
+          "profile_label": "profile_gabis_lite_gravel",
+          "alt": 0,
+          "alt_label": "Alt 1",
+          "status": "ready",
+          "distance_m": 5282,
+          "distance_label": "5.3 km",
+          "ascent_m": 1,
+          "ascent_label": "1 m",
+          "descent_m": 5,
+          "descent_label": "5 m",
+          "time_s": 900,
+          "duration_label": "15m",
+          "energy_kcal": 22,
+          "warnings_count": 0,
+          "elevation_json": "[[0,6,0],[1.3,8,0.2],[2.6,9,0.1],[3.9,5,-0.3],[5.3,2,-0.3]]",
+          "breakdown_json": "{\"surface\":[{\"label\":\"Paved Smooth\",\"distance_m\":5018,\"pct\":95},{\"label\":\"Paved Rough\",\"distance_m\":264,\"pct\":5}],\"road\":[{\"label\":\"Protected Cycleway\",\"distance_m\":3697,\"pct\":70},{\"label\":\"Local Street\",\"distance_m\":1585,\"pct\":30}],\"traffic\":[{\"label\":\"Quiet / Traffic-Free\",\"distance_m\":3697,\"pct\":70},{\"label\":\"Low Traffic\",\"distance_m\":1585,\"pct\":30}],\"noise\":[{\"label\":\"Quiet\",\"distance_m\":4226,\"pct\":80},{\"label\":\"Moderate\",\"distance_m\":1056,\"pct\":20}],\"speed\":[{\"label\":\"Off-road / Cycleway\",\"distance_m\":3697,\"pct\":70},{\"label\":\"≤ 30 km/h\",\"distance_m\":1585,\"pct\":30}],\"warnings\":[]}"
+        }
+      ],
+      "durability": "tab",
+      "level": "ephemeral",
+      "server": false,
+      "writers": [
+        {
+          "by": "router",
+          "kind": "screen",
+          "ops": [
+            "reduce"
+          ]
+        }
+      ],
+      "cel": {
+        "checks": {},
+        "enums": {
+          "id": [
+            "slot-0",
+            "slot-1",
+            "slot-2"
+          ],
+          "slot_index": [
+            "0",
+            "1",
+            "2"
+          ],
+          "active": [
+            "yes",
+            "no"
+          ],
+          "profile": [
+            "gabis-fast-city",
+            "gabis-safe-road",
+            "gabis-lite-gravel",
+            "fastbike-lowtraffic",
+            "fastbike-verylowtraffic",
+            "fastbike",
+            "gravel",
+            "trekking",
+            "mtb",
+            "shortest",
+            "custom"
+          ],
+          "alt": [
+            "0",
+            "1",
+            "2"
+          ],
+          "status": [
+            "ready",
+            "empty"
+          ]
+        },
+        "bounds": {
+          "profile_label": {
+            "sizeMax": 64
+          },
+          "alt_label": {
+            "sizeMax": 32
+          },
+          "distance_m": {
+            "intMin": 0
+          },
+          "distance_label": {
+            "sizeMax": 64
+          },
+          "ascent_m": {
+            "intMin": 0
+          },
+          "ascent_label": {
+            "sizeMax": 64
+          },
+          "descent_m": {
+            "intMin": 0
+          },
+          "descent_label": {
+            "sizeMax": 64
+          },
+          "time_s": {
+            "intMin": 0
+          },
+          "duration_label": {
+            "sizeMax": 64
+          },
+          "energy_kcal": {
+            "intMin": 0
+          },
+          "warnings_count": {
+            "intMin": 0
+          },
+          "elevation_json": {
+            "sizeMax": 65536
+          },
+          "breakdown_json": {
+            "sizeMax": 65536
+          }
+        }
+      },
+      "uniques": [],
+      "validations": {}
+    },
+    "RouteAnswer": {
+      "name": "RouteAnswer",
+      "ir": "RouteAnswer",
+      "table": "route_answer",
+      "id": "0x8b1100a1b2c3d4e8",
+      "fields": [
+        {
+          "name": "id",
+          "ordinal": 1,
+          "retired": false,
+          "type": "string",
+          "pk": true,
+          "required": true
+        },
+        {
+          "name": "request_key",
+          "ordinal": 2,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 65536"
+        },
+        {
+          "name": "slot_0_json",
+          "ordinal": 3,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 131072"
+        },
+        {
+          "name": "slot_1_json",
+          "ordinal": 4,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 131072"
+        },
+        {
+          "name": "slot_2_json",
+          "ordinal": 5,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 131072"
+        },
+        {
+          "name": "routes_geojson",
+          "ordinal": 6,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 131072"
+        },
+        {
+          "name": "active_gpx",
+          "ordinal": 7,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 131072"
+        },
+        {
+          "name": "inspect_json",
+          "ordinal": 8,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 16384"
+        },
+        {
+          "name": "matched_waypoints_json",
+          "ordinal": 9,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 16384"
+        },
+        {
+          "name": "offline_json",
+          "ordinal": 10,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 16384"
+        }
+      ],
+      "seed": [],
+      "durability": "tab",
+      "level": "ephemeral",
+      "server": false,
+      "writers": [
+        {
+          "by": "brouter",
+          "kind": "unit",
+          "ops": [
+            "upsert"
+          ]
+        }
+      ],
+      "cel": {
+        "checks": {},
+        "enums": {},
+        "bounds": {
+          "request_key": {
+            "sizeMax": 65536
+          },
+          "slot_0_json": {
+            "sizeMax": 131072
+          },
+          "slot_1_json": {
+            "sizeMax": 131072
+          },
+          "slot_2_json": {
+            "sizeMax": 131072
+          },
+          "routes_geojson": {
+            "sizeMax": 131072
+          },
+          "active_gpx": {
+            "sizeMax": 131072
+          },
+          "inspect_json": {
+            "sizeMax": 16384
+          },
+          "matched_waypoints_json": {
+            "sizeMax": 16384
+          },
+          "offline_json": {
+            "sizeMax": 16384
+          }
+        }
+      },
+      "uniques": [
+        {
+          "name": "uq_route_answer_key",
+          "cols": [
+            "request_key"
+          ]
+        }
+      ],
+      "validations": {}
+    },
+    "PlaceAnswer": {
+      "name": "PlaceAnswer",
+      "ir": "PlaceAnswer",
+      "table": "place_answer",
+      "id": "0x8b1100a1b2c3d4e9",
+      "fields": [
+        {
+          "name": "id",
+          "ordinal": 1,
+          "retired": false,
+          "type": "string",
+          "pk": true,
+          "required": true
+        },
+        {
+          "name": "kind",
+          "ordinal": 2,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['search', 'address', 'reverse']"
+        },
+        {
+          "name": "q",
+          "ordinal": 3,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 2000"
+        },
+        {
+          "name": "lang",
+          "ordinal": 4,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 8"
+        },
+        {
+          "name": "p0",
+          "ordinal": 5,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 2000"
+        },
+        {
+          "name": "p1",
+          "ordinal": 6,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 2000"
+        },
+        {
+          "name": "p2",
+          "ordinal": 7,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 2000"
+        },
+        {
+          "name": "p3",
+          "ordinal": 8,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 2000"
+        },
+        {
+          "name": "p4",
+          "ordinal": 9,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 2000"
+        }
+      ],
+      "seed": [],
+      "durability": "tab",
+      "level": "ephemeral",
+      "server": false,
+      "writers": [
+        {
+          "by": "geocoder",
+          "kind": "unit",
+          "ops": [
+            "upsert"
+          ]
+        }
+      ],
+      "cel": {
+        "checks": {},
+        "enums": {
+          "kind": [
+            "search",
+            "address",
+            "reverse"
+          ]
+        },
+        "bounds": {
+          "q": {
+            "sizeMax": 2000
+          },
+          "lang": {
+            "sizeMax": 8
+          },
+          "p0": {
+            "sizeMax": 2000
+          },
+          "p1": {
+            "sizeMax": 2000
+          },
+          "p2": {
+            "sizeMax": 2000
+          },
+          "p3": {
+            "sizeMax": 2000
+          },
+          "p4": {
+            "sizeMax": 2000
+          }
+        }
+      },
+      "uniques": [
+        {
+          "name": "uq_place_answer_question",
+          "cols": [
+            "kind",
+            "q",
+            "lang"
+          ]
+        }
+      ],
+      "validations": {}
+    },
+    "PlaceSuggestion": {
+      "name": "PlaceSuggestion",
+      "ir": "PlaceSuggestion",
+      "table": "place_suggestion",
+      "id": "0x8b1100a1b2c3d4ea",
+      "fields": [
+        {
+          "name": "id",
+          "ordinal": 1,
+          "retired": false,
+          "type": "string",
+          "pk": true,
+          "required": true,
+          "cel": "this in ['s0', 's1', 's2', 's3', 's4']"
+        },
+        {
+          "name": "q",
+          "ordinal": 2,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 2000"
+        },
+        {
+          "name": "label",
+          "ordinal": 3,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 500"
+        },
+        {
+          "name": "line1",
+          "ordinal": 4,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 240"
+        },
+        {
+          "name": "district",
+          "ordinal": 5,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 120"
+        },
+        {
+          "name": "city",
+          "ordinal": 6,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 120"
+        },
+        {
+          "name": "region",
+          "ordinal": 7,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 120"
+        },
+        {
+          "name": "postal_code",
+          "ordinal": 8,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 40"
+        },
+        {
+          "name": "country",
+          "ordinal": 9,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 8"
+        },
+        {
+          "name": "latitude",
+          "ordinal": 10,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32"
+        },
+        {
+          "name": "longitude",
+          "ordinal": 11,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 32"
+        }
+      ],
+      "seed": [],
+      "durability": "tab",
+      "level": "ephemeral",
+      "server": false,
+      "writers": [
+        {
+          "by": "router",
+          "kind": "screen",
+          "ops": [
+            "reduce"
+          ]
+        }
+      ],
+      "cel": {
+        "checks": {},
+        "enums": {
+          "id": [
+            "s0",
+            "s1",
+            "s2",
+            "s3",
+            "s4"
+          ]
+        },
+        "bounds": {
+          "q": {
+            "sizeMax": 2000
+          },
+          "label": {
+            "sizeMax": 500
+          },
+          "line1": {
+            "sizeMax": 240
+          },
+          "district": {
+            "sizeMax": 120
+          },
+          "city": {
+            "sizeMax": 120
+          },
+          "region": {
+            "sizeMax": 120
+          },
+          "postal_code": {
+            "sizeMax": 40
+          },
+          "country": {
+            "sizeMax": 8
+          },
+          "latitude": {
+            "sizeMax": 32
+          },
+          "longitude": {
+            "sizeMax": 32
+          }
+        }
+      },
+      "uniques": [],
+      "validations": {}
+    },
+    "OfflineBundle": {
+      "name": "OfflineBundle",
+      "ir": "OfflineBundle",
+      "table": "offline_bundle",
+      "id": "0x8b1100a1b2c3d4eb",
+      "fields": [
+        {
+          "name": "id",
+          "ordinal": 1,
+          "retired": false,
+          "type": "string",
+          "pk": true,
+          "required": true,
+          "cel": "this in ['sao-paulo', 'london', 'scotland', 'ireland']"
+        },
+        {
+          "name": "title",
+          "ordinal": 2,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 120"
+        },
+        {
+          "name": "coverage",
+          "ordinal": 3,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 240"
+        },
+        {
+          "name": "size_label",
+          "ordinal": 4,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this.size() <= 64"
+        },
+        {
+          "name": "status",
+          "ordinal": 5,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['available', 'downloading', 'installed', 'error']"
+        },
+        {
+          "name": "segments_cached",
+          "ordinal": 6,
+          "retired": false,
+          "type": "int32",
+          "pk": false,
+          "required": true,
+          "cel": "this >= 0"
+        },
+        {
+          "name": "pmtiles_ready",
+          "ordinal": 7,
+          "retired": false,
+          "type": "string",
+          "pk": false,
+          "required": true,
+          "cel": "this in ['yes', 'no']"
+        }
+      ],
+      "seed": [
+        {
+          "id": "sao-paulo",
+          "title": "São Paulo Metro",
+          "coverage": "W50_S25 · Greater SP & Serra do Mar",
+          "size_label": "18.4 MB",
+          "status": "available",
+          "segments_cached": 0,
+          "pmtiles_ready": "no"
+        },
+        {
+          "id": "london",
+          "title": "Greater London & England",
+          "coverage": "W5_N50 + E0_N50 · Thames Valley, Wales & Surrey",
+          "size_label": "24.1 MB",
+          "status": "available",
+          "segments_cached": 0,
+          "pmtiles_ready": "no"
+        },
+        {
+          "id": "scotland",
+          "title": "Scotland & Highlands",
+          "coverage": "W5_N55 + W5_N60 · Cairngorms, Edinburgh & Orkney",
+          "size_label": "15.6 MB",
+          "status": "available",
+          "segments_cached": 0,
+          "pmtiles_ready": "no"
+        },
+        {
+          "id": "ireland",
+          "title": "Ireland & West Coast",
+          "coverage": "W10_N50 + W10_N55 + W15_N50 · Wild Atlantic Way",
+          "size_label": "19.2 MB",
+          "status": "available",
+          "segments_cached": 0,
+          "pmtiles_ready": "no"
+        }
+      ],
+      "durability": "tab",
+      "level": "ephemeral",
+      "server": false,
+      "writers": [
+        {
+          "by": "router",
+          "kind": "screen",
+          "ops": [
+            "reduce"
+          ]
+        }
+      ],
+      "cel": {
+        "checks": {},
+        "enums": {
+          "id": [
+            "sao-paulo",
+            "london",
+            "scotland",
+            "ireland"
+          ],
+          "status": [
+            "available",
+            "downloading",
+            "installed",
+            "error"
+          ],
+          "pmtiles_ready": [
+            "yes",
+            "no"
+          ]
+        },
+        "bounds": {
+          "title": {
+            "sizeMax": 120
+          },
+          "coverage": {
+            "sizeMax": 240
+          },
+          "size_label": {
+            "sizeMax": 64
+          },
+          "segments_cached": {
+            "intMin": 0
+          }
+        }
+      },
+      "uniques": [],
+      "validations": {}
+    }
+  },
+  "reducers": {},
+  "machines": {},
+  "hatches": {
+    "gpx-io": {
+      "ir": "gpx-io",
+      "kind": "host-dom",
+      "note": "Browser File input picker for .gpx upload, Blob anchor download for .gpx export, and navigator.clipboard URL copy",
+      "src": "shell/hatches/gpx-io.js",
+      "files": [
+        "shell/hatches/gpx-io.js"
+      ]
+    }
+  },
+  "rawMigrations": [],
+  "duckstreams": {},
+  "effects": {}
+}

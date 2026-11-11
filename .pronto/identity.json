@@ -1,0 +1,557 @@
+{
+  "0x8b1100a1b2c3d4e5": {
+    "name": "device",
+    "fields": {
+      "1": {
+        "name": "id",
+        "type": "string",
+        "retired": false
+      },
+      "2": {
+        "name": "theme",
+        "type": "string",
+        "retired": false
+      },
+      "3": {
+        "name": "units",
+        "type": "string",
+        "retired": false
+      }
+    }
+  },
+  "0x8b1100a1b2c3d4e6": {
+    "name": "planner_state",
+    "fields": {
+      "1": {
+        "name": "id",
+        "type": "string",
+        "retired": false
+      },
+      "2": {
+        "name": "drawer",
+        "type": "string",
+        "retired": false
+      },
+      "3": {
+        "name": "modal",
+        "type": "string",
+        "retired": false
+      },
+      "4": {
+        "name": "breakdown_tab",
+        "type": "string",
+        "retired": false
+      },
+      "5": {
+        "name": "basemap",
+        "type": "string",
+        "retired": false
+      },
+      "6": {
+        "name": "terrain_3d",
+        "type": "string",
+        "retired": false
+      },
+      "7": {
+        "name": "legend_open",
+        "type": "string",
+        "retired": false
+      },
+      "8": {
+        "name": "clear_confirm",
+        "type": "string",
+        "retired": false
+      },
+      "9": {
+        "name": "share_status",
+        "type": "string",
+        "retired": false
+      },
+      "10": {
+        "name": "search_step",
+        "type": "string",
+        "retired": false
+      },
+      "11": {
+        "name": "search_text",
+        "type": "string",
+        "retired": false
+      },
+      "12": {
+        "name": "search_q",
+        "type": "string",
+        "retired": false
+      },
+      "13": {
+        "name": "waypoints_json",
+        "type": "string",
+        "retired": false
+      },
+      "14": {
+        "name": "waypoint_count",
+        "type": "int32",
+        "retired": false
+      },
+      "15": {
+        "name": "avoids_json",
+        "type": "string",
+        "retired": false
+      },
+      "16": {
+        "name": "avoid_count",
+        "type": "int32",
+        "retired": false
+      },
+      "17": {
+        "name": "avoid_radius_m",
+        "type": "int32",
+        "retired": false
+      },
+      "18": {
+        "name": "active_slot",
+        "type": "int32",
+        "retired": false
+      },
+      "19": {
+        "name": "active_profile",
+        "type": "string",
+        "retired": false
+      },
+      "20": {
+        "name": "custom_brf",
+        "type": "string",
+        "retired": false
+      },
+      "21": {
+        "name": "request_key",
+        "type": "string",
+        "retired": false
+      },
+      "22": {
+        "name": "routes_geojson",
+        "type": "string",
+        "retired": false
+      },
+      "23": {
+        "name": "active_gpx",
+        "type": "string",
+        "retired": false
+      },
+      "24": {
+        "name": "gpx_import_xml",
+        "type": "string",
+        "retired": false
+      },
+      "25": {
+        "name": "hover_permille",
+        "type": "int32",
+        "retired": false
+      },
+      "26": {
+        "name": "hover_lon",
+        "type": "string",
+        "retired": false
+      },
+      "27": {
+        "name": "hover_lat",
+        "type": "string",
+        "retired": false
+      },
+      "28": {
+        "name": "inspect_lon",
+        "type": "string",
+        "retired": false
+      },
+      "29": {
+        "name": "inspect_lat",
+        "type": "string",
+        "retired": false
+      },
+      "30": {
+        "name": "inspect_summary",
+        "type": "string",
+        "retired": false
+      },
+      "31": {
+        "name": "center_lat",
+        "type": "string",
+        "retired": false
+      },
+      "32": {
+        "name": "center_lon",
+        "type": "string",
+        "retired": false
+      },
+      "33": {
+        "name": "zoom",
+        "type": "string",
+        "retired": false
+      },
+      "34": {
+        "name": "start_label",
+        "type": "string",
+        "retired": false
+      },
+      "35": {
+        "name": "end_label",
+        "type": "string",
+        "retired": false
+      },
+      "36": {
+        "name": "active_distance_label",
+        "type": "string",
+        "retired": false
+      },
+      "37": {
+        "name": "active_ascent_label",
+        "type": "string",
+        "retired": false
+      },
+      "38": {
+        "name": "active_descent_label",
+        "type": "string",
+        "retired": false
+      },
+      "39": {
+        "name": "active_duration_label",
+        "type": "string",
+        "retired": false
+      },
+      "40": {
+        "name": "active_energy_label",
+        "type": "string",
+        "retired": false
+      },
+      "41": {
+        "name": "active_warnings_count",
+        "type": "int32",
+        "retired": false
+      },
+      "42": {
+        "name": "active_elevation_json",
+        "type": "string",
+        "retired": false
+      },
+      "43": {
+        "name": "active_breakdown_json",
+        "type": "string",
+        "retired": false
+      },
+      "44": {
+        "name": "offline_seq",
+        "type": "int32",
+        "retired": false
+      }
+    }
+  },
+  "0x8b1100a1b2c3d4e7": {
+    "name": "route_slot",
+    "fields": {
+      "1": {
+        "name": "id",
+        "type": "string",
+        "retired": false
+      },
+      "2": {
+        "name": "slot_index",
+        "type": "int32",
+        "retired": false
+      },
+      "3": {
+        "name": "active",
+        "type": "string",
+        "retired": false
+      },
+      "4": {
+        "name": "profile",
+        "type": "string",
+        "retired": false
+      },
+      "5": {
+        "name": "profile_label",
+        "type": "string",
+        "retired": false
+      },
+      "6": {
+        "name": "alt",
+        "type": "int32",
+        "retired": false
+      },
+      "7": {
+        "name": "alt_label",
+        "type": "string",
+        "retired": false
+      },
+      "8": {
+        "name": "status",
+        "type": "string",
+        "retired": false
+      },
+      "9": {
+        "name": "distance_m",
+        "type": "int32",
+        "retired": false
+      },
+      "10": {
+        "name": "distance_label",
+        "type": "string",
+        "retired": false
+      },
+      "11": {
+        "name": "ascent_m",
+        "type": "int32",
+        "retired": false
+      },
+      "12": {
+        "name": "ascent_label",
+        "type": "string",
+        "retired": false
+      },
+      "13": {
+        "name": "descent_m",
+        "type": "int32",
+        "retired": false
+      },
+      "14": {
+        "name": "descent_label",
+        "type": "string",
+        "retired": false
+      },
+      "15": {
+        "name": "time_s",
+        "type": "int32",
+        "retired": false
+      },
+      "16": {
+        "name": "duration_label",
+        "type": "string",
+        "retired": false
+      },
+      "17": {
+        "name": "energy_kcal",
+        "type": "int32",
+        "retired": false
+      },
+      "18": {
+        "name": "warnings_count",
+        "type": "int32",
+        "retired": false
+      },
+      "19": {
+        "name": "elevation_json",
+        "type": "string",
+        "retired": false
+      },
+      "20": {
+        "name": "breakdown_json",
+        "type": "string",
+        "retired": false
+      }
+    }
+  },
+  "0x8b1100a1b2c3d4e8": {
+    "name": "route_answer",
+    "fields": {
+      "1": {
+        "name": "id",
+        "type": "string",
+        "retired": false
+      },
+      "2": {
+        "name": "request_key",
+        "type": "string",
+        "retired": false
+      },
+      "3": {
+        "name": "slot_0_json",
+        "type": "string",
+        "retired": false
+      },
+      "4": {
+        "name": "slot_1_json",
+        "type": "string",
+        "retired": false
+      },
+      "5": {
+        "name": "slot_2_json",
+        "type": "string",
+        "retired": false
+      },
+      "6": {
+        "name": "routes_geojson",
+        "type": "string",
+        "retired": false
+      },
+      "7": {
+        "name": "active_gpx",
+        "type": "string",
+        "retired": false
+      },
+      "8": {
+        "name": "inspect_json",
+        "type": "string",
+        "retired": false
+      },
+      "9": {
+        "name": "matched_waypoints_json",
+        "type": "string",
+        "retired": false
+      },
+      "10": {
+        "name": "offline_json",
+        "type": "string",
+        "retired": false
+      }
+    }
+  },
+  "0x8b1100a1b2c3d4e9": {
+    "name": "place_answer",
+    "fields": {
+      "1": {
+        "name": "id",
+        "type": "string",
+        "retired": false
+      },
+      "2": {
+        "name": "kind",
+        "type": "string",
+        "retired": false
+      },
+      "3": {
+        "name": "q",
+        "type": "string",
+        "retired": false
+      },
+      "4": {
+        "name": "lang",
+        "type": "string",
+        "retired": false
+      },
+      "5": {
+        "name": "p0",
+        "type": "string",
+        "retired": false
+      },
+      "6": {
+        "name": "p1",
+        "type": "string",
+        "retired": false
+      },
+      "7": {
+        "name": "p2",
+        "type": "string",
+        "retired": false
+      },
+      "8": {
+        "name": "p3",
+        "type": "string",
+        "retired": false
+      },
+      "9": {
+        "name": "p4",
+        "type": "string",
+        "retired": false
+      }
+    }
+  },
+  "0x8b1100a1b2c3d4ea": {
+    "name": "place_suggestion",
+    "fields": {
+      "1": {
+        "name": "id",
+        "type": "string",
+        "retired": false
+      },
+      "2": {
+        "name": "q",
+        "type": "string",
+        "retired": false
+      },
+      "3": {
+        "name": "label",
+        "type": "string",
+        "retired": false
+      },
+      "4": {
+        "name": "line1",
+        "type": "string",
+        "retired": false
+      },
+      "5": {
+        "name": "district",
+        "type": "string",
+        "retired": false
+      },
+      "6": {
+        "name": "city",
+        "type": "string",
+        "retired": false
+      },
+      "7": {
+        "name": "region",
+        "type": "string",
+        "retired": false
+      },
+      "8": {
+        "name": "postal_code",
+        "type": "string",
+        "retired": false
+      },
+      "9": {
+        "name": "country",
+        "type": "string",
+        "retired": false
+      },
+      "10": {
+        "name": "latitude",
+        "type": "string",
+        "retired": false
+      },
+      "11": {
+        "name": "longitude",
+        "type": "string",
+        "retired": false
+      }
+    }
+  },
+  "0x8b1100a1b2c3d4eb": {
+    "name": "offline_bundle",
+    "fields": {
+      "1": {
+        "name": "id",
+        "type": "string",
+        "retired": false
+      },
+      "2": {
+        "name": "title",
+        "type": "string",
+        "retired": false
+      },
+      "3": {
+        "name": "coverage",
+        "type": "string",
+        "retired": false
+      },
+      "4": {
+        "name": "size_label",
+        "type": "string",
+        "retired": false
+      },
+      "5": {
+        "name": "status",
+        "type": "string",
+        "retired": false
+      },
+      "6": {
+        "name": "segments_cached",
+        "type": "int32",
+        "retired": false
+      },
+      "7": {
+        "name": "pmtiles_ready",
+        "type": "string",
+        "retired": false
+      }
+    }
+  }
+}

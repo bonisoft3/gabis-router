@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">GBRouter</string>
-    <string name="title_activity_main">GBRouter</string>
-    <string name="package_name">uk.gbrouter.app</string>
-    <string name="custom_url_scheme">uk.gbrouter.app</string>
-</resources>

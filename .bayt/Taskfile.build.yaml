@@ -1,0 +1,18 @@
+# generated from bayt.cue — do not edit
+tasks:
+  default:
+    deps:
+    - "::bayt:generate"
+    run: once
+    status:
+    - >-
+      mise x -- bayt fingerprint --manifest '{{.TASKFILE_DIR}}/bayt.build.json'
+      --stamp-file .task/bayt/build.hash
+    vars:
+      BAYTW: >-
+        mise x -- bayt cache run --manifest '{{.TASKFILE_DIR}}/bayt.build.json' -- mise
+        x --
+    cmds:
+    - "{{.BAYTW}} nu -c \"^nu -I (^mise where github:bonisoft3/sayt | str trim) -c 'use task-leaf.nu; task-leaf build'\""
+    - defer: "{{if not .EXIT_CODE}}mise x -- bayt fingerprint --manifest '{{.TASKFILE_DIR}}/bayt.build.json' --stamp-file .task/bayt/build.hash --update-stamp{{end}}"
+version: "3"

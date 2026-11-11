@@ -1,0 +1,548 @@
+{
+  "_generated_from": "bayt.cue (do not edit)",
+  "compose": {
+    "up": false,
+    "manual": false,
+    "build": {
+      "additional_contexts": {
+        "root": ".."
+      },
+      "secrets": [],
+      "args": {}
+    },
+    "environment": {
+      "ORIGIN": "${ORIGIN:-https://localhost:${CADDY_TLS_HOST_PORT}}",
+      "ELECTRIC_SECRET": "${ELECTRIC_SECRET:-dev-electric-secret}"
+    },
+    "ports": [],
+    "volumes": [],
+    "depends_on": {},
+    "networks": {
+      "default": {
+        "aliases": [
+          "caddy"
+        ]
+      }
+    },
+    "healthcheck": {
+      "test": [
+        "CMD",
+        "httpcheck",
+        "http://127.0.0.1:8080/health"
+      ],
+      "interval": "5s",
+      "timeout": "5s",
+      "retries": 30,
+      "start_period": "10s",
+      "start_interval": "500ms"
+    },
+    "develop": {
+      "watch": [
+        {
+          "action": "sync+restart",
+          "path": "../docker/Caddyfile",
+          "target": "/etc/caddy/Caddyfile"
+        },
+        {
+          "action": "sync+restart",
+          "path": "../.certs",
+          "target": "/certs"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/index.html",
+          "target": "/srv/shell/index.html"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/shell.css",
+          "target": "/srv/shell/shell.css"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/boot.js",
+          "target": "/srv/shell/boot.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../offline-first-sw.js",
+          "target": "/srv/offline-first-sw.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/shell.yaml",
+          "target": "/srv/shell/shell.yaml"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/shell.json",
+          "target": "/srv/shell/shell.json"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/design.css",
+          "target": "/srv/shell/design.css"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/screens/router.html",
+          "target": "/srv/shell/screens/router.html"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/screens/router.css",
+          "target": "/srv/shell/screens/router.css"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/handlers/is_key.js",
+          "target": "/srv/shell/handlers/is_key.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/handlers/map_action.js",
+          "target": "/srv/shell/handlers/map_action.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/handlers/place_found.js",
+          "target": "/srv/shell/handlers/place_found.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/handlers/planner_action.js",
+          "target": "/srv/shell/handlers/planner_action.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/handlers/route_answered.js",
+          "target": "/srv/shell/handlers/route_answered.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/handlers/search_submitted.js",
+          "target": "/srv/shell/handlers/search_submitted.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/renderers/elevation-chart.js",
+          "target": "/srv/shell/renderers/elevation-chart.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/renderers/surface-breakdown.js",
+          "target": "/srv/shell/renderers/surface-breakdown.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/hatches/gpx-io.js",
+          "target": "/srv/shell/hatches/gpx-io.js"
+        },
+        {
+          "action": "rebuild",
+          "path": "../messages/en.json",
+          "target": "/srv/messages/en.json"
+        },
+        {
+          "action": "rebuild",
+          "path": "../messages/pt-BR.json",
+          "target": "/srv/messages/pt-BR.json"
+        },
+        {
+          "action": "rebuild",
+          "path": "../brief.md",
+          "target": "/srv/docs/brief.md"
+        },
+        {
+          "action": "rebuild",
+          "path": "../brief.html",
+          "target": "/srv/docs/brief.html"
+        },
+        {
+          "action": "rebuild",
+          "path": "../journal.html",
+          "target": "/srv/docs/journal.html"
+        },
+        {
+          "action": "rebuild",
+          "path": "../ir.html",
+          "target": "/srv/docs/ir.html"
+        },
+        {
+          "action": "rebuild",
+          "path": "../ir/card.css",
+          "target": "/srv/docs/ir/card.css"
+        },
+        {
+          "action": "rebuild",
+          "path": "../acceptance.md",
+          "target": "/srv/docs/acceptance.md"
+        },
+        {
+          "action": "rebuild",
+          "path": "../DESIGN.md",
+          "target": "/srv/docs/DESIGN.md"
+        },
+        {
+          "action": "rebuild",
+          "path": "../ir/neighbourhood-app.svg",
+          "target": "/srv/docs/ir/neighbourhood-app.svg"
+        },
+        {
+          "action": "rebuild",
+          "path": "../ir/neighbourhood-router.svg",
+          "target": "/srv/docs/ir/neighbourhood-router.svg"
+        },
+        {
+          "action": "rebuild",
+          "path": "../journal/2026-11-11-oracle-street-routing-and-waypoint-editing.png",
+          "target": "/srv/docs/journal/2026-11-11-oracle-street-routing-and-waypoint-editing.png"
+        },
+        {
+          "action": "rebuild",
+          "path": "../journal/2026-11-11-sprint-1-london-route.png",
+          "target": "/srv/docs/journal/2026-11-11-sprint-1-london-route.png"
+        },
+        {
+          "action": "rebuild",
+          "path": "../journal/2026-11-11-sprint-2-slot-comparison.png",
+          "target": "/srv/docs/journal/2026-11-11-sprint-2-slot-comparison.png"
+        },
+        {
+          "action": "rebuild",
+          "path": "../journal/2026-11-11-sprint-3-custom-brf-studio.png",
+          "target": "/srv/docs/journal/2026-11-11-sprint-3-custom-brf-studio.png"
+        },
+        {
+          "action": "rebuild",
+          "path": "../journal/2026-11-11-sprint-4-offline-and-ptbr.png",
+          "target": "/srv/docs/journal/2026-11-11-sprint-4-offline-and-ptbr.png"
+        },
+        {
+          "action": "rebuild",
+          "path": "../journal/2026-11-11-sprint-6-breakdowns-pmtiles-offline.png",
+          "target": "/srv/docs/journal/2026-11-11-sprint-6-breakdowns-pmtiles-offline.png"
+        },
+        {
+          "action": "rebuild",
+          "path": "../robots.txt",
+          "target": "/srv/robots.txt"
+        },
+        {
+          "action": "rebuild",
+          "path": "../sitemap.xml",
+          "target": "/srv/sitemap.xml"
+        },
+        {
+          "action": "rebuild",
+          "path": "../shell/favicon.svg",
+          "target": "/srv/shell/favicon.svg"
+        }
+      ]
+    }
+  },
+  "dockerfile": {
+    "preamble": [],
+    "preambleCopyContexts": [],
+    "from": {
+      "name": "caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f"
+    },
+    "add": [],
+    "mounts": [],
+    "secrets": {},
+    "extra_hosts": [],
+    "epilogue": [],
+    "copy": [
+      {
+        "from": {
+          "name": "tarampampam/microcheck:1@sha256:79c187c05bfa67518078bf4db117771942fa8fe107dc79a905861c75ddf28dfa"
+        },
+        "srcs": [
+          "/bin/httpcheck"
+        ],
+        "dst": "/usr/local/bin/httpcheck",
+        "chmod": "755",
+        "link": true,
+        "parents": false,
+        "exclude": []
+      },
+      {
+        "from": null,
+        "srcs": [
+          "docker/Caddyfile"
+        ],
+        "dst": "/etc/caddy/Caddyfile",
+        "link": true,
+        "parents": false,
+        "exclude": []
+      },
+      {
+        "from": null,
+        "srcs": [
+          ".cert[s]"
+        ],
+        "dst": "/certs/",
+        "link": true,
+        "parents": false,
+        "exclude": []
+      },
+      {
+        "from": {
+          "ref": ":served",
+          "name": "gabis-router-served"
+        },
+        "srcs": [
+          "/served/omnishell/"
+        ],
+        "dst": "/omnishell/",
+        "link": true,
+        "parents": false,
+        "exclude": []
+      },
+      {
+        "from": {
+          "ref": ":served",
+          "name": "gabis-router-served"
+        },
+        "srcs": [
+          "/served/"
+        ],
+        "dst": "/srv/",
+        "link": true,
+        "parents": false,
+        "exclude": []
+      },
+      {
+        "from": {
+          "ref": ":served",
+          "name": "gabis-router-served"
+        },
+        "srcs": [
+          "/served.scripts"
+        ],
+        "dst": "/etc/caddy/release-scripts",
+        "link": true,
+        "parents": false,
+        "exclude": []
+      }
+    ],
+    "healthcheck": {
+      "test": [
+        "CMD",
+        "httpcheck",
+        "http://127.0.0.1:8080/health"
+      ],
+      "interval": "5s",
+      "timeout": "5s",
+      "retries": 30,
+      "start_period": "10s"
+    },
+    "expose": [],
+    "entrypoint": null,
+    "incremental": false,
+    "cmd": null
+  },
+  "entrypoint": {
+    "do": "let origin = ($env.ORIGIN? | default \"\"); let h = ($origin | str replace -r '^https?://' ''); if ($h == $origin) or ($h | is-empty) or ($h !~ '^[A-Za-z0-9.:-]+$') { print -e $\"ORIGIN '($origin)' is no origin: set it to the scheme and host readers reach the door at, as https://app.example\"; exit 1 }; let p = (if ($h | str contains \":\") { $h | split row \":\" | last } else { \"8443\" }); let tls_port = (if (($env.CADDY_TLS_HOST_PORT? | default \"\") != \"\") { $env.CADDY_TLS_HOST_PORT } else { $p }); let work = ($env.BAYT_LOCAL_WORK_DIR? | default $nu.temp-dir); let cdir = ($work | path join $\"caddy-($nu.pid)-(random int 1000..9999)\"); mkdir ($cdir | path join \"data\") ($cdir | path join \"config\"); let env_file = ($cdir | path join \"env\"); let certs = (($env.CADDY_CERT_DIR? | default \".certs\") | path expand | str replace -a (char -u 5c) '/'); let served_dir = ($env.BAYT_LOCAL_SERVED_DIR? | default \"\"); let is_local = (($served_dir != \"\") and (($served_dir | path join \"srv\") | path exists)); let cfg_src = (if $is_local { 'docker/Caddyfile' } else { ($env.CADDY_CONFIG_FILE? | default (if ('docker/Caddyfile' | path exists) { 'docker/Caddyfile' } else { \"/etc/caddy/Caddyfile\" })) }); mut env_lines = [$\"CADDY_TLS_HOST_PORT=($tls_port)\"]; mut extra_env = { XDG_DATA_HOME: ($env.CADDY_DATA_HOME? | default ($cdir | path join \"data\")), XDG_CONFIG_HOME: ($cdir | path join \"config\"), CADDY_TLS_HOST_PORT: $tls_port }; if $is_local { let served_fwd = ($served_dir | path expand | str replace -a (char -u 5c) '/'); let srv_root = $\"($served_fwd)/srv\"; let omni_root = $\"($served_fwd)/omnishell\"; $env_lines = ($env_lines | append [$\"CADDY_DOOR_PORT=($tls_port)\" $\"PRONTO_SRV_ROOT=($srv_root)\" $\"PRONTO_OMNISHELL_ROOT=($omni_root)\"]); $extra_env = ($extra_env | merge { CADDY_DOOR_PORT: $tls_port, PRONTO_SRV_ROOT: $srv_root, PRONTO_OMNISHELL_ROOT: $omni_root }) }; if (($certs | path join \"localhost.pem\") | path exists) { let tv = $\"($certs)/localhost.pem ($certs)/localhost-key.pem\"; $env_lines = ($env_lines | append $\"CADDY_TLS=($tv)\"); $extra_env = ($extra_env | merge { CADDY_TLS: $tv }) }; let sfile = ($env.CADDY_SCRIPTS_FILE? | default (if (($env.BAYT_LOCAL_SERVED_DIR? | default \"\") != \"\") { ($env.BAYT_LOCAL_SERVED_DIR | path join \"caddy/release-scripts\") } else { \"/etc/caddy/release-scripts\" })); let rel = (if ($sfile | path exists) { open --raw $sfile | str trim } else { \"\" }); $env_lines = ($env_lines | append $\"PRONTO_RELEASE_SCRIPTS=($rel)\"); $extra_env = ($extra_env | merge { PRONTO_RELEASE_SCRIPTS: $rel }); ($env_lines | str join (char nl)) + (char nl) | save -f $env_file; with-env $extra_env { let adapted = (^caddy adapt --envfile $env_file --config $cfg_src --adapter caddyfile); let roots = ($adapted | split row \",\" | parse -r '\"root\":\"(?<r>[^\"]+)\"' | get -o r | default [] | uniq); for r in $roots { if ($r | path exists) { glob ($r | path join \"**/*\" | str replace -a (char -u 5c) '/') | where ($it | path type) == \"file\" and (not ($it | str ends-with \".etag\")) | each {|f| let etag = $\"($f).etag\"; if (not ($etag | path exists)) { let d = (open --raw $f | hash sha256); ((char dquote) + $d + (char dquote)) | save --raw -f $etag } } | ignore } }; exec caddy run --envfile $env_file --config $cfg_src --adapter caddyfile }",
+    "dockerfile": {
+      "do": "case \"${ORIGIN#http://}\" in \"$ORIGIN\") h=${ORIGIN#https://};; *) h=${ORIGIN#http://};; esac; case \"$h\" in \"$ORIGIN\"|\"\"|*[!A-Za-z0-9.:-]*) echo \"ORIGIN '$ORIGIN' is no origin: set it to the scheme and host readers reach the door at, as https://app.example\" >&2; exit 1;; esac; : > /etc/caddy/env; case \"$h\" in *:*) _p=${h##*:};; *) _p=8443;; esac; export CADDY_TLS_HOST_PORT=\"${CADDY_TLS_HOST_PORT:-$_p}\"; printf 'CADDY_TLS_HOST_PORT=%s\\n' \"$CADDY_TLS_HOST_PORT\" >> /etc/caddy/env; if [ -f /certs/localhost.pem ]; then export CADDY_TLS='/certs/localhost.pem /certs/localhost-key.pem'; printf 'CADDY_TLS=%s\\n' \"$CADDY_TLS\" >> /etc/caddy/env; fi; PRONTO_RELEASE_SCRIPTS=$(cat /etc/caddy/release-scripts); export PRONTO_RELEASE_SCRIPTS; printf 'PRONTO_RELEASE_SCRIPTS=%s\\n' \"$PRONTO_RELEASE_SCRIPTS\" >> /etc/caddy/env; set -e -o pipefail; roots=$(caddy adapt --envfile /etc/caddy/env --config /etc/caddy/Caddyfile --adapter caddyfile | awk '{ while (match($0, /\"root\":\"[^\"]*\"/)) { print substr($0, RSTART + 8, RLENGTH - 9); $0 = substr($0, RSTART + RLENGTH) } }' | sort -u); if [ -n \"$roots\" ]; then find $roots -type f ! -name '*.etag' -exec sh -c 'set -e; q=$1; shift; for f do h=$(sha256sum < \"$f\"); printf \"$q%s$q\" \"${h%% *}\" > \"$f.etag\"; done' sh '\"' {} +; fi; exec caddy run --envfile /etc/caddy/env --config /etc/caddy/Caddyfile --adapter caddyfile",
+      "shell": "sh"
+    },
+    "shell": "nu",
+    "env": {
+      "ELECTRIC_SECRET": "${ELECTRIC_SECRET:-dev-electric-secret}",
+      "ORIGIN": [
+        "${ORIGIN:-https://",
+        {
+          "port": "door",
+          "part": "addr",
+          "host": "localhost",
+          "prefix": "",
+          "suffix": ""
+        },
+        "}"
+      ]
+    },
+    "after": {},
+    "host": true
+  },
+  "expose": {
+    "http": {
+      "port": 8080,
+      "env": "PORT"
+    },
+    "door": {
+      "port": 8443,
+      "udp": true,
+      "publish": {
+        "environment": "CADDY_TLS_HOST_PORT"
+      }
+    }
+  },
+  "healthcheck": {
+    "template": "http",
+    "scheme": "http",
+    "host": "127.0.0.1",
+    "port": 8080,
+    "path": "/health",
+    "url": "http://127.0.0.1:8080/health",
+    "authorization": null,
+    "headers": [],
+    "interval": "5s",
+    "start_interval": "500ms",
+    "timeout": "5s",
+    "retries": 30,
+    "start_period": "10s"
+  },
+  "name": "caddy",
+  "process-compose": {
+    "activate": "mise x --"
+  },
+  "project": "gabis-router",
+  "dir": ".",
+  "activate": "",
+  "srcs": {
+    "globs": [
+      "docker/Caddyfile"
+    ],
+    "exclude": []
+  },
+  "outs": {
+    "globs": [],
+    "exclude": []
+  },
+  "state": {
+    "globs": []
+  },
+  "env": {},
+  "synthetics": {
+    "bayt": {
+      "name": "caddy_bayt",
+      "project": "gabis-router",
+      "dir": ".",
+      "activate": "",
+      "srcs": {
+        "globs": [],
+        "exclude": []
+      },
+      "outs": {
+        "globs": [
+          ".bayt/compose.caddy.yaml",
+          ".bayt/Dockerfile.caddy",
+          ".bayt/bayt.caddy.json",
+          ".bayt/Taskfile.yml",
+          ".bayt/Taskfile.bayt.yml",
+          ".bayt/process-compose.yaml"
+        ],
+        "exclude": []
+      },
+      "env": {},
+      "visibility": "internal",
+      "deps": [],
+      "transitiveDeps": [],
+      "transitiveCrossDeps": [],
+      "chainedDeps": [],
+      "cmds": [],
+      "cache": {
+        "full": false,
+        "similar": false
+      },
+      "upClosure": [
+        "./.bayt/compose.caddy.yaml",
+        "./.bayt/compose.served.yaml"
+      ]
+    },
+    "outs": {
+      "name": "caddy_outs",
+      "project": "gabis-router",
+      "dir": ".",
+      "activate": "",
+      "srcs": {
+        "globs": [],
+        "exclude": []
+      },
+      "outs": {
+        "globs": [],
+        "exclude": []
+      },
+      "env": {},
+      "visibility": "internal",
+      "deps": [],
+      "transitiveDeps": [],
+      "transitiveCrossDeps": [],
+      "chainedDeps": [],
+      "cmds": [],
+      "cache": {
+        "full": false,
+        "similar": false
+      },
+      "upClosure": [
+        "./.bayt/compose.caddy.yaml",
+        "./.bayt/compose.served.yaml"
+      ]
+    },
+    "srcs": {
+      "name": "caddy_srcs",
+      "project": "gabis-router",
+      "dir": ".",
+      "activate": "",
+      "srcs": {
+        "globs": [],
+        "exclude": []
+      },
+      "outs": {
+        "globs": [
+          "docker/Caddyfile"
+        ],
+        "exclude": []
+      },
+      "env": {},
+      "visibility": "internal",
+      "deps": [],
+      "transitiveDeps": [],
+      "transitiveCrossDeps": [],
+      "chainedDeps": [],
+      "cmds": [],
+      "cache": {
+        "full": false,
+        "similar": false
+      },
+      "upClosure": [
+        "./.bayt/compose.caddy.yaml",
+        "./.bayt/compose.served.yaml"
+      ]
+    }
+  },
+  "visibility": "internal",
+  "emitsSrcs": true,
+  "deps": [
+    "served_outs"
+  ],
+  "sameProjectDeps": [
+    "served_outs"
+  ],
+  "transitiveDeps": [
+    "served_outs"
+  ],
+  "transitiveCrossDeps": [],
+  "upClosure": [
+    "./.bayt/compose.caddy.yaml",
+    "./.bayt/compose.served.yaml"
+  ],
+  "chainedDeps": [
+    {
+      "name": "served_outs",
+      "project": "gabis-router",
+      "dir": ".",
+      "outs": {
+        "globs": [],
+        "exclude": []
+      }
+    }
+  ],
+  "cmds": [],
+  "cache": {
+    "full": false,
+    "similar": false
+  }
+}

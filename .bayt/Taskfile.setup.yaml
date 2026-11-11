@@ -1,0 +1,16 @@
+# generated from bayt.cue — do not edit
+tasks:
+  default:
+    env:
+      MISE_ALWAYS_KEEP_DOWNLOAD: "1"
+    run: when_changed
+    status:
+    - >-
+      mise x -- bayt fingerprint --manifest '{{.TASKFILE_DIR}}/bayt.setup.json'
+      --stamp-file .task/bayt/setup.hash
+    vars:
+      BAYTW: mise x -- bayt cache run --manifest '{{.TASKFILE_DIR}}/bayt.setup.json' --
+    cmds:
+    - "{{.BAYTW}} mise install"
+    - defer: "{{if not .EXIT_CODE}}mise x -- bayt fingerprint --manifest '{{.TASKFILE_DIR}}/bayt.setup.json' --stamp-file .task/bayt/setup.hash --update-stamp{{end}}"
+version: "3"

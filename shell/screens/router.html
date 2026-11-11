@@ -1,0 +1,613 @@
+<section class="screen" data-screen="router">
+  <div
+    class="device-scope"
+    data-live="device"
+    data-filter="id=eq.device"
+    data-empty-row='{"id":"device","theme":"auto","units":"metric"}'
+    data-reads="device,planner_state,route_slot,route_answer"
+    data-on-mutation="route_answered"
+    data-theme="{theme}"
+    data-units="{units}"
+    data-cortex="routerRows"
+    data-machine-ref="device"
+  >
+    <header class="router-topbar">
+      <div class="brand-cluster">
+        <span class="brand-mark" aria-hidden="true">❖</span>
+        <div class="brand-titles">
+          <h1 class="brand-title" data-text="{msg.app_title}"></h1>
+          <p class="brand-subtitle" data-text="{msg.app_subtitle}"></p>
+        </div>
+      </div>
+
+      <div class="device-controls">
+        <div class="control-pill-group" role="group" aria-label="{msg.units_metric}">
+          <button type="button" id="units-metric" class="pill-btn" data-unit-opt="metric" data-text="{msg.units_metric}"></button>
+          <button type="button" id="units-imperial" class="pill-btn" data-unit-opt="imperial" data-text="{msg.units_imperial}"></button>
+        </div>
+
+        <div class="control-pill-group" role="group" aria-label="{msg.theme_auto}">
+          <button type="button" id="theme-auto" class="pill-btn" data-theme-opt="auto" data-text="{msg.theme_auto}"></button>
+          <button type="button" id="theme-light" class="pill-btn" data-theme-opt="light" data-text="{msg.theme_light}"></button>
+          <button type="button" id="theme-dark" class="pill-btn" data-theme-opt="dark" data-text="{msg.theme_dark}"></button>
+        </div>
+
+        <div class="control-pill-group lang-group" role="group" aria-label="{msg.lang_en}">
+          <a data-route="router" data-locale="en" data-locale-current="page" class="pill-btn lang-link" data-text="{msg.lang_en}"></a>
+          <a data-route="router" data-locale="pt-BR" data-locale-current="page" class="pill-btn lang-link" data-text="{msg.lang_pt}"></a>
+        </div>
+      </div>
+    </header>
+
+    <div
+      class="planner-shell"
+      data-live="planner_state"
+      data-filter="id=eq.planner"
+      data-empty-row='{"id":"planner","drawer":"open","modal":"none","breakdown_tab":"surface","basemap":"gbrouter","terrain_3d":"off","legend_open":"closed","clear_confirm":"idle","share_status":"idle","search_step":"idle","search_text":"","search_q":"","waypoints_json":"[[-0.1276,51.5072,\"Trafalgar Square, London\"],[-0.0754,51.5055,\"Tower Bridge, London\"]]","waypoint_count":2,"avoids_json":"[]","avoid_count":0,"avoid_radius_m":500,"active_slot":0,"active_profile":"gabis-fast-city","custom_brf":"# Custom BRouter profile\n---context:global\nassign processUnusedTags = true\n---context:way\nassign costfactor = 1.0","request_key":"{\"w\":[[-0.1276,51.5072,\"Trafalgar Square, London\"],[-0.0754,51.5055,\"Tower Bridge, London\"]],\"a\":[],\"p\":[\"gabis-fast-city\",\"gabis-safe-road\",\"gabis-lite-gravel\"],\"alt\":[0,0,0],\"active\":0,\"brf\":\"# Custom BRouter profile\\n---context:global\\nassign processUnusedTags = true\\n---context:way\\nassign costfactor = 1.0\"}","routes_geojson":"{\"type\":\"FeatureCollection\",\"features\":[]}","active_gpx":"","gpx_import_xml":"","hover_permille":-1,"hover_lon":"0.0","hover_lat":"0.0","inspect_lon":"0.0","inspect_lat":"0.0","inspect_summary":"Right-click map -> Inspect road segment to view OSM tags and cost factors.","center_lat":"51.5082","center_lon":"-0.095","zoom":"13.0","start_label":"Trafalgar Square, London","end_label":"Tower Bridge, London","active_distance_label":"4.7 km","active_ascent_label":"6 m","active_descent_label":"10 m","active_duration_label":"13m","active_energy_label":"19 kcal","active_warnings_count":0,"active_elevation_json":"{\"points\":[[0,6,0],[1.2,11,0.5],[2.4,15,0.4],[3.6,12,-0.3],[4.7,2,-0.8]],\"ascent_m\":6,\"descent_m\":10,\"distance_m\":4661,\"units\":\"metric\"}","active_breakdown_json":"{\"breakdown\":{\"surface\":[{\"label\":\"Paved Smooth\",\"distance_m\":4428,\"pct\":95},{\"label\":\"Paved Rough\",\"distance_m\":233,\"pct\":5}],\"road\":[{\"label\":\"Protected Cycleway\",\"distance_m\":3120,\"pct\":67},{\"label\":\"Cycle Lane / Shared\",\"distance_m\":840,\"pct\":18},{\"label\":\"Local Street\",\"distance_m\":701,\"pct\":15}],\"traffic\":[{\"label\":\"Quiet / Traffic-Free\",\"distance_m\":3120,\"pct\":67},{\"label\":\"Low Traffic\",\"distance_m\":1165,\"pct\":25},{\"label\":\"Moderate Traffic\",\"distance_m\":376,\"pct\":8}],\"noise\":[{\"label\":\"Quiet\",\"distance_m\":3496,\"pct\":75},{\"label\":\"Moderate\",\"distance_m\":1165,\"pct\":25}],\"speed\":[{\"label\":\"Off-road / Cycleway\",\"distance_m\":3120,\"pct\":67},{\"label\":\"≤ 30 km/h\",\"distance_m\":1541,\"pct\":33}],\"warnings\":[]},\"units\":\"metric\"}","offline_seq":0}'
+      data-reads="device,planner_state,route_slot,route_answer,place_answer,place_suggestion,offline_bundle"
+      data-cortex="routerRows"
+      data-machine-ref="planner"
+      data-drawer="{drawer}"
+      data-modal="{modal}"
+      data-breakdown-tab="{breakdown_tab}"
+      data-basemap="{basemap}"
+      data-terrain="{terrain_3d}"
+      data-legend="{legend_open}"
+      data-clear-confirm="{clear_confirm}"
+      data-share-status="{share_status}"
+      data-search-step="{search_step}"
+      data-active-slot="{active_slot}"
+    >
+      <div class="planner-toolbar">
+        <button type="button" id="btn-drawer-toggle" class="toolbar-btn" data-text="{msg.drawer_toggle}"></button>
+
+        <div class="preset-group">
+          <button type="button" id="btn-preset-london" class="toolbar-btn preset-btn" data-on-click="planner_action" data-text="{msg.preset_london}"></button>
+          <button type="button" id="btn-preset-saopaulo" class="toolbar-btn preset-btn" data-on-click="planner_action" data-text="{msg.preset_saopaulo}"></button>
+          <button type="button" id="btn-preset-loop-london" class="toolbar-btn preset-btn" data-on-click="planner_action" data-text="{msg.preset_loop}"></button>
+        </div>
+
+        <div class="modal-triggers">
+          <button type="button" id="btn-modal-custom" class="toolbar-btn" data-text="{msg.modal_custom}"></button>
+          <button type="button" id="btn-modal-offline" class="toolbar-btn" data-text="{msg.modal_offline}"></button>
+          <button type="button" id="btn-modal-about" class="toolbar-btn" data-text="{msg.modal_about}"></button>
+        </div>
+      </div>
+
+      <div class="workspace-grid">
+        <aside class="planner-drawer">
+          <section class="drawer-card search-card">
+            <label for="search-input" class="section-label" data-text="{msg.search_label}"></label>
+            <div class="search-bar">
+              <input
+                id="search-input"
+                type="search"
+                class="search-input"
+                maxlength="240"
+                autocomplete="off"
+                spellcheck="false"
+                data-value="{search_text}"
+                placeholder="{msg.search_placeholder}"
+              >
+              <button type="button" id="btn-search-submit" class="action-btn primary-btn" data-text="{msg.search_submit}"></button>
+              <button type="button" id="btn-search-close" class="action-btn ghost-btn" data-text="{msg.search_clear}"></button>
+            </div>
+
+            <div
+              id="search-suggestions"
+              class="suggestions-dropdown"
+              data-live="place_suggestion"
+              data-order="id.asc"
+              data-reads="planner_state,route_slot,place_suggestion"
+            >
+              <template data-item>
+                <button
+                  type="button"
+                  id="btn-pick-suggestion"
+                  class="suggestion-item"
+                  data-on-click="planner_action"
+                >
+                  <strong class="suggestion-title" data-text="{line1}"></strong>
+                  <span class="suggestion-sub" data-text="{label}"></span>
+                </button>
+              </template>
+            </div>
+
+            <div class="endpoints-summary" data-wp-count="{waypoint_count}">
+              <div class="endpoint-row start-endpoint-row">
+                <span class="endpoint-badge start-badge" aria-hidden="true">A</span>
+                <span class="endpoint-text" data-text="{start_label}"></span>
+                <button type="button" id="btn-remove-start" class="wp-remove-btn" data-on-click="planner_action" title="{msg.search_clear}" aria-label="{msg.search_clear}">×</button>
+              </div>
+              <div class="endpoint-row via-endpoint-row">
+                <span class="endpoint-badge via-badge" aria-hidden="true">1</span>
+                <span class="endpoint-text" data-text="{msg.via_waypoint_label}"></span>
+                <button type="button" id="btn-remove-via" class="wp-remove-btn" data-on-click="planner_action" title="{msg.btn_bundle_delete}" aria-label="{msg.btn_bundle_delete}">×</button>
+              </div>
+              <div class="endpoint-row end-endpoint-row">
+                <span class="endpoint-badge end-badge" aria-hidden="true">B</span>
+                <span class="endpoint-text" data-text="{end_label}"></span>
+                <button type="button" id="btn-remove-end" class="wp-remove-btn" data-on-click="planner_action" title="{msg.search_clear}" aria-label="{msg.search_clear}">×</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="drawer-card metrics-banner">
+            <div class="metric-cell">
+              <span class="metric-label" data-text="{msg.stat_distance}"></span>
+              <strong id="active-distance-val" class="metric-value" data-text="{active_distance_label}"></strong>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-label" data-text="{msg.stat_ascent}"></span>
+              <strong id="active-ascent-val" class="metric-value" data-text="{active_ascent_label}"></strong>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-label" data-text="{msg.stat_descent}"></span>
+              <strong id="active-descent-val" class="metric-value" data-text="{active_descent_label}"></strong>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-label" data-text="{msg.stat_time}"></span>
+              <strong id="active-duration-val" class="metric-value" data-text="{active_duration_label}"></strong>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-label" data-text="{msg.stat_energy}"></span>
+              <strong id="active-energy-val" class="metric-value" data-text="{active_energy_label}"></strong>
+            </div>
+          </section>
+
+          <section class="drawer-card slots-card">
+            <h2 class="section-label" data-text="{msg.slots_heading}"></h2>
+            <div
+              class="slots-list"
+              data-live="route_slot"
+              data-order="slot_index.asc"
+              data-reads="device,planner_state,route_slot,route_answer"
+            >
+              <template data-item>
+                <div class="slot-card" data-slot-active="{active}" data-slot-idx="{slot_index}" data-slot-profile="{profile}">
+                  <div class="slot-header">
+                    <button
+                      type="button"
+                      id="btn-activate-slot"
+                      class="slot-focus-btn"
+                      data-on-click="planner_action"
+                      data-text="{msg[profile_label]}"
+                    ></button>
+                    <button
+                      type="button"
+                      id="btn-slot-alt"
+                      class="pill-btn alt-cycle-btn"
+                      data-on-click="planner_action"
+                      data-text="{alt_label}"
+                    ></button>
+                  </div>
+                  <div class="slot-controls">
+                    <button
+                      type="button"
+                      id="slot-profile-trigger-{slot_index}"
+                      class="slot-profile-select"
+                      aria-label="{msg.slot_profile_label}"
+                      aria-haspopup="listbox"
+                      popovertarget="slot-profile-pop-{slot_index}"
+                      commandfor="slot-profile-pop-{slot_index}"
+                      command="toggle-popover"
+                      data-text="{msg[profile_label]}"
+                    ></button>
+                    <ul
+                      id="slot-profile-pop-{slot_index}"
+                      class="slot-profile-menu"
+                      popover
+                      role="listbox"
+                      aria-label="{msg.slot_profile_label}"
+                    >
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-gabis-fast-city"
+                          class="slot-profile-option"
+                          data-opt="gabis-fast-city"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_gabis_fast_city}"
+                        ></button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-gabis-safe-road"
+                          class="slot-profile-option"
+                          data-opt="gabis-safe-road"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_gabis_safe_road}"
+                        ></button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-gabis-lite-gravel"
+                          class="slot-profile-option"
+                          data-opt="gabis-lite-gravel"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_gabis_lite_gravel}"
+                        ></button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-fastbike-lowtraffic"
+                          class="slot-profile-option"
+                          data-opt="fastbike-lowtraffic"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_fastbike_lowtraffic}"
+                        ></button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-fastbike-verylowtraffic"
+                          class="slot-profile-option"
+                          data-opt="fastbike-verylowtraffic"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_fastbike_verylowtraffic}"
+                        ></button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-fastbike"
+                          class="slot-profile-option"
+                          data-opt="fastbike"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_fastbike}"
+                        ></button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-gravel"
+                          class="slot-profile-option"
+                          data-opt="gravel"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_gravel}"
+                        ></button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-trekking"
+                          class="slot-profile-option"
+                          data-opt="trekking"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_trekking}"
+                        ></button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-mtb"
+                          class="slot-profile-option"
+                          data-opt="mtb"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_mtb}"
+                        ></button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-shortest"
+                          class="slot-profile-option"
+                          data-opt="shortest"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_shortest}"
+                        ></button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          id="slot-opt-custom"
+                          class="slot-profile-option"
+                          data-opt="custom"
+                          popovertarget="slot-profile-pop-{slot_index}"
+                          popovertargetaction="hide"
+                          commandfor="slot-profile-pop-{slot_index}"
+                          command="hide-popover"
+                          data-on-click="planner_action"
+                          data-text="{msg.profile_custom}"
+                        ></button>
+                      </li>
+                    </ul>
+                  </div>
+                  <div class="slot-stats-row">
+                    <span class="slot-stat" data-text="{distance_label}"></span>
+                    <span class="slot-stat" data-text="{ascent_label}"></span>
+                    <span class="slot-stat" data-text="{duration_label}"></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </section>
+
+          <section class="drawer-card actions-card">
+            <h2 class="section-label" data-text="{msg.route_actions_heading}"></h2>
+            <div class="action-buttons-grid">
+              <button type="button" id="btn-reverse-route" class="action-btn" data-on-click="planner_action" data-text="{msg.btn_reverse}"></button>
+              <button type="button" id="btn-roundtrip-route" class="action-btn" data-on-click="planner_action" data-text="{msg.btn_roundtrip}"></button>
+              <button type="button" id="btn-avoid-radius" class="action-btn" data-on-click="planner_action" data-text="{msg.btn_avoid_zone}"></button>
+              <button type="button" id="btn-clear-avoids" class="action-btn" data-on-click="planner_action" data-text="{msg.btn_clear_avoids}"></button>
+            </div>
+
+            <div class="gpx-share-row">
+              <button type="button" id="btn-import-gpx" data-host-dom="gpx-io" class="action-btn" data-text="{msg.btn_import_gpx}"></button>
+              <button type="button" id="btn-export-gpx" data-host-dom="gpx-io" class="action-btn" data-text="{msg.btn_export_gpx}"></button>
+              <button type="button" id="btn-share-route" data-host-dom="gpx-io" class="action-btn" data-text="{msg.btn_share_route}"></button>
+            </div>
+
+            <div class="gpx-apply-row">
+              <input
+                id="gpx-import-payload"
+                type="text"
+                class="gpx-payload-input"
+                aria-label="{msg.btn_import_gpx}"
+                placeholder="{msg.btn_import_gpx}"
+                data-value="{gpx_import_xml}"
+                data-on-input="planner_action"
+                data-on-change="planner_action"
+              >
+              <button type="button" id="btn-apply-gpx" class="action-btn primary-btn" data-on-click="planner_action" data-text="{msg.btn_apply_gpx}"></button>
+            </div>
+            <div
+              id="gpx-export-source"
+              hidden
+              data-gpx="{active_gpx}"
+              data-profile="{active_profile}"
+              data-waypoints="{waypoints_json}"
+              data-breakdown="{active_breakdown_json}"
+              data-tab="{breakdown_tab}"
+              data-elevation="{active_elevation_json}"
+            ></div>
+
+            <p id="share-toast" class="share-toast" data-text="{msg.share_copied_badge}"></p>
+
+            <div class="clear-route-bar">
+              <button type="button" id="btn-clear-route" class="action-btn danger-ghost-btn" data-text="{msg.btn_clear_route}"></button>
+              <div class="clear-confirm-group">
+                <button type="button" id="btn-clear-confirm" class="action-btn danger-btn" data-on-click="planner_action" data-text="{msg.btn_clear_confirm}"></button>
+                <button type="button" id="btn-clear-cancel" class="action-btn ghost-btn" data-text="{msg.btn_clear_cancel}"></button>
+              </div>
+            </div>
+          </section>
+
+          <section class="drawer-card breakdown-card">
+            <h2 class="section-label" data-text="{msg.breakdown_heading}"></h2>
+            <div class="breakdown-tabs" role="tablist">
+              <button type="button" id="tab-surface" class="tab-btn" data-tab="surface" data-text="{msg.tab_surface}"></button>
+              <button type="button" id="tab-road" class="tab-btn" data-tab="road" data-text="{msg.tab_road}"></button>
+              <button type="button" id="tab-traffic" class="tab-btn" data-tab="traffic" data-text="{msg.tab_traffic}"></button>
+              <button type="button" id="tab-noise" class="tab-btn" data-tab="noise" data-text="{msg.tab_noise}"></button>
+              <button type="button" id="tab-speed" class="tab-btn" data-tab="speed" data-text="{msg.tab_speed}"></button>
+              <button type="button" id="tab-warnings" class="tab-btn" data-tab="warnings" data-text="{msg.tab_warnings}"></button>
+            </div>
+            <div
+              id="breakdown-stage"
+              class="breakdown-stage"
+              data-text="{active_breakdown_json}	{breakdown_tab}"
+              data-text-format="surface-breakdown"
+            ></div>
+          </section>
+
+          <section class="drawer-card inspector-card">
+            <h2 class="section-label" data-text="{msg.inspector_heading}"></h2>
+            <p id="inspector-readout" class="inspector-readout" data-text="{inspect_summary}"></p>
+          </section>
+        </aside>
+
+        <div class="map-and-telemetry">
+          <div class="map-stage-wrapper">
+            <div
+              class="router-map-mount"
+              data-hatch="router-map"
+              data-on-map_action="map_action"
+              data-prop-basemap="{basemap}"
+              data-prop-terrain_3d="{terrain_3d}"
+              data-prop-waypoints_json="{waypoints_json}"
+              data-prop-avoids_json="{avoids_json}"
+              data-prop-avoid_radius_m="{avoid_radius_m}"
+              data-prop-routes_geojson="{routes_geojson}"
+              data-prop-active_slot="{active_slot}"
+              data-prop-hover_lon="{hover_lon}"
+              data-prop-hover_lat="{hover_lat}"
+              data-prop-hover_permille="{hover_permille}"
+              data-prop-center_lat="{center_lat}"
+              data-prop-center_lon="{center_lon}"
+              data-prop-zoom="{zoom}"
+              aria-label="{msg.app_title}"
+            ></div>
+
+            <div class="map-overlay-controls">
+              <div class="basemap-pills" role="group" aria-label="{msg.basemap_gbrouter}">
+                <button type="button" id="basemap-gbrouter" class="map-pill-btn" data-bm="gbrouter" data-text="{msg.basemap_gbrouter}"></button>
+                <button type="button" id="basemap-light" class="map-pill-btn" data-bm="light" data-text="{msg.basemap_light}"></button>
+                <button type="button" id="basemap-osm" class="map-pill-btn" data-bm="osm" data-text="{msg.basemap_osm}"></button>
+                <button type="button" id="basemap-cyclosm" class="map-pill-btn" data-bm="cyclosm" data-text="{msg.basemap_cyclosm}"></button>
+              </div>
+              <div class="map-toggles">
+                <button type="button" id="btn-terrain-toggle" class="map-pill-btn" data-text="{msg.btn_terrain_3d}"></button>
+                <button type="button" id="btn-legend-toggle" class="map-pill-btn" data-text="{msg.btn_legend}"></button>
+              </div>
+            </div>
+
+            <div id="map-legend-card" class="map-legend-card">
+              <h3 class="legend-heading" data-text="{msg.legend_title}"></h3>
+              <ul class="legend-list">
+                <li class="legend-item slot-a-item" data-text="{msg.legend_slot_a}"></li>
+                <li class="legend-item slot-b-item" data-text="{msg.legend_slot_b}"></li>
+                <li class="legend-item slot-c-item" data-text="{msg.legend_slot_c}"></li>
+                <li class="legend-item grade-flat-item" data-text="{msg.legend_grade_flat}"></li>
+                <li class="legend-item grade-mod-item" data-text="{msg.legend_grade_mod}"></li>
+                <li class="legend-item grade-steep-item" data-text="{msg.legend_grade_steep}"></li>
+              </ul>
+            </div>
+          </div>
+
+          <section class="elevation-dock">
+            <div class="elevation-dock-header">
+              <h2 class="section-label" data-text="{msg.elevation_heading}"></h2>
+            </div>
+            <div
+              id="elevation-stage"
+              class="elevation-stage"
+              data-text="{active_elevation_json}	{hover_permille}"
+              data-text-format="elevation-chart"
+            ></div>
+          </section>
+        </div>
+      </div>
+
+      <div id="planner-modal-backdrop" class="modal-backdrop">
+        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-heading-custom">
+          <div class="modal-header">
+            <h2 id="modal-heading-custom" class="modal-title" data-text="{msg.app_title}"></h2>
+            <button type="button" id="btn-modal-close" class="action-btn ghost-btn" data-text="{msg.modal_close}"></button>
+          </div>
+
+          <div class="modal-pane modal-pane-custom">
+            <h3 class="modal-subtitle" data-text="{msg.custom_modal_title}"></h3>
+            <p class="modal-desc" data-text="{msg.custom_modal_desc}"></p>
+            <label for="custom-brf-editor" class="section-label" data-text="{msg.custom_editor_label}"></label>
+            <textarea
+              id="custom-brf-editor"
+              class="custom-brf-editor"
+              rows="9"
+              spellcheck="false"
+              data-value="{custom_brf}"
+              data-on-input="planner_action"
+              data-on-change="planner_action"
+            ></textarea>
+            <div class="modal-footer">
+              <button type="button" id="btn-apply-custom-brf" class="action-btn primary-btn" data-on-click="planner_action" data-text="{msg.btn_apply_custom}"></button>
+            </div>
+          </div>
+
+          <div class="modal-pane modal-pane-offline">
+            <h3 class="modal-subtitle" data-text="{msg.offline_modal_title}"></h3>
+            <p class="modal-desc" data-text="{msg.offline_modal_desc}"></p>
+            <div
+              class="bundles-list"
+              data-live="offline_bundle"
+              data-order="id.asc"
+              data-reads="planner_state,route_slot,offline_bundle"
+            >
+              <template data-item>
+                <div class="bundle-card" data-bundle-status="{status}">
+                  <div class="bundle-info">
+                    <div class="bundle-title-row">
+                      <strong class="bundle-title" data-text="{title}"></strong>
+                      <span class="bundle-status-badge badge-installed" data-text="{msg.bundle_status_installed}"></span>
+                      <span class="bundle-status-badge badge-downloading" data-text="{msg.bundle_status_downloading}"></span>
+                      <span class="bundle-status-badge badge-error" data-text="{msg.bundle_status_error}"></span>
+                      <span class="bundle-status-badge badge-available" data-text="{msg.bundle_status_available}"></span>
+                    </div>
+                    <span class="bundle-meta" data-text="{coverage}"></span>
+                    <span class="bundle-size" data-text="{size_label}"></span>
+                  </div>
+                  <div class="bundle-actions">
+                    <button
+                      type="button"
+                      id="btn-bundle-download"
+                      class="action-btn primary-btn"
+                      data-on-click="planner_action"
+                      data-text="{msg.btn_bundle_download}"
+                    ></button>
+                    <button
+                      type="button"
+                      id="btn-bundle-delete"
+                      class="action-btn ghost-btn"
+                      data-on-click="planner_action"
+                      data-text="{msg.btn_bundle_delete}"
+                    ></button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="modal-pane modal-pane-about">
+            <h3 class="modal-subtitle" data-text="{msg.about_modal_title}"></h3>
+            <p class="modal-desc" data-text="{msg.about_modal_body}"></p>
+            <h4 class="section-label" data-text="{msg.about_tips_title}"></h4>
+            <ul class="about-tips-list">
+              <li data-text="{msg.about_tip_1}"></li>
+              <li data-text="{msg.about_tip_2}"></li>
+              <li data-text="{msg.about_tip_3}"></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div hidden>
+        <div
+          data-hatch="brouter"
+          data-on-routed="route_answered"
+          data-prop-request_key="{request_key}"
+        ></div>
+        <div
+          data-hatch="geocoder"
+          data-on-found="place_found"
+          data-prop-kind="search"
+          data-prop-q="{search_q}"
+          data-prop-lang="{msg.locale_code}"
+        ></div>
+      </div>
+    </div>
+  </div>
+</section>

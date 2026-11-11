@@ -1,9 +1,0 @@
-[submodule "subrepos/omnishell"]
-	path = subrepos/omnishell
-	url = https://github.com/gabisurita/omnishell.git
-[submodule "subrepos/mecha"]
-	path = subrepos/mecha
-	url = https://github.com/gabisurita/mecha.git
-[submodule "subrepos/brouter-rs"]
-	path = subrepos/brouter-rs
-	url = https://github.com/gabisurita/brouter-rs.git

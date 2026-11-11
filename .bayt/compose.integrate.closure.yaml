@@ -1,0 +1,28 @@
+# generated from bayt.cue — do not edit
+include:
+- path: .././.bayt/compose.setup.yaml
+  required: false
+- path: .././.bayt/compose.lint.yaml
+  required: false
+- path: .././.bayt/compose.generate.yaml
+  required: false
+- path: .././.bayt/compose.build.yaml
+  required: false
+- path: .././.bayt/compose.test.yaml
+  required: false
+- path: .././.bayt/compose.launch.yaml
+  required: false
+- path: .././.bayt/compose.caddy.yaml
+  required: false
+- path: .././.bayt/compose.served.yaml
+  required: false
+- path: .././.bayt/compose.integrate.yaml
+  required: false
+- path: ../monorepo/${MONOREPO_COMPOSE_MODE:-docker-image}.yaml
+  required: false
+services:
+  bayt:
+    extends:
+      file: ./compose.integrate.yaml
+      service: gabis-router-integrate
+    scale: 1

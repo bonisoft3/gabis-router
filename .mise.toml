@@ -1,0 +1,60 @@
+[settings]
+github_attestations = false
+locked = true
+lockfile = true
+slsa = false
+
+[settings.aqua]
+cosign = false
+github_attestations = false
+minisign = false
+slsa = false
+
+[settings.github]
+github_attestations = false
+slsa = false
+
+[tools]
+'github:FiloSottile/mkcert' = 'v1.4.4'
+'github:bonisoft3/bayt' = '0.71.0'
+'github:bonisoft3/mecha' = '0.22.0'
+'github:bonisoft3/omnishell' = '0.23.0'
+'github:bonisoft3/pronto' = '1.1.2'
+'github:bonisoft3/sayt' = '0.48.0'
+'github:bufbuild/buf' = '1.74.0'
+'github:caddyserver/caddy' = '2.11.7'
+'github:cue-lang/cue' = '0.16.1'
+'github:denoland/deno' = 'v2.9.7'
+'github:go-task/task' = 'v3.54.0'
+'github:nushell/nushell' = '0.116.1'
+'github:redpanda-data/connect' = '4.114.0'
+'github:sbdchd/squawk' = '2.66.0'
+'github:terrastruct/d2' = 'v0.9.0'
+
+[tools.'http:duckdb']
+version = '1.5.6'
+
+[tools.'http:duckdb'.platforms]
+[tools.'http:duckdb'.platforms.linux-arm64]
+url = 'https://github.com/duckdb/duckdb/releases/download/v{{ version }}/duckdb_cli-linux-arm64.zip'
+
+[tools.'http:duckdb'.platforms.linux-arm64-musl]
+url = 'https://github.com/duckdb/duckdb/releases/download/v{{ version }}/duckdb_cli-linux-arm64-musl.zip'
+
+[tools.'http:duckdb'.platforms.linux-x64]
+url = 'https://github.com/duckdb/duckdb/releases/download/v{{ version }}/duckdb_cli-linux-amd64.zip'
+
+[tools.'http:duckdb'.platforms.linux-x64-musl]
+url = 'https://github.com/duckdb/duckdb/releases/download/v{{ version }}/duckdb_cli-linux-amd64-musl.zip'
+
+[tools.'http:duckdb'.platforms.macos-arm64]
+url = 'https://github.com/duckdb/duckdb/releases/download/v{{ version }}/duckdb_cli-osx-arm64.zip'
+
+[tools.'http:duckdb'.platforms.macos-x64]
+url = 'https://github.com/duckdb/duckdb/releases/download/v{{ version }}/duckdb_cli-osx-amd64.zip'
+
+[tools.'http:duckdb'.platforms.windows-arm64]
+url = 'https://github.com/duckdb/duckdb/releases/download/v{{ version }}/duckdb_cli-windows-arm64.zip'
+
+[tools.'http:duckdb'.platforms.windows-x64]
+url = 'https://github.com/duckdb/duckdb/releases/download/v{{ version }}/duckdb_cli-windows-amd64.zip'

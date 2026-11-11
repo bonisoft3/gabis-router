@@ -1,0 +1,27 @@
+[package]
+name = "brouter-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Gabriela Surita"]
+license = "MIT"
+description = "Rust port of the BRouter bicycle routing engine"
+repository = "https://github.com/gabisurita/brouter-rs"
+readme = "README.md"
+keywords = ["brouter", "routing", "openstreetmap", "bicycle", "navigation"]
+categories = ["algorithms", "science::geo"]
+exclude = [
+    "data/*",
+    "fixtures/*",
+    "profiles/*",
+    "tools/*",
+    "routes_comparison.html",
+]
+
+[features]
+default = ["rayon"]
+rayon = ["dep:rayon"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rayon = { version = "1.10", optional = true }

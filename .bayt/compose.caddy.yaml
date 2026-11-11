@@ -1,0 +1,182 @@
+# generated from bayt.cue — do not edit
+services:
+  gabis-router-caddy:
+    build:
+      additional_contexts:
+        gabis-router-served: service:gabis-router-served
+        root: ..
+      context: ..
+      dockerfile: .bayt/Dockerfile.caddy
+      target: caddy
+      tags:
+      - bayt-gabis-router-caddy:${BAYT_IMAGE_TAG:-${COMPOSE_PROJECT_NAME}}
+      - bayt-gabis-router-caddy:latest
+      args:
+        BAYT_DIR: ${MONOREPO_COMPOSE_MODE:+apps/gabis-router}
+        BUILDKIT_SYNTAX: >-
+          docker/dockerfile:1.27@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+    develop:
+      watch:
+      - action: sync+restart
+        path: ../docker/Caddyfile
+        target: /etc/caddy/Caddyfile
+      - action: sync+restart
+        path: ../.certs
+        target: /certs
+      - action: rebuild
+        path: ../shell/index.html
+        target: /srv/shell/index.html
+      - action: rebuild
+        path: ../shell/shell.css
+        target: /srv/shell/shell.css
+      - action: rebuild
+        path: ../shell/boot.js
+        target: /srv/shell/boot.js
+      - action: rebuild
+        path: ../offline-first-sw.js
+        target: /srv/offline-first-sw.js
+      - action: rebuild
+        path: ../shell/shell.yaml
+        target: /srv/shell/shell.yaml
+      - action: rebuild
+        path: ../shell/shell.json
+        target: /srv/shell/shell.json
+      - action: rebuild
+        path: ../shell/design.css
+        target: /srv/shell/design.css
+      - action: rebuild
+        path: ../shell/screens/router.html
+        target: /srv/shell/screens/router.html
+      - action: rebuild
+        path: ../shell/screens/router.css
+        target: /srv/shell/screens/router.css
+      - action: rebuild
+        path: ../shell/handlers/is_key.js
+        target: /srv/shell/handlers/is_key.js
+      - action: rebuild
+        path: ../shell/handlers/map_action.js
+        target: /srv/shell/handlers/map_action.js
+      - action: rebuild
+        path: ../shell/handlers/place_found.js
+        target: /srv/shell/handlers/place_found.js
+      - action: rebuild
+        path: ../shell/handlers/planner_action.js
+        target: /srv/shell/handlers/planner_action.js
+      - action: rebuild
+        path: ../shell/handlers/route_answered.js
+        target: /srv/shell/handlers/route_answered.js
+      - action: rebuild
+        path: ../shell/handlers/search_submitted.js
+        target: /srv/shell/handlers/search_submitted.js
+      - action: rebuild
+        path: ../shell/renderers/elevation-chart.js
+        target: /srv/shell/renderers/elevation-chart.js
+      - action: rebuild
+        path: ../shell/renderers/surface-breakdown.js
+        target: /srv/shell/renderers/surface-breakdown.js
+      - action: rebuild
+        path: ../shell/hatches/gpx-io.js
+        target: /srv/shell/hatches/gpx-io.js
+      - action: rebuild
+        path: ../messages/en.json
+        target: /srv/messages/en.json
+      - action: rebuild
+        path: ../messages/pt-BR.json
+        target: /srv/messages/pt-BR.json
+      - action: rebuild
+        path: ../brief.md
+        target: /srv/docs/brief.md
+      - action: rebuild
+        path: ../brief.html
+        target: /srv/docs/brief.html
+      - action: rebuild
+        path: ../journal.html
+        target: /srv/docs/journal.html
+      - action: rebuild
+        path: ../ir.html
+        target: /srv/docs/ir.html
+      - action: rebuild
+        path: ../ir/card.css
+        target: /srv/docs/ir/card.css
+      - action: rebuild
+        path: ../acceptance.md
+        target: /srv/docs/acceptance.md
+      - action: rebuild
+        path: ../DESIGN.md
+        target: /srv/docs/DESIGN.md
+      - action: rebuild
+        path: ../ir/neighbourhood-app.svg
+        target: /srv/docs/ir/neighbourhood-app.svg
+      - action: rebuild
+        path: ../ir/neighbourhood-router.svg
+        target: /srv/docs/ir/neighbourhood-router.svg
+      - action: rebuild
+        path: ../journal/2026-11-11-oracle-street-routing-and-waypoint-editing.png
+        target: /srv/docs/journal/2026-11-11-oracle-street-routing-and-waypoint-editing.png
+      - action: rebuild
+        path: ../journal/2026-11-11-sprint-1-london-route.png
+        target: /srv/docs/journal/2026-11-11-sprint-1-london-route.png
+      - action: rebuild
+        path: ../journal/2026-11-11-sprint-2-slot-comparison.png
+        target: /srv/docs/journal/2026-11-11-sprint-2-slot-comparison.png
+      - action: rebuild
+        path: ../journal/2026-11-11-sprint-3-custom-brf-studio.png
+        target: /srv/docs/journal/2026-11-11-sprint-3-custom-brf-studio.png
+      - action: rebuild
+        path: ../journal/2026-11-11-sprint-4-offline-and-ptbr.png
+        target: /srv/docs/journal/2026-11-11-sprint-4-offline-and-ptbr.png
+      - action: rebuild
+        path: ../journal/2026-11-11-sprint-6-breakdowns-pmtiles-offline.png
+        target: /srv/docs/journal/2026-11-11-sprint-6-breakdowns-pmtiles-offline.png
+      - action: rebuild
+        path: ../robots.txt
+        target: /srv/robots.txt
+      - action: rebuild
+        path: ../sitemap.xml
+        target: /srv/sitemap.xml
+      - action: rebuild
+        path: ../shell/favicon.svg
+        target: /srv/shell/favicon.svg
+    environment:
+      PORT: "8080"
+      ORIGIN: ${ORIGIN:-https://localhost:${CADDY_TLS_HOST_PORT:-18633}}
+      ELECTRIC_SECRET: ${ELECTRIC_SECRET:-dev-electric-secret}
+    healthcheck:
+      test:
+      - CMD
+      - httpcheck
+      - http://127.0.0.1:8080/health
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+      start_interval: 500ms
+    image: bayt-gabis-router-caddy:${BAYT_IMAGE_TAG:-${COMPOSE_PROJECT_NAME}}
+    networks:
+      default:
+        aliases:
+        - caddy
+  gabis-router-caddy_bayt:
+    build:
+      additional_contexts:
+        gabis-router-served_bayt: service:gabis-router-served_bayt
+      context: ..
+      dockerfile: .bayt/Dockerfile.caddy
+      target: caddy_bayt
+      args:
+        BAYT_DIR: ${MONOREPO_COMPOSE_MODE:+apps/gabis-router}
+        BUILDKIT_SYNTAX: >-
+          docker/dockerfile:1.27@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+    image: bayt-gabis-router-caddy_bayt:latest
+    scale: 0
+  gabis-router-caddy_srcs:
+    build:
+      context: ..
+      dockerfile: .bayt/Dockerfile.caddy
+      target: caddy_srcs
+      args:
+        BAYT_DIR: ${MONOREPO_COMPOSE_MODE:+apps/gabis-router}
+        BUILDKIT_SYNTAX: >-
+          docker/dockerfile:1.27@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+    image: bayt-gabis-router-caddy_srcs:latest
+    scale: 0

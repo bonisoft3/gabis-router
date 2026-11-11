@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="pronto-ir-version" content="0.1.0">
+  <meta name="pronto-source" content="journal.html#initial-brief">
+  <meta name="pronto-brief-sha256" content="7af13702ee8c095f8b813512db566e71dde477beb001d9642aeb3eba311f74c6">
+  <meta name="pronto-generated" content="2026-11-11">
+  <meta name="pronto-compiler" content="claude-opus-5">
+  <meta name="pronto-team" content="studio (plugins/pronto/teams/studio.md)">
+  <meta name="pronto-cluster" content="mecha (plugins/pronto/clusters/mecha.cue)">
+  <meta name="pronto-terminal" content="omnishell (plugins/pronto/terminals/omnishell.cue)">
+  <meta name="pronto-loop" content="sayt (plugins/pronto/loops/sayt.cue)">
+  <meta name="pronto-build" content="bayt (plugins/pronto/builders/bayt.cue)">
+  <title>Gabi's Router — IR</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { max-width: 60rem; margin: 2rem auto; padding: 0 1rem;
+           font: 15px/1.55 -apple-system, "Segoe UI", system-ui, sans-serif; }
+    h1, h2, h3 { line-height: 1.2; }
+    table { border-collapse: collapse; margin: 0.7rem 0; width: 100%; }
+    th, td { border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+             padding: 0.25rem 0.6rem; text-align: left; vertical-align: top; }
+    .storyboard { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; }
+    figure { margin: 0; }
+    figure svg { border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+                 border-radius: 6px; }
+    figcaption { font-size: 0.8rem; opacity: 0.75; max-width: 260px; }
+    p[data-kind="test"] { border-left: 3px solid color-mix(in srgb, currentColor 30%, transparent); padding-left: 0.8rem; }
+    section[data-kind="review"] { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 6px; padding: 0.2rem 1rem; margin: 1rem 0; }
+    .verdict { font-weight: 700; }
+  </style>
+  <link rel="stylesheet" href="ir/card.css">
+</head>
+<body>
+  <h1>Gabi's Router — engineering design</h1>
+  <p>
+    Compiled from <a href="journal.html#initial-brief">journal.html#initial-brief</a> by the
+    <a href="../../plugins/pronto/teams/studio.md">studio</a> team, onto the mecha cluster,
+    the omnishell terminal, the sayt loop, and the bayt build graph · design tokens:
+    <a href="DESIGN.md">DESIGN.md</a>.
+  </p>
+
+  <h2 id="overview">Overview</h2>
+  <p>
+    Gabi's Router is an offline-capable bicycle route planner built on the Rust port of
+    BRouter (<code>brouter-rs</code> + <code>route-tools</code> + <code>rsrouter-wasm</code>)
+    compiled to WebAssembly, MapLibre GL 5.24.0, and Pronto Cortex statecharts. Device-durable
+    preferences (<a href="#Device">Device</a>) persist theme and unit system across tabs, while
+    in-tab route planning state (<code>PlannerState</code>), three simultaneous profile
+    comparison slots (<code>RouteSlot</code>), memoized routing answers (<code>RouteAnswer</code>),
+    memoized geocoding answers (<code>PlaceAnswer</code>, <code>PlaceSuggestion</code>), and
+    regional tile packs (<code>OfflineBundle</code>) drive the workbench.
+  </p>
+
+  <h2 id="entities">Entities</h2>
+
+  <section id="Device" data-kind="entity" data-durability="device" data-type-id="0x8b1100a1b2c3d4e5">
+    <h3>Device</h3>
+<!-- pronto:card --><div class="card dur-device">
+<header class="ehead">
+<span class="chips"><span class="chip" data-tip="where the row lives, the one word the author chooses: tab · device · offline · live · server" tabindex="0"><b>durability</b> device</span><span class="chip" data-tip="who may read and write the row; becomes the roles and the row-level policies" tabindex="0"><b>access</b> —</span><span class="chip" data-tip="the entity's type id, which a schema diff keys on across renames; each field keeps a gap-free ordinal, and a retired field stays as a tombstone" tabindex="0"><b>id</b> 0x8b1100a1b2c3d4e5</span><span class="chip derived" data-tip="1 of 5 — a register this tab or device alone writes" tabindex="0"><b>level</b> ephemeral</span><span class="chip derived" data-tip="what a write here can claim when delivered twice — the level's word, and at level 4 the sink's: idempotent or reconciled is exactly-once, unknown at-most-once, repeat at-least-once; a hatch is unspecified" tabindex="0"><b>delivery</b> exactly-once</span></span>
+<span class="counts">3 fields · 0 referrers · 2 machines</span>
+</header>
+<div class="names"><span class="lbl">fields</span><span class="namelist"><span class="fname">id<i class="m">pk</i></span><span class="fname">theme<i class="m mach">⚙</i></span><span class="fname">units<i class="m mach">⚙</i></span></span>
+<details class="more"><summary>all fields, with their metadata</summary>
+<table class="fields"><tr><td class="o">1</td><td class="k">id</td><td class="t">string</td><td class="gl"><span class="g pk" data-tip="primary key" tabindex="0">pk</span></td><td class="x" title="this == 'device'">this == 'device'</td></tr><tr><td class="o">2</td><td class="k">theme</td><td class="t">string</td><td class="gl"><span class="g mach" data-tip="the machine's field: only the chart moves it" tabindex="0">machine</span></td><td class="x" title="this in ['auto', 'light', 'dark']">this in ['auto', 'light', 'dark']</td></tr><tr><td class="o">3</td><td class="k">units</td><td class="t">string</td><td class="gl"><span class="g mach" data-tip="the machine's field: only the chart moves it" tabindex="0">machine</span></td><td class="x" title="this in ['metric', 'imperial']">this in ['metric', 'imperial']</td></tr></table>
+<p class="legend">the first column is the field's ordinal, which a diff keys on · <span class="g pk">pk</span> primary key · <span class="g fk">→</span> references · <span class="g">◇</span> unique · <span class="g">≡</span> indexed · <span class="g">○</span> nullable · a rule or default in the last column</p>
+</details>
+<details class="more authored"><summary>the authored table</summary></details>
+<details class="more json"><summary>the entity, as JSON</summary><div class="jt"><div class="jl"><span class="jk">name</span>: <span class="jv">&quot;Device&quot;</span></div><div class="jl"><span class="jk">ir</span>: <span class="jv">&quot;Device&quot;</span></div><div class="jl"><span class="jk">table</span>: <span class="jv">&quot;device&quot;</span></div><div class="jl"><span class="jk">id</span>: <span class="jv">&quot;0x8b1100a1b2c3d4e5&quot;</span></div><details class="jn"><summary><span class="jk">fields</span> <span class="jv">[3]</span></summary><details class="jn"><summary><span class="jk">0</span> <span class="jv">id</span></summary><div class="jl"><span class="jk">name</span>: <span class="jv">&quot;id&quot;</span></div><div class="jl"><span class="jk">ordinal</span>: <span class="jv">1</span></div><div class="jl"><span class="jk">retired</span>: <span class="jv">false</span></div><div class="jl"><span class="jk">type</span>: <span class="jv">&quot;string&quot;</span></div><div class="jl"><span class="jk">pk</span>: <span class="jv">true</span></div><div class="jl"><span class="jk">required</span>: <span class="jv">true</span></div><div class="jl"><span class="jk">cel</span>: <span class="jv">&quot;this == 'device'&quot;</span></div></details><details class="jn"><summary><span class="jk">1</span> <span class="jv">theme</span></summary><div class="jl"><span class="jk">name</span>: <span class="jv">&quot;theme&quot;</span></div><div class="jl"><span class="jk">ordinal</span>: <span class="jv">2</span></div><div class="jl"><span class="jk">retired</span>: <span class="jv">false</span></div><div class="jl"><span class="jk">type</span>: <span class="jv">&quot;string&quot;</span></div><div class="jl"><span class="jk">pk</span>: <span class="jv">false</span></div><div class="jl"><span class="jk">required</span>: <span class="jv">true</span></div><div class="jl"><span class="jk">default</span>: <span class="jv">&quot;'auto'&quot;</span></div><div class="jl"><span class="jk">cel</span>: <span class="jv">&quot;this in ['auto', 'light', 'dark']&quot;</span></div></details><details class="jn"><summary><span class="jk">2</span> <span class="jv">units</span></summary><div class="jl"><span class="jk">name</span>: <span class="jv">&quot;units&quot;</span></div><div class="jl"><span class="jk">ordinal</span>: <span class="jv">3</span></div><div class="jl"><span class="jk">retired</span>: <span class="jv">false</span></div><div class="jl"><span class="jk">type</span>: <span class="jv">&quot;string&quot;</span></div><div class="jl"><span class="jk">pk</span>: <span class="jv">false</span></div><div class="jl"><span class="jk">required</span>: <span class="jv">true</span></div><div class="jl"><span class="jk">default</span>: <span class="jv">&quot;'metric'&quot;</span></div><div class="jl"><span class="jk">cel</span>: <span class="jv">&quot;this in ['metric', 'imperial']&quot;</span></div></details></details><div class="jl"><span class="jk">seed</span>: <span class="jv">[0]</span></div><div class="jl"><span class="jk">durability</span>: <span class="jv">&quot;device&quot;</span></div><div class="jl"><span class="jk">level</span>: <span class="jv">&quot;ephemeral&quot;</span></div><div class="jl"><span class="jk">server</span>: <span class="jv">false</span></div><details class="jn"><summary><span class="jk">writers</span> <span class="jv">[3]</span></summary><details class="jn"><summary><span class="jk">0</span> <span class="jv">{3}</span></summary><div class="jl"><span class="jk">by</span>: <span class="jv">&quot;router&quot;</span></div><div class="jl"><span class="jk">kind</span>: <span class="jv">&quot;screen&quot;</span></div><details class="jn"><summary><span class="jk">ops</span> <span class="jv">[1]</span></summary><div class="jl"><span class="jk">0</span>: <span class="jv">&quot;reduce&quot;</span></div></details></details><details class="jn"><summary><span class="jk">1</span> <span class="jv">{3}</span></summary><div class="jl"><span class="jk">by</span>: <span class="jv">&quot;Device-theme&quot;</span></div><div class="jl"><span class="jk">kind</span>: <span class="jv">&quot;chart&quot;</span></div><details class="jn"><summary><span class="jk">ops</span> <span class="jv">[1]</span></summary><div class="jl"><span class="jk">0</span>: <span class="jv">&quot;update&quot;</span></div></details></details><details class="jn"><summary><span class="jk">2</span> <span class="jv">{3}</span></summary><div class="jl"><span class="jk">by</span>: <span class="jv">&quot;Device-units&quot;</span></div><div class="jl"><span class="jk">kind</span>: <span class="jv">&quot;chart&quot;</span></div><details class="jn"><summary><span class="jk">ops</span> <span class="jv">[1]</span></summary><div class="jl"><span class="jk">0</span>: <span class="jv">&quot;update&quot;</span></div></details></details></details><details class="jn"><summary><span class="jk">cel</span> <span class="jv">{3}</span></summary><details class="jn"><summary><span class="jk">checks</span> <span class="jv">{0}</span></summary></details><details class="jn"><summary><span class="jk">enums</span> <span class="jv">{3}</span></summary><details class="jn"><summary><span class="jk">id</span> <span class="jv">[1]</span></summary><div class="jl"><span class="jk">0</span>: <span class="jv">&quot;device&quot;</span></div></details><details class="jn"><summary><span class="jk">theme</span> <span class="jv">[3]</span></summary><div class="jl"><span class="jk">0</span>: <span class="jv">&quot;auto&quot;</span></div><div class="jl"><span class="jk">1</span>: <span class="jv">&quot;light&quot;</span></div><div class="jl"><span class="jk">2</span>: <span class="jv">&quot;dark&quot;</span></div></details><details class="jn"><summary><span class="jk">units</span> <span class="jv">[2]</span></summary><div class="jl"><span class="jk">0</span>: <span class="jv">&quot;metric&quot;</span></div><div class="jl"><span class="jk">1</span>: <span class="jv">&quot;imperial&quot;</span></div></details></details><details class="jn"><summary><span class="jk">bounds</span> <span class="jv">{0}</span></summary></details></details><details class="jn"><summary><span class="jk">uniques</span> <span class="jv">[0]</span></summary></details><details class="jn"><summary><span class="jk">validations</span> <span class="jv">{0}</span></summary></details></div></details></div>
+<div class="strips">
+<div class="strip"><span class="lbl">referenced by</span><span class="rels"><span class="why">—</span></span></div>
+<div class="strip"><span class="lbl">refers to</span><span class="rels"><span class="why">—</span></span></div>
+<div class="strip"><span class="lbl">validations</span><span class="why">none</span></div>
+</div>
+<div class="dline"><span class="lbl derived">derived</span><span class="chips"><span class="chip derived" data-tip="who writes rows here, each as kind:name and its ops — a screen's forms and what its markup writes past them, the terminal's charts, pipelines, computations, machines, a unit's memo" tabindex="0"><b>writers</b> screen:router reduce, chart:Device-theme update, chart:Device-units update</span><span class="chip derived" data-tip="how the terminal reads a server entity's table: eager syncs it whole, lazy loads what a view asks; a browser tier has no mode" tabindex="0"><b>read</b> —</span><span class="chip derived" data-tip="the database roles that may touch the table, from durability and access" tabindex="0"><b>roles</b> anon</span><span class="chip derived" data-tip="whether ir.html carries an element for it — review by consequence: a row that reaches another device or the server does" tabindex="0"><b>ir</b> required</span></span>
+<details class="more"><summary>the platform’s columns</summary><p class="why"><code>created_by</code>, <code>updated_by</code> → app_user, stamped by the platform on every write; not the author’s.</p></details></div>
+<section class="machine" data-kind="machine" id="Device-theme" data-of="Device">
+<span class="lbl derived">machine</span>
+<span class="mtitle">Device · theme <span class="chip derived" data-tip="1 of 5 — a register this tab or device alone writes" tabindex="0"><b>level</b> ephemeral</span><span class="chip derived" data-tip="what a write here can claim when delivered twice — the level's word, and at level 4 the sink's: idempotent or reconciled is exactly-once, unknown at-most-once, repeat at-least-once; a hatch is unspecified" tabindex="0"><b>delivery</b> exactly-once</span></span>
+<div class="canvas"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" viewBox="0 0 1068 187"><svg class="d2-3871644538 d2-svg" width="1068" height="187" viewBox="-5 -5 1068 187"><rect x="-5" y="-5" width="1068" height="187" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.d2-3871644538 .text-bold {
+	font-family: "d2-3871644538-font-bold";
+}
+@font-face {
+	font-family: d2-3871644538-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-3871644538 .text-italic {
+	font-family: "d2-3871644538-font-italic";
+}
+@font-face {
+	font-family: d2-3871644538-font-italic;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3871644538 .fill-N1{fill:#0A0F25;}
+		.d2-3871644538 .fill-N2{fill:#676C7E;}
+		.d2-3871644538 .fill-N7{fill:#FFFFFF;}
+		.d2-3871644538 .fill-B1{fill:#0D32B2;}
+		.d2-3871644538 .fill-B6{fill:#F7F8FE;}
+		.d2-3871644538 .stroke-B1{stroke:#0D32B2;}
+		.d2-3871644538 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><g class="c3RhcnQ="><g class="shape" ><ellipse rx="14" ry="14" cx="26" cy="96" stroke="#0D32B2" fill="#1b1f2a" class="shape stroke-B1" style="stroke-width:2;" /></g></g><g class="YXV0bw=="><g class="shape" ><rect x="110" y="36" width="78" height="120" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="149" y="101.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">auto</text></g><g class="bGlnaHQ="><g class="shape" ><rect x="539" y="12" width="77" height="80" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="577.5" y="57.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">light</text></g><g class="ZGFyaw=="><g class="shape" ><rect x="968" y="52" width="78" height="80" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="1007" y="97.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">dark</text></g><g class="KHN0YXJ0IC0mZ3Q7IGF1dG8pWzBd"><marker id="mk-d2-3871644538-3488378134" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 42 97 L 106 97" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3871644538-3488378134)" mask="url(#d2-3871644538)" /></g><g class="KGF1dG8gLSZndDsgbGlnaHQpWzBd"><path d="M 190 60.833 L 218 60.833 S 228 60.833 228 50.833 L 228 46 S 228 36 238 36 L 536 36" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3871644538-3488378134)" mask="url(#d2-3871644538)" /><text x="352" y="42" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">click@theme-light</text></g><g class="KGF1dG8gLSZndDsgZGFyaylbMF0="><path d="M 190 108.833 L 270.9165 108.833 C 285.0835 108.833 270.9165 123 285.0835 123 L 868 123 S 878 123 878 113 L 878 110.833 S 878 100.833 888 100.833 L 964 100.833" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3871644538-3488378134)" mask="url(#d2-3871644538)" /><text x="582" y="129" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">click@theme-dark</text></g><g class="KGxpZ2h0IC0mZ3Q7IGF1dG8pWzBd"><path d="M 538 68 L 286.4165 68 C 269.5835 68 286.4165 84.833 269.5835 84.833 L 192 84.833" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3871644538-3488378134)" mask="url(#d2-3871644538)" /><text x="356" y="74" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">click@theme-auto</text></g><g class="KGxpZ2h0IC0mZ3Q7IGRhcmspWzBd"><path d="M 618 36 L 918 36 S 928 36 928 46 L 928 58.833 S 928 68.833 938 68.833 L 964 68.833" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3871644538-3488378134)" mask="url(#d2-3871644538)" /><text x="808" y="42" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">click@theme-dark</text></g><g class="KGRhcmsgLSZndDsgYXV0bylbMF0="><path d="M 966 116.833 L 938 116.833 S 928 116.833 928 126.833 L 928 145 S 928 155 918 155 L 238 155 S 228 155 228 145 L 228 142.832993 S 228 132.832993 218 132.832993 L 192 132.832993" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3871644538-3488378134)" mask="url(#d2-3871644538)" /><text x="586" y="161" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">click@theme-auto</text></g><g class="KGRhcmsgLSZndDsgbGlnaHQpWzBd"><path d="M 966 84.833 L 886.4165 84.833 C 869.5835 84.833 886.4165 68 869.5835 68 L 620 68" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3871644538-3488378134)" mask="url(#d2-3871644538)" /><text x="800" y="74" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">click@theme-light</text></g><mask id="d2-3871644538" maskUnits="userSpaceOnUse" x="-5" y="-5" width="1068" height="187">
+<rect x="-5" y="-5" width="1068" height="187" fill="white"></rect>
+<rect x="290" y="26" width="124" height="21" fill="black"></rect>
+<rect x="520" y="113" width="124" height="21" fill="black"></rect>
+<rect x="294" y="58" width="124" height="21" fill="black"></rect>
+<rect x="746" y="26" width="124" height="21" fill="black"></rect>
+<rect x="524" y="145" width="124" height="21" fill="black"></rect>
+<rect x="738" y="58" width="124" height="21" fill="black"></rect>
+</mask></svg></svg>
+</div>
+</section>
+<section class="machine" data-kind="machine" id="Device-units" data-of="Device">
+<span class="lbl derived">machine</span>
+<span class="mtitle">Device · units <span class="chip derived" data-tip="1 of 5 — a register this tab or device alone writes" tabindex="0"><b>level</b> ephemeral</span><span class="chip derived" data-tip="what a write here can claim when delivered twice — the level's word, and at level 4 the sink's: idempotent or reconciled is exactly-once, unknown at-most-once, repeat at-least-once; a hatch is unspecified" tabindex="0"><b>delivery</b> exactly-once</span></span>
+<div class="canvas"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" viewBox="0 0 623 114"><svg class="d2-3193623206 d2-svg" width="623" height="114" viewBox="-5 -5 623 114"><rect x="-5" y="-5" width="623" height="114" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.d2-3193623206 .text-bold {
+	font-family: "d2-3193623206-font-bold";
+}
+@font-face {
+	font-family: d2-3193623206-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-3193623206 .text-italic {
+	font-family: "d2-3193623206-font-italic";
+}
+@font-face {
+	font-family: d2-3193623206-font-italic;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3193623206 .fill-N1{fill:#0A0F25;}
+		.d2-3193623206 .fill-N2{fill:#676C7E;}
+		.d2-3193623206 .fill-N7{fill:#FFFFFF;}
+		.d2-3193623206 .fill-B1{fill:#0D32B2;}
+		.d2-3193623206 .fill-B6{fill:#F7F8FE;}
+		.d2-3193623206 .stroke-B1{stroke:#0D32B2;}
+		.d2-3193623206 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><g class="c3RhcnQ="><g class="shape" ><ellipse rx="14" ry="14" cx="26" cy="52" stroke="#0D32B2" fill="#1b1f2a" class="shape stroke-B1" style="stroke-width:2;" /></g></g><g class="bWV0cmlj"><g class="shape" ><rect x="110" y="12" width="91" height="80" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="155.5" y="57.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">metric</text></g><g class="aW1wZXJpYWw="><g class="shape" ><rect x="496" y="19" width="105" height="66" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="548.5" y="57.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">imperial</text></g><g class="KHN0YXJ0IC0mZ3Q7IG1ldHJpYylbMF0="><marker id="mk-d2-3193623206-3488378134" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 42 52 L 106 52" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3193623206-3488378134)" mask="url(#d2-3193623206)" /></g><g class="KG1ldHJpYyAtJmd0OyBpbXBlcmlhbClbMF0="><path d="M 203 36 L 492 36" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3193623206-3488378134)" mask="url(#d2-3193623206)" /><text x="348.5" y="42" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">click@units-imperial</text></g><g class="KGltcGVyaWFsIC0mZ3Q7IG1ldHJpYylbMF0="><path d="M 494 68 L 205 68" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3193623206-3488378134)" mask="url(#d2-3193623206)" /><text x="349" y="74" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">click@units-metric</text></g><mask id="d2-3193623206" maskUnits="userSpaceOnUse" x="-5" y="-5" width="623" height="114">
+<rect x="-5" y="-5" width="623" height="114" fill="white"></rect>
+<rect x="279" y="26" width="139" height="21" fill="black"></rect>
+<rect x="286" y="58" width="126" height="21" fill="black"></rect>
+</mask></svg></svg>
+</div>
+</section>
+</div><!-- /pronto:card -->
+    <p>Reader preferences persisted on the device across tabs: color theme and measurement units.</p>
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th>Constraint</th></tr></thead>
+      <tbody>
+        <tr data-ordinal="1"><td>id</td><td>string</td><td>this == 'device'</td></tr>
+        <tr data-ordinal="2"><td>theme</td><td>string</td><td>this in ['auto', 'light', 'dark']</td></tr>
+        <tr data-ordinal="3"><td>units</td><td>string</td><td>this in ['metric', 'imperial']</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <h2 id="screens">Screens</h2>
+
+  <!-- pronto:app-neighbourhood --><details class="pronto-neighbourhood app-neighbourhood"><summary>App entity neighbourhood · 7 entities</summary><div class="neighbourhood-canvas" role="region" tabindex="0" aria-label="App entity diagram"><img src="ir/neighbourhood-app.svg" width="800" height="535" alt="App entity diagram"></div><p><b>entities:</b> <a href="#Device">Device</a>, <span>OfflineBundle</span>, <span>PlaceAnswer</span>, <span>PlaceSuggestion</span>, <span>PlannerState</span>, <span>RouteAnswer</span>, <span>RouteSlot</span></p></details><!-- /pronto:app-neighbourhood -->
+<section id="router" data-kind="screen" data-route="/">
+    <h3>Gabi's Router (/)</h3>
+<!-- pronto:neighbourhood --><figure class="pronto-neighbourhood" aria-label="Gabi's Router entity neighbourhood"><div class="neighbourhood-canvas" role="region" tabindex="0" aria-label="Gabi's Router entity diagram"><img src="ir/neighbourhood-router.svg" width="800" height="535" alt="Gabi's Router entity diagram"></div><figcaption><b>entities:</b> <a href="#Device">Device</a>, <span>OfflineBundle</span>, <span>PlaceAnswer</span>, <span>PlaceSuggestion</span>, <span>PlannerState</span>, <span>RouteAnswer</span>, <span>RouteSlot</span></figcaption></figure><p class="why">Host-DOM hatch <a href="#gpx-io">gpx-io</a> · <span class="chip derived" data-tip="what a write here can claim when delivered twice — the level's word, and at level 4 the sink's: idempotent or reconciled is exactly-once, unknown at-most-once, repeat at-least-once; a hatch is unspecified" tabindex="0"><b>delivery</b> unspecified</span> · <span class="note">Browser File input picker for .gpx upload, Blob anchor download for .gpx export, and navigator.clipboard URL copy</span></p><!-- /pronto:neighbourhood -->
+    <div class="storyboard">
+      <figure id="router-planning" data-kind="state" data-of="router" data-state="planning">
+        <svg viewBox="0 0 320 200" width="240">
+          <rect width="320" height="200" fill="#0B0D17"/>
+          <rect x="8" y="8" width="108" height="184" rx="6" fill="#151828" stroke="#2C3252"/>
+          <rect x="124" y="8" width="188" height="136" rx="6" fill="#1C2035" stroke="#2C3252"/>
+          <path d="M140 120 C175 110, 210 55, 290 36" stroke="#7C6DF5" stroke-width="3" fill="none"/>
+          <rect x="124" y="150" width="188" height="42" rx="6" fill="#151828" stroke="#2C3252"/>
+          <text x="62" y="28" fill="#F0F2FF" font-size="10" text-anchor="middle">GABI'S ROUTER</text>
+        </svg>
+        <figcaption>Route planning workbench: left comparison &amp; waypoint drawer, interactive MapLibre canvas, and bottom SVG elevation &amp; breakdown dock.</figcaption>
+      </figure>
+    </div>
+
+    <script type="application/json" id="router-paths" data-kind="paths" data-of="router">
+    {
+      "route": {"states": ["planning", "planning"], "accepts": ["accept-route", "accept-waypoints", "accept-compare", "accept-analytics"]},
+      "custom": {"states": ["planning", "planning"], "accepts": ["accept-profile-editor", "accept-avoid-gpx"]},
+      "offline": {"states": ["planning", "planning"], "accepts": ["accept-offline", "accept-cortex-ui"]}
+    }
+    </script>
+  </section>
+
+  <h2 id="handlers">Handlers</h2>
+
+  <section id="search_submitted" data-kind="handler" data-of="router">
+    <h3>search_submitted</h3>
+    <p>Trims and commits the search input into <code>search_q</code> when the reader submits a place query.</p>
+  </section>
+
+  <section id="place_found" data-kind="handler" data-of="router">
+    <h3>place_found</h3>
+    <p>Folds a <code>PlaceAnswer</code> memo row from the geocoder unit into <code>PlaceSuggestion</code> rows <code>s0..s4</code>.</p>
+  </section>
+
+  <section id="route_answered" data-kind="handler" data-of="router">
+    <h3>route_answered</h3>
+    <p>Folds a <code>RouteAnswer</code> memo row from the brouter Wasm unit into <code>RouteSlot</code> rows <code>slot-0..slot-2</code>, <code>OfflineBundle</code> rows, and <code>PlannerState</code> telemetry.</p>
+  </section>
+
+  <section id="map_action" data-kind="handler" data-of="router">
+    <h3>map_action</h3>
+    <p>Processes <code>map_action</code> events raised by the <code>router-map</code> realm unit for waypoint additions/moves/deletions, avoid zones, and road segment tag inspection.</p>
+  </section>
+
+  <section id="planner_action" data-kind="handler" data-of="router">
+    <h3>planner_action</h3>
+    <p>Handles preset routes, reverse, round-trip loop, slot selection, profile/alternative switching, custom <code>.brf</code> compilation, GPX import, and offline regional bundles.</p>
+  </section>
+
+  <h2 id="units-and-hatches">Vendored Units &amp; Escape Hatches</h2>
+
+  <section id="brouter" data-kind="unit">
+    <h3>brouter — WebAssembly routing engine agent unit</h3>
+    <p>Runs <code>brouter-rs</code> + <code>route-tools</code> compiled to WebAssembly in an off-thread worker agent with 10 embedded <code>.brf</code> profiles, <code>lookups.dat</code>, IndexedDB <code>.rd5</code> tile caching, and GPX map-matching.</p>
+  </section>
+
+  <section id="geocoder" data-kind="unit">
+    <h3>geocoder — OpenStreetMap Nominatim agent unit</h3>
+    <p>Memoized Nominatim search and coordinate parser running in an off-thread worker with a Web Locks 1100ms rate limit and offline landmark catalog.</p>
+  </section>
+
+  <section id="router-map" data-kind="unit">
+    <h3>router-map — MapLibre GL realm unit</h3>
+    <p>Sandboxed iframe realm unit running MapLibre GL 5.24.0 with 4 basemaps, 3D terrain pitch, multi-slot route polylines, elevation hover dot, draggable waypoints, avoid circles, and right-click context menu.</p>
+  </section>
+
+  <section id="gpx-io" data-kind="hatch">
+    <h3>gpx-io — host-DOM GPX file &amp; clipboard hatch</h3>
+    <p>Host-DOM hatch for browser <code>.gpx</code> file upload picker, <code>.gpx</code> Blob anchor download, and clipboard link copy.</p>
+  </section>
+
+  <h2 id="decisions">Architectural Decisions</h2>
+  <ul>
+    <li id="decision-wasm-brouter-agent" data-kind="decision">The Rust BRouter engine (<code>brouter-rs</code> + <code>route-tools</code>) is compiled to WebAssembly and runs inside an <code>isolation: "agent"</code> worker unit memoized into <code>RouteAnswer</code> by <code>request_key</code>, keeping multi-slot graph search and <code>.rd5</code> decompression off the main thread.</li>
+    <li id="decision-maplibre-realm" data-kind="decision">MapLibre GL 5.24.0 runs inside an <code>isolation: "realm"</code> iframe unit (<code>router-map</code>) because WebGL2 tile workers require blob worker instantiation prohibited by the host document's Trusted Types policy; all map interactions cross the seat as typed <code>map_action</code> events.</li>
+    <li id="decision-cortex-row-machines" data-kind="decision">All UI state machines (theme, unit system, drawer collapse, modals, 6 breakdown tabs, 4 basemap styles, 3D terrain, legend, two-tap clear confirmation with 4000ms auto-reset, share toast with 2000ms auto-reset, search dropdown lifecycle, and elevation chart pointer scrubbing) are modeled as Cortex row charts in <code>routerRows</code>.</li>
+    <li id="decision-escape-hatches" data-kind="decision">Only one <code>host-dom</code> escape hatch is declared (<code>gpx-io</code>) solely for browser <code>&lt;input type="file"&gt;</code> GPX picking, <code>Blob</code> anchor download, and <code>navigator.clipboard</code> copy; elevation charts and telemetry breakdowns are rendered by pure Jessie formatters with zero DOM hatches.</li>
+  </ul>
+
+  <h2 id="tests">Acceptance Tests</h2>
+  <p id="test-route" data-kind="test" data-of="router" data-accepts="accept-route">Clicking two or more points on the map or loading a preset computes a bicycle route via the brouter WebAssembly engine and displays distance, duration, ascent, descent, and energy.</p>
+  <p id="test-waypoints" data-kind="test" data-of="router" data-accepts="accept-waypoints">Searching for a place via Nominatim geocoding or editing waypoints adds, reverses, loops, or clears waypoints while keeping the route synchronized.</p>
+  <p id="test-compare" data-kind="test" data-of="router" data-accepts="accept-compare">Up to three routing slots compare distinct cycling profiles and alternative routes simultaneously.</p>
+  <p id="test-analytics" data-kind="test" data-of="router" data-accepts="accept-analytics">The bottom analytics dock renders a pure Jessie slope-colored SVG elevation profile with hover scrubbing and stacked breakdown bars across all 6 tabs.</p>
+  <p id="test-profile-editor" data-kind="test" data-of="router" data-accepts="accept-profile-editor">The custom .brf studio compiles custom cycling preferences into a live .brf profile and re-routes the active slot.</p>
+  <p id="test-avoid-gpx" data-kind="test" data-of="router" data-accepts="accept-avoid-gpx">Avoid areas can be added, resized, and cleared, and routes can be imported, exported as .gpx, or shared via URL.</p>
+  <p id="test-offline" data-kind="test" data-of="router" data-accepts="accept-offline">Regional .rd5 routing bundles can be downloaded/removed for offline routing, and right-clicking a road inspects its .rd5 tags.</p>
+  <p id="test-cortex-ui" data-kind="test" data-of="router" data-accepts="accept-cortex-ui">Cortex row statecharts drive theme, unit system, drawer state, basemap style, 3D terrain, map legend, modals, and timed confirmations.</p>
+
+  <h2 id="reviews">Reviews</h2>
+  <section data-kind="review" id="review-backend">
+    <h3>backend</h3>
+    <p class="verdict">Verdict: signed.</p>
+    <p>Browser-only durability (<code>device</code> and <code>tab</code>) with memoized agent worker tables (<code>RouteAnswer</code>, <code>PlaceAnswer</code>) and zero server overhead.</p>
+  </section>
+  <section data-kind="review" id="review-frontend">
+    <h3>frontend</h3>
+    <p class="verdict">Verdict: signed.</p>
+    <p>Pure Cortex row statecharts (<code>routerRows</code>) and pure Jessie SVG/HTML renderers for elevation and surface breakdowns.</p>
+  </section>
+  <section data-kind="review" id="review-designer">
+    <h3>designer</h3>
+    <p class="verdict">Verdict: signed.</p>
+    <p>Original <code>gabis-router</code> / <code>surita.dev</code> indigo-violet cartographic workbench visual identity with glassmorphic floating panels and full light/dark parity.</p>
+  </section>
+  <section data-kind="review" id="review-ux">
+    <h3>ux</h3>
+    <p class="verdict">Verdict: signed.</p>
+    <p>Immediate London default route on boot, 3-slot comparison, two-tap clear confirmation, and synchronized elevation scrub.</p>
+  </section>
+  <section data-kind="review" id="review-qa">
+    <h3>qa</h3>
+    <p class="verdict">Verdict: signed.</p>
+    <p>Every acceptance criterion (<code>#accept-route</code> through <code>#accept-cortex-ui</code>) mapped to unit and browser verification.</p>
+  </section>
+</body>
+</html>

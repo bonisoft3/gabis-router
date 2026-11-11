@@ -1,0 +1,131 @@
+syntax = "proto3";
+package pronto.entities;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+
+message Device {
+  optional string id = 1 [json_name = "id"];
+  optional string theme = 2 [json_name = "theme"];
+  optional string units = 3 [json_name = "units"];
+}
+
+message OfflineBundle {
+  optional string id = 1 [json_name = "id"];
+  optional string title = 2 [json_name = "title"];
+  optional string coverage = 3 [json_name = "coverage"];
+  optional string size_label = 4 [json_name = "size_label"];
+  optional string status = 5 [json_name = "status"];
+  optional int32 segments_cached = 6 [json_name = "segments_cached"];
+  optional string pmtiles_ready = 7 [json_name = "pmtiles_ready"];
+}
+
+message PlaceAnswer {
+  optional string id = 1 [json_name = "id"];
+  optional string kind = 2 [json_name = "kind"];
+  optional string q = 3 [json_name = "q"];
+  optional string lang = 4 [json_name = "lang"];
+  optional string p0 = 5 [json_name = "p0"];
+  optional string p1 = 6 [json_name = "p1"];
+  optional string p2 = 7 [json_name = "p2"];
+  optional string p3 = 8 [json_name = "p3"];
+  optional string p4 = 9 [json_name = "p4"];
+}
+
+message PlaceSuggestion {
+  optional string id = 1 [json_name = "id"];
+  optional string q = 2 [json_name = "q"];
+  optional string label = 3 [json_name = "label"];
+  optional string line1 = 4 [json_name = "line1"];
+  optional string district = 5 [json_name = "district"];
+  optional string city = 6 [json_name = "city"];
+  optional string region = 7 [json_name = "region"];
+  optional string postal_code = 8 [json_name = "postal_code"];
+  optional string country = 9 [json_name = "country"];
+  optional string latitude = 10 [json_name = "latitude"];
+  optional string longitude = 11 [json_name = "longitude"];
+}
+
+message PlannerState {
+  optional string id = 1 [json_name = "id"];
+  optional string drawer = 2 [json_name = "drawer"];
+  optional string modal = 3 [json_name = "modal"];
+  optional string breakdown_tab = 4 [json_name = "breakdown_tab"];
+  optional string basemap = 5 [json_name = "basemap"];
+  optional string terrain_3d = 6 [json_name = "terrain_3d"];
+  optional string legend_open = 7 [json_name = "legend_open"];
+  optional string clear_confirm = 8 [json_name = "clear_confirm"];
+  optional string share_status = 9 [json_name = "share_status"];
+  optional string search_step = 10 [json_name = "search_step"];
+  optional string search_text = 11 [json_name = "search_text"];
+  optional string search_q = 12 [json_name = "search_q"];
+  optional string waypoints_json = 13 [json_name = "waypoints_json"];
+  optional int32 waypoint_count = 14 [json_name = "waypoint_count"];
+  optional string avoids_json = 15 [json_name = "avoids_json"];
+  optional int32 avoid_count = 16 [json_name = "avoid_count"];
+  optional int32 avoid_radius_m = 17 [json_name = "avoid_radius_m"];
+  optional int32 active_slot = 18 [json_name = "active_slot"];
+  optional string active_profile = 19 [json_name = "active_profile"];
+  optional string custom_brf = 20 [json_name = "custom_brf"];
+  optional string request_key = 21 [json_name = "request_key"];
+  optional string routes_geojson = 22 [json_name = "routes_geojson"];
+  optional string active_gpx = 23 [json_name = "active_gpx"];
+  optional string gpx_import_xml = 24 [json_name = "gpx_import_xml"];
+  optional int32 hover_permille = 25 [json_name = "hover_permille"];
+  optional string hover_lon = 26 [json_name = "hover_lon"];
+  optional string hover_lat = 27 [json_name = "hover_lat"];
+  optional string inspect_lon = 28 [json_name = "inspect_lon"];
+  optional string inspect_lat = 29 [json_name = "inspect_lat"];
+  optional string inspect_summary = 30 [json_name = "inspect_summary"];
+  optional string center_lat = 31 [json_name = "center_lat"];
+  optional string center_lon = 32 [json_name = "center_lon"];
+  optional string zoom = 33 [json_name = "zoom"];
+  optional string start_label = 34 [json_name = "start_label"];
+  optional string end_label = 35 [json_name = "end_label"];
+  optional string active_distance_label = 36 [json_name = "active_distance_label"];
+  optional string active_ascent_label = 37 [json_name = "active_ascent_label"];
+  optional string active_descent_label = 38 [json_name = "active_descent_label"];
+  optional string active_duration_label = 39 [json_name = "active_duration_label"];
+  optional string active_energy_label = 40 [json_name = "active_energy_label"];
+  optional int32 active_warnings_count = 41 [json_name = "active_warnings_count"];
+  optional string active_elevation_json = 42 [json_name = "active_elevation_json"];
+  optional string active_breakdown_json = 43 [json_name = "active_breakdown_json"];
+  optional int32 offline_seq = 44 [json_name = "offline_seq"];
+}
+
+message RouteAnswer {
+  optional string id = 1 [json_name = "id"];
+  optional string request_key = 2 [json_name = "request_key"];
+  optional string slot_0_json = 3 [json_name = "slot_0_json"];
+  optional string slot_1_json = 4 [json_name = "slot_1_json"];
+  optional string slot_2_json = 5 [json_name = "slot_2_json"];
+  optional string routes_geojson = 6 [json_name = "routes_geojson"];
+  optional string active_gpx = 7 [json_name = "active_gpx"];
+  optional string inspect_json = 8 [json_name = "inspect_json"];
+  optional string matched_waypoints_json = 9 [json_name = "matched_waypoints_json"];
+  optional string offline_json = 10 [json_name = "offline_json"];
+}
+
+message RouteSlot {
+  optional string id = 1 [json_name = "id"];
+  optional int32 slot_index = 2 [json_name = "slot_index"];
+  optional string active = 3 [json_name = "active"];
+  optional string profile = 4 [json_name = "profile"];
+  optional string profile_label = 5 [json_name = "profile_label"];
+  optional int32 alt = 6 [json_name = "alt"];
+  optional string alt_label = 7 [json_name = "alt_label"];
+  optional string status = 8 [json_name = "status"];
+  optional int32 distance_m = 9 [json_name = "distance_m"];
+  optional string distance_label = 10 [json_name = "distance_label"];
+  optional int32 ascent_m = 11 [json_name = "ascent_m"];
+  optional string ascent_label = 12 [json_name = "ascent_label"];
+  optional int32 descent_m = 13 [json_name = "descent_m"];
+  optional string descent_label = 14 [json_name = "descent_label"];
+  optional int32 time_s = 15 [json_name = "time_s"];
+  optional string duration_label = 16 [json_name = "duration_label"];
+  optional int32 energy_kcal = 17 [json_name = "energy_kcal"];
+  optional int32 warnings_count = 18 [json_name = "warnings_count"];
+  optional string elevation_json = 19 [json_name = "elevation_json"];
+  optional string breakdown_json = 20 [json_name = "breakdown_json"];
+}

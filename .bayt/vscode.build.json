@@ -1,0 +1,22 @@
+{
+  "_generated_from": "bayt.cue (do not edit)",
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "command": "mise x -- nu",
+      "args": [
+        "-c",
+        "^nu -I (^mise where github:bonisoft3/sayt | str trim) -c 'use task-leaf.nu; task-leaf build'"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "label": "build",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/."
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+[package]
+name = "route-tools"
+version = "0.1.0"
+edition = "2021"
+authors = ["Gabriela Surita"]
+license = "MIT"
+description = "GPX map-matching, waypoint extraction, and route segment analysis built on brouter-rs"
+
+[dependencies]
+brouter-rs = { path = "../brouter-rs", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

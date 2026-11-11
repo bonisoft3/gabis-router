@@ -1,0 +1,48 @@
+# generated from bayt.cue — do not edit
+services:
+  gabis-router-test:
+    build:
+      additional_contexts:
+        gabis-router-build: service:gabis-router-build
+      context: ..
+      dockerfile: .bayt/Dockerfile.test
+      target: test
+      tags:
+      - bayt-gabis-router-test:${BAYT_IMAGE_TAG:-${COMPOSE_PROJECT_NAME}}
+      - bayt-gabis-router-test:latest
+      args:
+        BAYT_DIR: ${MONOREPO_COMPOSE_MODE:+apps/gabis-router}
+        BUILDKIT_SYNTAX: >-
+          docker/dockerfile:1.27@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+    image: bayt-gabis-router-test:${BAYT_IMAGE_TAG:-${COMPOSE_PROJECT_NAME}}
+    scale: 0
+  gabis-router-test_bayt:
+    build:
+      additional_contexts:
+        gabis-router-build_bayt: service:gabis-router-build_bayt
+        gabis-router-generate_bayt: service:gabis-router-generate_bayt
+        gabis-router-setup_bayt: service:gabis-router-setup_bayt
+      context: ..
+      dockerfile: .bayt/Dockerfile.test
+      target: test_bayt
+      args:
+        BAYT_DIR: ${MONOREPO_COMPOSE_MODE:+apps/gabis-router}
+        BUILDKIT_SYNTAX: >-
+          docker/dockerfile:1.27@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+    image: bayt-gabis-router-test_bayt:latest
+    scale: 0
+  gabis-router-test_srcs:
+    build:
+      additional_contexts:
+        gabis-router-build_srcs: service:gabis-router-build_srcs
+        gabis-router-generate_srcs: service:gabis-router-generate_srcs
+        gabis-router-setup_srcs: service:gabis-router-setup_srcs
+      context: ..
+      dockerfile: .bayt/Dockerfile.test
+      target: test_srcs
+      args:
+        BAYT_DIR: ${MONOREPO_COMPOSE_MODE:+apps/gabis-router}
+        BUILDKIT_SYNTAX: >-
+          docker/dockerfile:1.27@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+    image: bayt-gabis-router-test_srcs:latest
+    scale: 0

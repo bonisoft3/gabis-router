@@ -1,0 +1,19 @@
+# generated from bayt.cue — do not edit
+tasks:
+  default:
+    deps:
+    - "::bayt:generate"
+    - "::bayt:lint-inputs"
+    run: always
+    status:
+    - >-
+      mise x -- bayt fingerprint --manifest '{{.TASKFILE_DIR}}/bayt.lint.json'
+      --stamp-file .task/bayt/lint.hash
+    vars:
+      BAYTW: >-
+        mise x -- bayt cache run --manifest '{{.TASKFILE_DIR}}/bayt.lint.json' -- mise
+        x --
+    cmds:
+    - "{{.BAYTW}} nu -c \"^nu -I (^mise where github:bonisoft3/sayt | str trim) -c 'use task-leaf.nu; with-env {PRONTO_PROTO_BASELINE: (open --raw .pronto/proto-baseline.json)} { task-leaf lint }'\""
+    - defer: "{{if not .EXIT_CODE}}mise x -- bayt fingerprint --manifest '{{.TASKFILE_DIR}}/bayt.lint.json' --stamp-file .task/bayt/lint.hash --update-stamp{{end}}"
+version: "3"

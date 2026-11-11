@@ -1,13 +1,9 @@
-/target
-/data
-routes_comparison.html
-node_modules/
-dist/
-tools/pmtiles
-*.pmtiles
-web/map-tiles/
-web/.cert/
-web/.env.local
-web/.env.*.local
-web/mcp-screenshot.png
-/subrepos/pronto
+# The certificate setup issues, its private key beside it.
+/.certs/
+# mise writes what this checkout resolved mise.local.toml to.
+/mise.local.lock
+/tools/brouter-wasm/target/
+/dist/
+/.task/
+
+__pycache__/

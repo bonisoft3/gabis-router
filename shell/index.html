@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-eval' 'inline-speculation-rules' https://cdn.jsdelivr.net/npm/babylonjs@7.54.3/ https://cdn.jsdelivr.net/npm/babylonjs@9.31.0/ https://cdn.jsdelivr.net/npm/babylonjs-loaders@9.31.0/; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://nominatim.openstreetmap.org https://tiles.openfreemap.org https://tiles.surita.dev; img-src 'self' data: blob: https://a.tile-cyclosm.openstreetmap.fr https://tile.openstreetmap.org; font-src 'self' data:; media-src 'self' blob:; frame-src 'self'; worker-src 'self' blob:; form-action 'self'; require-trusted-types-for 'script'; trusted-types omnishell-markup omnishell-url default">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Offline-capable bicycle route planner powered by brouter-rs WebAssembly, MapLibre GL, and Pronto Cortex statecharts.">
+<!-- This one document answers at every route, so the URL it arrives under is
+     not where it lives: without a base, ./boot.js is /boot.js at /games and
+     nothing on the page runs at all. Links are composed absolute and are
+     unaffected. -->
+<base href="/shell/">
+<title>Loading…</title>
+<link rel="icon" type="image/svg+xml" href="./favicon.svg">
+<link rel="stylesheet" href="./shell.css">
+<link rel="stylesheet" href="./design.css">
+
+<link rel="preload" href="./shell.json" as="fetch" crossorigin>
+<link rel="modulepreload" href="/omnishell/interpreter/shell.js">
+<link rel="modulepreload" href="/omnishell/interpreter/cortex-navigation.js">
+<link rel="modulepreload" href="/omnishell/interpreter/row-attachments.js">
+<link rel="modulepreload" href="/omnishell/interpreter/machine-engine.js">
+<link rel="modulepreload" href="/omnishell/interpreter/observe-actor.js">
+<link rel="modulepreload" href="/omnishell/interpreter/invoked-actors.js">
+<link rel="modulepreload" href="/omnishell/interpreter/chrome.js">
+<link rel="modulepreload" href="/omnishell/interpreter/screen.js">
+<link rel="modulepreload" href="/omnishell/interpreter/fragment.js">
+<link rel="modulepreload" href="/omnishell/interpreter/data-sync.js">
+<link rel="modulepreload" href="/omnishell/interpreter/validate.js">
+<link rel="modulepreload" href="/omnishell/interpreter/render.js">
+<link rel="modulepreload" href="/omnishell/interpreter/release-plan.js">
+<link rel="modulepreload" href="/omnishell/interpreter/early-gestures.js">
+<link rel="modulepreload" href="/omnishell/interpreter/early-replay.js">
+<link rel="modulepreload" href="/omnishell/interpreter/nav-feedback.js">
+<link rel="modulepreload" href="/omnishell/interpreter/preloads.js">
+<link rel="modulepreload" href="/omnishell/interpreter/link-prefetch.js">
+<link rel="modulepreload" href="/omnishell/interpreter/markup.js">
+<link rel="modulepreload" href="/omnishell/interpreter/script-url.js">
+<link rel="modulepreload" href="/omnishell/interpreter/host-dom.js">
+<link rel="modulepreload" href="/omnishell/interpreter/hatch.js">
+<link rel="modulepreload" href="/omnishell/interpreter/hatch-worker.js">
+<link rel="modulepreload" href="/omnishell/interpreter/hatch-presenter.js">
+<link rel="modulepreload" href="/omnishell/interpreter/presenter-realm.js">
+<link rel="modulepreload" href="/omnishell/interpreter/jessie.js">
+<link rel="modulepreload" href="/omnishell/interpreter/statechart.js">
+<link rel="modulepreload" href="/omnishell/interpreter/vendor/mecha-client.js">
+<link rel="modulepreload" href="/omnishell/interpreter/vendor/xstate.js">
+<link rel="modulepreload" href="/omnishell/interpreter/vendor/messages.js">
+</head>
+<body>
+<main id="app"></main>
+<script type="module" src="./boot.js"></script>
+</body>
+</html>

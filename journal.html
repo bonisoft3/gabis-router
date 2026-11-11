@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gabi's Router — Journal</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { max-width: 56rem; margin: 2.5rem auto; padding: 0 1.25rem; font: 16px/1.6 system-ui, -apple-system, sans-serif; }
+  header { border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); padding-bottom: 1rem; margin-bottom: 2rem; }
+  .eyebrow { font: 600 0.75rem/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.75; }
+  h1 { margin: 0.4rem 0; font-size: 2rem; line-height: 1.15; }
+  article { border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent); padding-top: 1.75rem; margin-top: 1.75rem; }
+  article:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  article time { font: 600 0.75rem/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.7; display: block; margin-bottom: 0.4rem; }
+  code { font: 0.9em ui-monospace, monospace; }
+  figure { margin: 1.25rem 0; border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 10px; overflow: hidden; background: color-mix(in srgb, currentColor 4%, transparent); }
+  figure img { display: block; width: 100%; height: auto; }
+  figcaption { padding: 0.65rem 0.9rem; font-size: 0.85rem; opacity: 0.8; border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+</style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">Gabi's Router · Project journal</div>
+    <h1>Gabi's Router — Bicycle Route Planner in Pure Pronto, Cortex &amp; Wasm</h1>
+    <p>A browser-native, offline-capable bicycle route planner powered by <code>brouter-rs</code> in WebAssembly, MapLibre GL JS cycling maps, and Cortex statecharts, preserving the <code>surita.dev</code> indigo-violet cartographic visual identity. <a href="#initial-brief">Initial product brief ↓</a></p>
+  </header>
+<main>
+  <article id="sprint-6-breakdowns-pmtiles-offline">
+    <time datetime="2026-11-11">2026-11-11 · Sprint 6 — Interactive Route Breakdowns, <code>tiles.surita.dev</code> PMTiles Cycle Overlay, Real CDN Offline Downloads &amp; 2-Column Profile Picker</time>
+    <h2>Sprint 6: Proportional Breakdown Strip with Map Highlighting, Cycle-Route PMTiles, Real <code>.rd5</code> Offline Downloads &amp; Scrollbar-Free Profile Grid</h2>
+    <p>Added a proportional contiguous SVG breakdown bar (<code>.breakdown-svg-bar</code>) and interactive category/warning rows (<code>shell/renderers/surface-breakdown.js</code> + <code>shell/hatches/gpx-io.js</code>) that highlight matching route segments and hover markers directly on the MapLibre canvas (<code>route-segment-highlight</code>) and reset cleanly across iframe boundaries and route changes. Bundled <code>pmtiles@4.3.0</code> into the MapLibre realm unit to render regional cycling network overlays and shields from <code>https://tiles.surita.dev/map-tiles/cycle_routes.pmtiles</code>. Upgraded offline regional packs (<code>sao-paulo</code>, <code>london</code>, <code>scotland</code>, <code>ireland</code>) to transition through <code>downloading</code> while fetching real <code>.rd5</code> graphs and warming <code>.pmtiles</code> headers from <code>tiles.surita.dev</code> with monotonic <code>offline_seq</code> memo keys, and redesigned the styled profile picker popover (<code>.slot-profile-menu</code>) as a compact 2-column grid with zero native scrollbars.</p>
+    <figure>
+      <img src="journal/2026-11-11-sprint-6-breakdowns-pmtiles-offline.png" alt="Sprint 6: Interactive route breakdown hover highlighting on London street routing with PMTiles cycle network">
+      <figcaption>Sprint 6 — Interactive surface/road breakdown strip and category hover highlighting active route segments on the MapLibre cycling map alongside <code>tiles.surita.dev</code> PMTiles cycle routes.</figcaption>
+    </figure>
+  </article>
+
+  <article id="sprint-5-oracle-street-routing">
+    <time datetime="2026-11-11">2026-11-11 · Sprint 5 — Oracle Street Routing Parity (<code>router.surita.dev</code>), Embedded <code>.rd5</code> Graphs &amp; Interactive Waypoint Editing</time>
+    <h2>Sprint 5: Real Street Routing via Embedded CRC-Verified <code>.rd5</code> Segments, Waypoint Menu &amp; Route-Line Via Dragging</h2>
+    <p>Verified every routing and waypoint editing action side-by-side against the <code>https://router.surita.dev/</code> oracle. Embedded CRC-verified BRouter <code>.rd5</code> road-graph segments (<code>W5_N50.rd5</code>, <code>E0_N50.rd5</code>, <code>W50_S25.rd5</code>) directly into <code>shell/units/brouter/unit.js</code> to eliminate cross-origin segment fetch failures and removed synthetic fallback paths. Added <code>A</code> / <code>1..N</code> / <code>B</code> map markers with a click/right-click action menu (<code>#wp-menu</code>: <em>Set as start (A)</em>, <em>Set as destination (B)</em>, <em>Remove waypoint</em>), interactive route polyline dragging (<code>routes-active-hit</code> + <code>.via-ghost</code>) to insert intermediate via waypoints on the closest leg, sidebar endpoint removal buttons (<code>#btn-remove-start</code>, <code>#btn-remove-via</code>, <code>#btn-remove-end</code>), and full <code>PointWayInfo</code> OSM tag decoding for road segment inspection.</p>
+    <figure>
+      <img src="journal/2026-11-11-oracle-street-routing-and-waypoint-editing.png" alt="Sprint 5: Real street routing in London with inserted via point, marker action menu, and elevation profile">
+      <figcaption>Sprint 5 — Real street routing on London cycling infrastructure with an inserted intermediate via waypoint (<code>1</code>), open marker action menu (<code>#wp-menu</code> on <code>B</code>), 3-slot comparison cards, and slope-colored elevation profile.</figcaption>
+    </figure>
+  </article>
+
+  <article id="sprint-4-offline-and-ptbr">
+    <time datetime="2026-11-11">2026-11-11 · Sprint 4 — Offline Regional Bundles, Segment Tag Inspector &amp; Bilingual Parity</time>
+    <h2>Sprint 4: Offline Regional Tile Packs (<code>.rd5</code> + <code>PMTiles</code>), Segment Inspector &amp; <code>pt-BR</code> / Light Theme</h2>
+    <p>Completed the offline regional bundle manager (<code>OfflineBundle</code> entity + IndexedDB segment cache inside <code>shell/units/brouter/unit.js</code>) for <strong>São Paulo Metro</strong>, <strong>Greater London &amp; Surrey Hills</strong>, <strong>Amsterdam &amp; Randstad</strong>, and <strong>Girona &amp; Costa Brava Gravel</strong>, alongside right-click road segment tag inspection (<code>inspect_point</code> via <code>WasmRouter::inspect_point</code>), full English + Brazilian Portuguese (<code>en</code> / <code>pt-BR</code>) catalogues, and light/dark/auto theme parity.</p>
+    <figure>
+      <img src="journal/2026-11-11-sprint-4-offline-and-ptbr.png" alt="Sprint 4: Offline Regional Bundles modal in pt-BR and Light Theme">
+      <figcaption>Sprint 4 — Regional offline <code>.rd5</code> + <code>PMTiles</code> bundle manager running in <code>pt-BR</code> with the <code>surita.dev</code> light theme active.</figcaption>
+    </figure>
+  </article>
+
+  <article id="sprint-3-custom-brf-studio">
+    <time datetime="2026-11-11">2026-11-11 · Sprint 3 — Custom .brf Profile Studio, Avoid Zones &amp; GPX Import/Export</time>
+    <h2>Sprint 3: Custom <code>.brf</code> Profile Studio, Avoid Zones &amp; GPX Map-Matching</h2>
+    <p>Built the custom <code>.brf</code> profile editor modal (<code>modal == 'custom'</code> in <code>routerRows</code>) that compiles custom BRouter DSL scripts directly into the WebAssembly engine via <code>router.load_profile("custom", req.brf)</code>, dynamic nogo avoid circles (<code>250m</code>–<code>5000m</code> radius), and GPX import/export/share via the single <code>gpx-io</code> host-DOM hatch and <code>WasmRouter::match_gpx_waypoints</code>.</p>
+    <figure>
+      <img src="journal/2026-11-11-sprint-3-custom-brf-studio.png" alt="Sprint 3: Custom .brf Profile Studio modal over MapLibre canvas">
+      <figcaption>Sprint 3 — Custom <code>.brf</code> Profile Studio modal compiling live BRouter rules into the active comparison slot.</figcaption>
+    </figure>
+  </article>
+
+  <article id="sprint-2-slot-comparison">
+    <time datetime="2026-11-11">2026-11-11 · Sprint 2 — 3-Slot Profile Comparison &amp; Pure Jessie Telemetry Breakdowns</time>
+    <h2>Sprint 2: Simultaneous 3-Slot Route Comparison, 6-Tab Breakdowns &amp; Elevation Scrubbing</h2>
+    <p>Implemented simultaneous 3-slot routing comparison (<code>RouteSlot</code> rows <code>slot-0..slot-2</code> with signature slot colors <code>#3B82F6</code>, <code>#F472B6</code>, <code>#F59E0B</code>), alternative route cycling (<code>Alt 1..3</code>), and pure Jessie VDOM renderers for the slope-colored SVG elevation profile (<code>shell/renderers/elevation-chart.js</code>) and 6-tab telemetry breakdowns (<code>shell/renderers/surface-breakdown.js</code>: Surface, Road Type, Traffic, Noise, Speed Limit, and Route Warnings).</p>
+    <figure>
+      <img src="journal/2026-11-11-sprint-2-slot-comparison.png" alt="Sprint 2: 3-Slot comparison with Slot 2 active, Road breakdown tab, and map legend">
+      <figcaption>Sprint 2 — 3-slot comparison cards, Road &amp; Cycleway infrastructure breakdown bars, and floating cartographic legend.</figcaption>
+    </figure>
+  </article>
+
+  <article id="sprint-1-london-route">
+    <time datetime="2026-11-11">2026-11-11 · Sprint 1 — Reproducible Wasm BRouter Engine, MapLibre Realm &amp; Cortex Row Machines</time>
+    <h2>Sprint 1: Reproducible <code>brouter-rs</code> WebAssembly Unit, MapLibre GL Realm &amp; Cortex Workbench</h2>
+    <p>Compiled the Rust port of BRouter (<code>brouter-rs</code> + <code>route-tools</code> + <code>rsrouter-wasm</code>) from source with zero warnings into a self-contained WebAssembly agent unit (<code>shell/units/brouter/unit.js</code>) embedding all 10 cycling profiles and <code>lookups.dat</code>. Wired the sandboxed MapLibre GL 5.24.0 realm unit (<code>shell/units/router-map/index.html</code>), Nominatim geocoder unit (<code>shell/units/geocoder/unit.js</code>), and 12 Cortex row statecharts (<code>screen-machines.cue</code>) with the original <code>gabis-router</code> dark indigo-violet glassmorphic identity.</p>
+    <figure>
+      <img src="journal/2026-11-11-sprint-1-london-route.png" alt="Sprint 1: Default London route from Trafalgar Square to Tower Bridge">
+      <figcaption>Sprint 1 — Live London route (Trafalgar Square to Tower Bridge) with multi-slot MapLibre polylines, waypoint controls, and slope-colored SVG elevation dock.</figcaption>
+    </figure>
+  </article>
+
+  <article id="initial-brief">
+    <time datetime="2026-11-11">2026-11-11 · Initial Brief</time>
+    <h2>Gabi's Router</h2>
+    <p>A browser-native, offline-capable bicycle route planner powered by <code>brouter-rs</code> in WebAssembly, MapLibre GL JS vector cycling maps, and Cortex state machines.</p>
+    <h3>Data</h3>
+    <p>All state lives in the cyclist's browser (<code>durability: "device"</code> and <code>"tab"</code>): <code>Device</code> (<code>device</code>), <code>PlannerState</code> (<code>planner_state</code>), <code>RouteSlot</code> (<code>route_slot</code>), <code>RouteAnswer</code> (<code>route_answer</code>), <code>PlaceAnswer</code> (<code>place_answer</code>), <code>PlaceSuggestion</code> (<code>place_suggestion</code>), and <code>OfflineBundle</code> (<code>offline_bundle</code>).</p>
+    <h3>Screens</h3>
+    <ul>
+      <li><strong>Router (<code>/</code>)</strong> — full-bleed interactive cycling map with floating glassmorphic workbench sidebar, bottom analytics drawer (pure Jessie elevation SVG chart, surface/road/traffic/noise/speed breakdowns, route warnings), and modals for the custom <code>.brf</code> Profile Studio, Offline Regional Bundles, and About &amp; Tips.</li>
+    </ul>
+    <h3>Behavior</h3>
+    <p>Every UI state transition is governed by Cortex <code>via: "rows"</code> statecharts (<code>routerRows</code>) verified by XState model checking. Domain mutations run in pure Jessie handlers. WebAssembly routing (<code>brouter</code>), Nominatim geocoding (<code>geocoder</code>), and MapLibre GL JS rendering (<code>router-map</code>) execute behind typed Omnishell unit boundaries.</p>
+    <p>See <a href="acceptance.md">acceptance.md</a>.</p>
+    <h3>Out of scope</h3>
+    <p>Server-side user accounts, cloud route databases, or social feeds; all routing, map rendering, and offline storage run locally on the user's device.</p>
+  </article>
+</main>
+</body>
+</html>

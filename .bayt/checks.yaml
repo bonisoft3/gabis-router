@@ -1,0 +1,187 @@
+# generated from bayt.cue — do not edit
+say:
+  integrate:
+    rulemap:
+      builtin:
+        stop: false
+      visual:
+        cmds:
+        - do: use integrate.nu; integrate --bake --no-up --with-buildx --target ci-visual
+  launch:
+    rulemap:
+      builtin:
+        cmds:
+        - do: >-
+            if not ('.certs/localhost.pem' | path exists) { mkdir .certs; mise exec --
+            mkcert -cert-file .certs/localhost.pem -key-file .certs/localhost-key.pem localhost
+            127.0.0.1 ::1 }
+        - do: >-
+            use tools.nu [run-mise]; let pronto = (run-mise where github:bonisoft3/pronto |
+            str trim); run-mise exec -- deno run --config ($pronto | path join deno.json)
+            --allow-read --allow-write=. --allow-run --allow-env ($pronto | path join
+            launch-watch.ts)
+          use: ./tools.nu
+  lint:
+    rulemap:
+      cue:
+        cmds:
+        - do: mise exec -- cue vet -c ./...
+      facts:
+        priority: 1
+        cmds:
+        - do: >-
+            use tools.nu [run-mise]; let pronto = (run-mise where github:bonisoft3/pronto |
+            str trim); run-mise exec -- deno run --config ($pronto | path join deno.json)
+            --allow-read --allow-run --allow-env ($pronto | path join check-facts.ts) .
+      identity:
+        cmds:
+        - do: >-
+            use tools.nu [run-mise]; let pronto = (run-mise where github:bonisoft3/pronto |
+            str trim); run-mise exec -- deno run --config ($pronto | path join deno.json)
+            --allow-read --allow-run --allow-env ($pronto | path join identity.ts) check .
+      outcomes:
+        cmds:
+        - do: >-
+            use tools.nu [run-mise]; let pronto = (run-mise where github:bonisoft3/pronto |
+            str trim); run-mise exec -- deno run --config ($pronto | path join deno.json)
+            --allow-read ($pronto | path join check-verification.ts) . --omnishell (run-mise
+            where github:bonisoft3/omnishell | str trim)
+      caddy:
+        cmds:
+        - do: "with-env {ELECTRIC_SECRET: lint, ORIGIN: lint} { mise exec -- caddy adapt --config docker/Caddyfile --adapter caddyfile out> (if $nu.os-info.name == \"windows\" { \"NUL\" } else { \"/dev/null\" }) }"
+      handlers:
+        cmds:
+        - do: use tools.nu [run-mise]; run-mise exec -- omnishell check handlers .
+      markup:
+        cmds:
+        - do: use tools.nu [run-mise]; run-mise exec -- omnishell check markup .
+      derive:
+        cmds:
+        - do: >-
+            use tools.nu [run-mise]; let pronto = (run-mise where github:bonisoft3/pronto |
+            str trim); run-mise exec -- deno run --config ($pronto | path join deno.json)
+            --allow-read=. ($pronto | path join derive.ts) --self-test
+      types:
+        cmds:
+        - do: >-
+            use tools.nu [run-mise]; let pronto = (run-mise where github:bonisoft3/pronto |
+            str trim); let files = do { cd $pronto; [ ...(glob --no-dir --exclude [*_test.ts
+            *.test.ts mecha-fixtures.ts refresh-portable-types.ts mecha-xstate-entry.ts
+            mecha-xstate-bundle.ts cortex-conformance.ts access-test-fixture.ts
+            mecha-snapshot-fixture.ts bundle/mecha-edge-fixture.ts] '*.ts') ...(glob --no-dir 'scales/*.ts') ]
+            }; run-mise exec -- deno check --config ($pronto | path join deno.json) ...$files
+      proto:
+        cmds:
+        - do: >-
+            use tools.nu [run-mise]; let pronto = (run-mise where github:bonisoft3/pronto |
+            str trim); run-mise exec -- deno run --config ($pronto | path join deno.json)
+            --allow-read --allow-run --allow-env ($pronto | path join check-proto.ts) .
+  release:
+    rulemap:
+      cloudflare:
+        cmds:
+        - do: >-
+            use tools.nu [run-mise]; let pronto = (run-mise where github:bonisoft3/pronto |
+            str trim); let data = if ($env.SAY_RELEASE_ARGS_FROM? | is-not-empty) {
+            ['--from' $env.SAY_RELEASE_ARGS_FROM] } else { [] }; run-mise exec -- deno run -A
+            --config ($pronto | path join bundle deno.json) ($pronto | path join bundle edge.ts) .
+            --omnishell (run-mise where github:bonisoft3/omnishell | str trim) --mecha
+            (run-mise where github:bonisoft3/mecha | str trim) --out dist/cloudflare ...$data
+            --ice-servers '[{"urls":"stun:stun.cloudflare.com:3478"}]' --domain
+            gabis-router.bonisoft3.com
+        - do: >-
+            if ($env.SAY_RELEASE_ARGS_SNAPSHOT? | is-empty) { release --skip=validate
+            --clean } else { release --snapshot --skip=validate --clean }
+          use: ./release.nu
+        - do: >-
+            if ($env.SAY_RELEASE_ARGS_SNAPSHOT? | is-empty) { use tools.nu [run-mise]; let
+            pronto = (run-mise where github:bonisoft3/pronto | str trim); run-mise exec --
+            deno run -A --config ($pronto | path join bundle deno.json) ($pronto | path join
+            bundle publish-edge.ts) dist/cloudflare --mecha (run-mise where
+            github:bonisoft3/mecha | str trim) ...(if ($env.SAY_RELEASE_ARGS_RESET? | is-empty) { [] } else {
+            ['--reset'] }) ...(if ($env.SAY_RELEASE_ARGS_TEMPORARY? | is-empty) { [] } else {
+            ['--temporary'] }) }
+        platform: cloudflare
+  self:
+    version: v0.48.0
+  doctor:
+    do: >-
+      use tools.nu [run-mise]; run-mise exec -- cue version; run-mise exec -- deno
+      --version; run-mise where github:bonisoft3/pronto
+  build:
+    do: "null"
+  generate:
+    rulemap:
+      omnishell:
+        priority: 0
+        cmds:
+        - do: >-
+            if ('program.cue' | path exists) { use tools.nu [run-mise]; run-mise exec --
+            omnishell mode . | save --force program_terminal.cue }
+      auto-cue:
+        cmds:
+        - use: ./tools.nu
+          do: >-
+            if ('pronto/generate_tool.cue' | path exists) { tools run-cue cmd generate
+            ./pronto }
+      pronto:
+        priority: 1
+        cmds:
+        - do: >-
+            if ('program.cue' | path exists) { use tools.nu [run-mise]; let pronto =
+            (run-mise where github:bonisoft3/pronto | str trim); run-mise exec -- deno run --config
+            ($pronto | path join deno.json) --allow-read --allow-write=. --allow-run
+            --allow-env ($pronto | path join write.ts) . }
+      auto-bayt:
+        priority: 2
+        cmds:
+        - use: ./auto-bayt.nu
+          do: auto-bayt
+  setup:
+    rulemap:
+      builtin:
+        cmds:
+        - do: setup
+          use: ./setup.nu
+        - do: mkdir .certs
+        - do: >-
+            mise exec -- mkcert -cert-file .certs/localhost.pem -key-file
+            .certs/localhost-key.pem localhost 127.0.0.1 ::1
+        - do: "print 'the browser trusts this certificate only once you run: mise exec -- mkcert -install'"
+  test:
+    rulemap:
+      builtin:
+        stop: false
+        cmds:
+        - do: test
+          use: ./test.nu
+      unit:
+        cmds:
+        - do: >-
+            deno test --config tests/deno.json --lock tests/deno.lock --frozen --allow-read
+            tests/handlers.test.ts
+      machines:
+        cmds:
+        - do: use tools.nu [run-mise]; run-mise exec -- omnishell check machines .
+      i18n:
+        cmds:
+        - do: use tools.nu [run-mise]; run-mise exec -- omnishell check i18n .
+      battery:
+        cmds:
+        - do: use tools.nu [run-mise]; run-mise exec -- omnishell check battery .
+  verify:
+    rulemap:
+      cloudflare:
+        platform: cloudflare
+        cmds:
+        - do: >-
+            use tools.nu [run-mise]; let pronto = (run-mise where github:bonisoft3/pronto |
+            str trim); run-mise exec -- deno run -A --config ($pronto | path join deno.json)
+            ($pronto | path join verify verify.ts) . --platform cloudflare --mecha (run-mise
+            where github:bonisoft3/mecha | str trim) --default-domain
+            gabis-router.bonisoft3.com ...(if ($env.SAY_VERIFY_ARGS_TARGET? | is-empty) { [] } else { ['--target',
+            $env.SAY_VERIFY_ARGS_TARGET] }) ...(if ($env.SAY_VERIFY_ARGS_TIER? | is-empty) {
+            [] } else { ['--tier', $env.SAY_VERIFY_ARGS_TIER] }) ...(if
+            ($env.SAY_VERIFY_ARGS_HEADLESS? | is-empty) { [] } else { ['--headless',
+            $env.SAY_VERIFY_ARGS_HEADLESS] }) ...(if ($env.SAY_VERIFY_ARGS_SESSION? | is-empty) { [] } else {
+            ['--session', $env.SAY_VERIFY_ARGS_SESSION] })

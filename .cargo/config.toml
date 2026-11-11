@@ -1,5 +1,0 @@
-# Tests that route on real data load a full road graph: about 2 GB (routing_tests)
-# to 3 GB (integration_tests) each. Running them in parallel can exhaust memory and
-# hang the machine, so run them one at a time.
-[env]
-RUST_TEST_THREADS = "1"

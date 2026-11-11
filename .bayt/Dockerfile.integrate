@@ -1,0 +1,33 @@
+# generated from bayt.cue — do not edit
+FROM mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48 AS integrate
+ARG BAYT_DIR
+WORKDIR /monorepo/${BAYT_DIR}
+COPY --from=denoland/deno:bin-2.9.7@sha256:bc5aa4466e21b6d3021226a85ba2e1911f7c386254d97b9d797903ab74edace2 /deno /usr/local/bin/deno
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV DENO_DIR=/deno-cache
+COPY --from=plugins_omnishell-runtime-image / /omnishell
+COPY --parents shell/shell.yaml shell/screens/router.html shell/screens/router.css ./
+RUN --mount=type=cache,target=/deno-store,id=gabis-router-integrate:/deno-store,sharing=locked sh -c 'd="${DENO_DIR:-/root/.cache/deno}"; s=/deno-store; k="$(sha256sum deno.lock */deno.lock */*/deno.lock deno.json */deno.json */*/deno.json package.json */package.json 2>/dev/null | sha256sum | cut -d'\'' '\'' -f1)"; mkdir -p "$d" "$s"; for sub in remote npm jsr; do if [ -d "$s/$k/$sub" ]; then mkdir -p "$d/$sub" && cp -a "$s/$k/$sub"/. "$d/$sub"/ 2>/dev/null || true; fi; done; (deno install --node-modules-dir=auto --entrypoint /omnishell/check-visual.ts) || exit; t="$s/.tmp.$$"; rm -rf "$t"; mkdir -p "$t"; for sub in remote npm jsr; do if [ -d "$d/$sub" ]; then mkdir -p "$t/$sub" && cp -a "$d/$sub"/. "$t/$sub"/ 2>/dev/null || true; fi; done; rm -rf "$s/$k" && mv "$t" "$s/$k" 2>/dev/null || rm -rf "$t"; find "$s" -mindepth 1 -maxdepth 1 ! -name "$k" -exec rm -rf {} + 2>/dev/null || true'
+COPY .bayt/Taskfile.yml .bayt/Taskfile.bayt.yml .bayt/Taskfile.integrate.yaml .bayt/bayt.integrate.json ./.bayt/
+
+FROM busybox:musl@sha256:03db190ed4c1ceb1c55d179a0940e2d71d42130636a780272629735893292223 AS integrate_ctxs
+ARG BAYT_DIR
+WORKDIR /monorepo/${BAYT_DIR}
+COPY --parents shell/shell.yaml shell/screens/router.html shell/screens/router.css ./
+ARG SOURCE_DATE_EPOCH
+ARG BAYT_CLAMP=1
+RUN if [ "${BAYT_CLAMP:-1}" != 0 ]; then find /monorepo/${BAYT_DIR} -exec touch -hd @${SOURCE_DATE_EPOCH:-0} {} + && { d=$(dirname /monorepo/${BAYT_DIR}); while [ "$d" != / ]; do touch -hd @${SOURCE_DATE_EPOCH:-0} "$d" || exit; d=$(dirname "$d"); done; }; fi
+FROM scratch AS integrate_srcs
+COPY --from=integrate_ctxs /monorepo /monorepo
+
+FROM busybox:musl@sha256:03db190ed4c1ceb1c55d179a0940e2d71d42130636a780272629735893292223 AS integrate_bayt_ctxs
+ARG BAYT_DIR
+WORKDIR /monorepo/${BAYT_DIR}
+COPY --parents .bayt/compose.integrate.yaml .bayt/Dockerfile.integrate .bayt/bayt.integrate.json .bayt/Taskfile.yml .bayt/Taskfile.bayt.yml .bayt/Taskfile.integrate.yaml .bayt/compose.integrate.closure.yaml .bayt/process-compose.yaml .bayt/compose.*.yaml .bayt/Dockerfile.* .bayt/bayt.*.json .bayt/Taskfile.*.yaml monorepo/${MONOREPO_COMPOSE_MODE:-docker-image}.yaml ./
+COPY --from=gabis-router-launch_bayt /monorepo /monorepo
+ARG SOURCE_DATE_EPOCH
+ARG BAYT_CLAMP=1
+RUN if [ "${BAYT_CLAMP:-1}" != 0 ]; then find /monorepo/${BAYT_DIR} -exec touch -hd @${SOURCE_DATE_EPOCH:-0} {} + && { d=$(dirname /monorepo/${BAYT_DIR}); while [ "$d" != / ]; do touch -hd @${SOURCE_DATE_EPOCH:-0} "$d" || exit; d=$(dirname "$d"); done; }; fi
+FROM scratch AS integrate_bayt
+COPY --from=integrate_bayt_ctxs /monorepo /monorepo
