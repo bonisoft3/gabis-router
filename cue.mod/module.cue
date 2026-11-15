@@ -20,7 +20,7 @@ deps: {
 		default: true
 	}
 	"github.com/bonisoft3/mecha@v0": {
-		v:       "v0.23.1"
+		v:       "v0.23.2"
 		default: true
 	}
 	"github.com/bonisoft3/omnishell@v0": {
@@ -28,7 +28,7 @@ deps: {
 		default: true
 	}
 	"github.com/bonisoft3/pronto@v1": {
-		v:       "v1.2.1"
+		v:       "v1.2.3"
 		default: true
 	}
 	"github.com/bonisoft3/sayt@v0": {
