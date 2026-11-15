@@ -70,6 +70,8 @@ spacing:
   md: "12px"
   lg: "16px"
   xl: "24px"
+shell:
+  nav: "topbar"
 ---
 
 # Cartographic workbench for urban and touring cyclists

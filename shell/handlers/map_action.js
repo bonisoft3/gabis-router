@@ -53,7 +53,7 @@ const closestLegInsertIndex = (waypoints, lon, lat) => {
   return bestIdx;
 };
 
-(state, event) => {
+({ context, event }) => {
   if (event.type !== "map_action") return { updates: [] };
   const detail = event.detail ?? {};
   const kind = String(detail.action ?? detail.kind ?? "");
@@ -62,9 +62,9 @@ const closestLegInsertIndex = (waypoints, lon, lat) => {
   const idx = Number(detail.index ?? detail.id ?? -1);
   const customLabel = String(detail.label ?? "").trim();
 
-  const planner = (state.rows.planner_state ?? [])[0];
+  const planner = (context.rows.planner_state ?? [])[0];
   if (!planner) return { updates: [] };
-  const slots = state.rows.route_slot ?? [];
+  const slots = context.rows.route_slot ?? [];
 
   const waypoints = [...safeParse(planner.waypoints_json, [])];
   const avoids = [...safeParse(planner.avoids_json, [])];

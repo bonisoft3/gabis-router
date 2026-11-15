@@ -2,7 +2,12 @@ import { assertEquals } from "jsr:@std/assert@1";
 
 const loadHandler = (path: string) => {
   const src = Deno.readTextFileSync(path);
-  return (0, eval)(src);
+  // The assertions below state a leaf's world and its event side by side;
+  // the leaf itself takes them as XState's one argument.
+  const leaf = (0, eval)(src);
+  if (!path.includes("/handlers/")) return leaf;
+  // deno-lint-ignore no-explicit-any
+  return (state: any, event?: any, ...rest: any[]) => leaf({ context: state, event }, ...rest);
 };
 
 Deno.test("is_key guard matches exact key", () => {

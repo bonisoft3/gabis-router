@@ -87,16 +87,16 @@ const buildRequestKey = (planner, slots, overrides = {}) => {
   });
 };
 
-(state, event) => {
-  const planner = (state.rows.planner_state ?? [])[0];
+({ context, event }) => {
+  const planner = (context.rows.planner_state ?? [])[0];
   if (!planner) return { updates: [] };
-  const slots = state.rows.route_slot ?? [];
+  const slots = context.rows.route_slot ?? [];
   const from = String(event.from ?? "");
   const rowId = String(event.id ?? "");
 
   // 1. PlaceSuggestion item clicked -> append as waypoint
   if (/^s[0-4]$/.test(rowId) && event.type === "click") {
-    const sug = (state.rows.place_suggestion ?? []).find((s) => s.id === rowId);
+    const sug = (context.rows.place_suggestion ?? []).find((s) => s.id === rowId);
     if (!sug) return { updates: [] };
     const lon = Number(Number(sug.longitude).toFixed(5));
     const lat = Number(Number(sug.latitude).toFixed(5));
@@ -344,7 +344,7 @@ const buildRequestKey = (planner, slots, overrides = {}) => {
     if (!targetSlot) return { updates: [] };
     const parsedBrk = safeParse(targetSlot.breakdown_json, {});
     const parsedEle = safeParse(targetSlot.elevation_json, []);
-    const device = (state.rows.device ?? [])[0];
+    const device = (context.rows.device ?? [])[0];
     const units = device?.units === "imperial" ? "imperial" : "metric";
     const request_key = buildRequestKey(planner, slots, { active: slotIdx });
 

@@ -7,19 +7,19 @@ const placeOf = (column) => {
   return Object.fromEntries(FIELDS.map((f, i) => [f, cells[i] ?? ""]));
 };
 
-(state, event) => {
+({ context, event }) => {
   if (event.type !== "found") return { updates: [] };
   const { kind, q, lang } = event.detail ?? {};
   if (kind !== "search" || !q) return { updates: [] };
-  const planner = (state.rows.planner_state ?? [])[0];
+  const planner = (context.rows.planner_state ?? [])[0];
   if (!planner || planner.search_q !== q) return { updates: [] };
-  const answer = (state.rows.place_answer ?? []).find((a) => a.kind === "search" && a.q === q && a.lang === lang);
+  const answer = (context.rows.place_answer ?? []).find((a) => a.kind === "search" && a.q === q && a.lang === lang);
   if (!answer) return { updates: [] };
   const places = [answer.p0, answer.p1, answer.p2, answer.p3, answer.p4]
     .filter((p) => typeof p === "string" && p !== "")
     .map(placeOf)
     .filter((p) => p.latitude !== "" && p.longitude !== "");
-  const shown = new Set((state.rows.place_suggestion ?? []).map((s) => s.id));
+  const shown = new Set((context.rows.place_suggestion ?? []).map((s) => s.id));
   return {
     updates: SEARCH_IDS.flatMap((id, i) =>
       i < places.length

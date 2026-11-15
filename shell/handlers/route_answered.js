@@ -47,17 +47,17 @@ const formatEle = (meters, units) => {
   return `${m} m`;
 };
 
-(state, event) => {
+({ context, event }) => {
   if (event.type !== "routed" && event.type !== "mutation") return { updates: [] };
-  const planner = (state.rows.planner_state ?? [])[0];
+  const planner = (context.rows.planner_state ?? [])[0];
   if (!planner) return { updates: [] };
 
-  const device = (state.rows.device ?? [])[0];
+  const device = (context.rows.device ?? [])[0];
   const units = device?.units === "imperial" ? "imperial" : "metric";
   const activeSlot = Number(planner.active_slot ?? 0);
 
   if (event.type === "mutation") {
-    const existingSlots = state.rows.route_slot ?? [];
+    const existingSlots = context.rows.route_slot ?? [];
     if (existingSlots.length === 0) return { updates: [] };
     const curSlot = existingSlots.find((s) => s.slot_index === activeSlot || s.id === `slot-${activeSlot}`) ?? existingSlots[0];
     const wantActiveDist = formatDist(curSlot.distance_m, units);
@@ -111,7 +111,7 @@ const formatEle = (meters, units) => {
   const requestKey = event.detail?.request_key ?? "";
   if (!requestKey || planner.request_key !== requestKey) return { updates: [] };
 
-  const answer = (state.rows.route_answer ?? []).find((a) => a.request_key === requestKey) ?? event.detail;
+  const answer = (context.rows.route_answer ?? []).find((a) => a.request_key === requestKey) ?? event.detail;
   if (!answer || !answer.slot_0_json) return { updates: [] };
 
   const rawSlots = [
@@ -124,7 +124,7 @@ const formatEle = (meters, units) => {
 
   for (let i = 0; i < 3; i++) {
     const id = SLOT_IDS[i];
-    const existing = (state.rows.route_slot ?? []).find((r) => r.id === id);
+    const existing = (context.rows.route_slot ?? []).find((r) => r.id === id);
     const s = rawSlots[i];
     const profile = s?.profile || existing?.profile || (i === 0 ? "gabis-fast-city" : i === 1 ? "gabis-safe-road" : "gabis-lite-gravel");
     const altIdx = Number(s?.alt ?? existing?.alt ?? 0);
@@ -178,7 +178,7 @@ const formatEle = (meters, units) => {
     : (planner.inspect_summary || "Right-click map -> Inspect road segment to view OSM tags and cost factors.");
 
   const bundlesMap = safeParse(answer.offline_json, {});
-  for (const existingBundle of state.rows.offline_bundle ?? []) {
+  for (const existingBundle of context.rows.offline_bundle ?? []) {
     const updated = bundlesMap[existingBundle.id];
     if (updated) {
       const nextStatus = updated.status === "error" ? "error" : "installed";

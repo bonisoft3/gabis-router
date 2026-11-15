@@ -65,7 +65,7 @@ _irNotes: {
 _deriving: *false | bool @tag(derive,type=bool)
 
 if !_deriving {
-	code: meta: decisions: [Id=string]: note: _irNotes[Id]
+	code: meta: decisions: [string]~(Id,_): note: _irNotes[Id]
 }
 
 _irAccepts: {
@@ -80,7 +80,7 @@ _irAccepts: {
 }
 
 if !_deriving {
-	code: meta: tests: [Id=string]: accepts: _irAccepts[Id]
+	code: meta: tests: [string]~(Id,_): accepts: _irAccepts[Id]
 }
 
 code: meta: ladder: ["ir/neighbourhood-app.svg","ir/neighbourhood-router.svg","journal/2026-11-11-oracle-street-routing-and-waypoint-editing.png","journal/2026-11-11-sprint-1-london-route.png","journal/2026-11-11-sprint-2-slot-comparison.png","journal/2026-11-11-sprint-3-custom-brf-studio.png","journal/2026-11-11-sprint-4-offline-and-ptbr.png","journal/2026-11-11-sprint-6-breakdowns-pmtiles-offline.png"]
