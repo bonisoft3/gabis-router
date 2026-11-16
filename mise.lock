@@ -98,57 +98,57 @@ url = "https://github.com/bonisoft3/bayt/releases/download/v0.72.3/bayt-windows-
 url_api = "https://api.github.com/repos/bonisoft3/bayt/releases/assets/749426884"
 
 [[tools."github:bonisoft3/mecha"]]
-version = "0.23.3"
+version = "0.24.0"
 backend = "github:bonisoft3/mecha"
-specifiers = ["0.23.3"]
+specifiers = ["0.24.0"]
 
 [tools."github:bonisoft3/mecha"."platforms.linux-arm64"]
-checksum = "sha256:a765785861128ac6cd3f5090601b83d7a043dce662997eb58d2eb656ff27e63e"
+checksum = "sha256:cabff2811d9804507ba8ff950b58f3b1a9dc332207c17cba95f7af45b59dfe67"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/mecha/releases/download/v0.23.3/mecha-linux-arm64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/751570461"
+url = "https://github.com/bonisoft3/mecha/releases/download/v0.24.0/mecha-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/755236707"
 
 [tools."github:bonisoft3/mecha"."platforms.linux-arm64-musl"]
-checksum = "sha256:a765785861128ac6cd3f5090601b83d7a043dce662997eb58d2eb656ff27e63e"
+checksum = "sha256:cabff2811d9804507ba8ff950b58f3b1a9dc332207c17cba95f7af45b59dfe67"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/mecha/releases/download/v0.23.3/mecha-linux-arm64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/751570461"
+url = "https://github.com/bonisoft3/mecha/releases/download/v0.24.0/mecha-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/755236707"
 
 [tools."github:bonisoft3/mecha"."platforms.linux-x64"]
-checksum = "sha256:a765785861128ac6cd3f5090601b83d7a043dce662997eb58d2eb656ff27e63e"
+checksum = "sha256:cabff2811d9804507ba8ff950b58f3b1a9dc332207c17cba95f7af45b59dfe67"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/mecha/releases/download/v0.23.3/mecha-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/751570467"
+url = "https://github.com/bonisoft3/mecha/releases/download/v0.24.0/mecha-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/755236705"
 
 [tools."github:bonisoft3/mecha"."platforms.linux-x64-musl"]
-checksum = "sha256:a765785861128ac6cd3f5090601b83d7a043dce662997eb58d2eb656ff27e63e"
+checksum = "sha256:cabff2811d9804507ba8ff950b58f3b1a9dc332207c17cba95f7af45b59dfe67"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/mecha/releases/download/v0.23.3/mecha-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/751570467"
+url = "https://github.com/bonisoft3/mecha/releases/download/v0.24.0/mecha-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/755236705"
 
 [tools."github:bonisoft3/mecha"."platforms.macos-arm64"]
-checksum = "sha256:a765785861128ac6cd3f5090601b83d7a043dce662997eb58d2eb656ff27e63e"
+checksum = "sha256:cabff2811d9804507ba8ff950b58f3b1a9dc332207c17cba95f7af45b59dfe67"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/mecha/releases/download/v0.23.3/mecha-macos-arm64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/751570465"
+url = "https://github.com/bonisoft3/mecha/releases/download/v0.24.0/mecha-macos-arm64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/755236702"
 
 [tools."github:bonisoft3/mecha"."platforms.macos-x64"]
-checksum = "sha256:a765785861128ac6cd3f5090601b83d7a043dce662997eb58d2eb656ff27e63e"
+checksum = "sha256:cabff2811d9804507ba8ff950b58f3b1a9dc332207c17cba95f7af45b59dfe67"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/mecha/releases/download/v0.23.3/mecha-macos-x64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/751570463"
+url = "https://github.com/bonisoft3/mecha/releases/download/v0.24.0/mecha-macos-x64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/755236719"
 
 [tools."github:bonisoft3/mecha"."platforms.windows-arm64"]
-checksum = "sha256:a765785861128ac6cd3f5090601b83d7a043dce662997eb58d2eb656ff27e63e"
+checksum = "sha256:cabff2811d9804507ba8ff950b58f3b1a9dc332207c17cba95f7af45b59dfe67"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/mecha/releases/download/v0.23.3/mecha-windows-arm64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/751570462"
+url = "https://github.com/bonisoft3/mecha/releases/download/v0.24.0/mecha-windows-arm64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/755236696"
 
 [tools."github:bonisoft3/mecha"."platforms.windows-x64"]
-checksum = "sha256:a765785861128ac6cd3f5090601b83d7a043dce662997eb58d2eb656ff27e63e"
+checksum = "sha256:cabff2811d9804507ba8ff950b58f3b1a9dc332207c17cba95f7af45b59dfe67"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/mecha/releases/download/v0.23.3/mecha-windows-x64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/751570464"
+url = "https://github.com/bonisoft3/mecha/releases/download/v0.24.0/mecha-windows-x64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/mecha/releases/assets/755236697"
 
 [[tools."github:bonisoft3/omnishell"]]
 version = "0.24.1"
@@ -204,57 +204,57 @@ url = "https://github.com/bonisoft3/omnishell/releases/download/v0.24.1/omnishel
 url_api = "https://api.github.com/repos/bonisoft3/omnishell/releases/assets/751534847"
 
 [[tools."github:bonisoft3/pronto"]]
-version = "1.2.6"
+version = "1.3.0"
 backend = "github:bonisoft3/pronto"
-specifiers = ["1.2.6"]
+specifiers = ["1.3.0"]
 
 [tools."github:bonisoft3/pronto"."platforms.linux-arm64"]
-checksum = "sha256:4b805b2a0d543f0cef76f1b1cc16c67bf6d5dcc8aa8d8745c52462a6f310185b"
+checksum = "sha256:c83bbf5712faaebb66b5cb0720aa7df5bf1a53eb7e5a05c5ac6eee65600fa866"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/pronto/releases/download/v1.2.6/pronto-linux-arm64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/751651616"
+url = "https://github.com/bonisoft3/pronto/releases/download/v1.3.0/pronto-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/755324724"
 
 [tools."github:bonisoft3/pronto"."platforms.linux-arm64-musl"]
-checksum = "sha256:4b805b2a0d543f0cef76f1b1cc16c67bf6d5dcc8aa8d8745c52462a6f310185b"
+checksum = "sha256:c83bbf5712faaebb66b5cb0720aa7df5bf1a53eb7e5a05c5ac6eee65600fa866"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/pronto/releases/download/v1.2.6/pronto-linux-arm64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/751651616"
+url = "https://github.com/bonisoft3/pronto/releases/download/v1.3.0/pronto-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/755324724"
 
 [tools."github:bonisoft3/pronto"."platforms.linux-x64"]
-checksum = "sha256:4b805b2a0d543f0cef76f1b1cc16c67bf6d5dcc8aa8d8745c52462a6f310185b"
+checksum = "sha256:c83bbf5712faaebb66b5cb0720aa7df5bf1a53eb7e5a05c5ac6eee65600fa866"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/pronto/releases/download/v1.2.6/pronto-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/751651611"
+url = "https://github.com/bonisoft3/pronto/releases/download/v1.3.0/pronto-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/755324725"
 
 [tools."github:bonisoft3/pronto"."platforms.linux-x64-musl"]
-checksum = "sha256:4b805b2a0d543f0cef76f1b1cc16c67bf6d5dcc8aa8d8745c52462a6f310185b"
+checksum = "sha256:c83bbf5712faaebb66b5cb0720aa7df5bf1a53eb7e5a05c5ac6eee65600fa866"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/pronto/releases/download/v1.2.6/pronto-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/751651611"
+url = "https://github.com/bonisoft3/pronto/releases/download/v1.3.0/pronto-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/755324725"
 
 [tools."github:bonisoft3/pronto"."platforms.macos-arm64"]
-checksum = "sha256:4b805b2a0d543f0cef76f1b1cc16c67bf6d5dcc8aa8d8745c52462a6f310185b"
+checksum = "sha256:c83bbf5712faaebb66b5cb0720aa7df5bf1a53eb7e5a05c5ac6eee65600fa866"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/pronto/releases/download/v1.2.6/pronto-macos-arm64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/751651614"
+url = "https://github.com/bonisoft3/pronto/releases/download/v1.3.0/pronto-macos-arm64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/755324720"
 
 [tools."github:bonisoft3/pronto"."platforms.macos-x64"]
-checksum = "sha256:4b805b2a0d543f0cef76f1b1cc16c67bf6d5dcc8aa8d8745c52462a6f310185b"
+checksum = "sha256:c83bbf5712faaebb66b5cb0720aa7df5bf1a53eb7e5a05c5ac6eee65600fa866"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/pronto/releases/download/v1.2.6/pronto-macos-x64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/751651608"
+url = "https://github.com/bonisoft3/pronto/releases/download/v1.3.0/pronto-macos-x64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/755324721"
 
 [tools."github:bonisoft3/pronto"."platforms.windows-arm64"]
-checksum = "sha256:4b805b2a0d543f0cef76f1b1cc16c67bf6d5dcc8aa8d8745c52462a6f310185b"
+checksum = "sha256:c83bbf5712faaebb66b5cb0720aa7df5bf1a53eb7e5a05c5ac6eee65600fa866"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/pronto/releases/download/v1.2.6/pronto-windows-arm64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/751651612"
+url = "https://github.com/bonisoft3/pronto/releases/download/v1.3.0/pronto-windows-arm64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/755324713"
 
 [tools."github:bonisoft3/pronto"."platforms.windows-x64"]
-checksum = "sha256:4b805b2a0d543f0cef76f1b1cc16c67bf6d5dcc8aa8d8745c52462a6f310185b"
+checksum = "sha256:c83bbf5712faaebb66b5cb0720aa7df5bf1a53eb7e5a05c5ac6eee65600fa866"
 checksum_source = "mise-versions"
-url = "https://github.com/bonisoft3/pronto/releases/download/v1.2.6/pronto-windows-x64.tar.gz"
-url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/751651606"
+url = "https://github.com/bonisoft3/pronto/releases/download/v1.3.0/pronto-windows-x64.tar.gz"
+url_api = "https://api.github.com/repos/bonisoft3/pronto/releases/assets/755324712"
 
 [[tools."github:bonisoft3/sayt"]]
 version = "0.49.1"
