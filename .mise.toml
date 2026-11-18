@@ -16,10 +16,10 @@ slsa = false
 
 [tools]
 'github:FiloSottile/mkcert' = 'v1.4.4'
-'github:bonisoft3/bayt' = '0.72.4'
-'github:bonisoft3/mecha' = '0.25.1'
-'github:bonisoft3/omnishell' = '0.25.0'
-'github:bonisoft3/pronto' = '1.4.2'
+'github:bonisoft3/bayt' = '0.73.0'
+'github:bonisoft3/mecha' = '0.25.2'
+'github:bonisoft3/omnishell' = '0.25.1'
+'github:bonisoft3/pronto' = '1.4.4'
 'github:bonisoft3/sayt' = '0.49.1'
 'github:bufbuild/buf' = '1.74.0'
 'github:caddyserver/caddy' = '2.11.7'
