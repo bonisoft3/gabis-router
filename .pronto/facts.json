@@ -30,14 +30,14 @@
   ],
   "artifact": [
     {"path":"program.cue","sha256":"ee3bab736ca08c5b29457e369cc82b40bdc524414265089eeaca8dab48ea0207","derived":false},
-    {"path":"DESIGN.md","sha256":"e0ba9c4eaeadcd89afd759a33ef0a1ba4b150fcea4a3330dfe36bb858032bc9a","derived":false},
+    {"path":"DESIGN.md","sha256":"13351eb3fc32c5acef817882368c3d73fe074152f5883564cfce3feb016d989b","derived":false},
     {"path":"ir.html","sha256":"191610b851247e55d316f224ecd968a3aa4bdbcffdfc76f987debef94674b63d","derived":false},
     {"path":"acceptance.md","sha256":"4dff9db716dd62d57a4ee6c5e093e02bfae984400400c28acdb241467bb75403","derived":false},
     {"path":".pronto/cel.json","sha256":"afab263fefc19e057170a1346b88367de383f339e2c26b04b97ee5e6b8beb576","derived":true},
     {"path":"program_cel.cue","sha256":"af8ef4b0f304d73d1707d5ddf48223c0b96a03337f4bb0d292c19046d509e58e","derived":true},
     {"path":"program_derived.cue","sha256":"61c1209cd2c8d1708a9a1dfa15d0fbf80875eff58e40e472a6c7d8f6c1d7406e","derived":true},
     {"path":"shell/screens/router.css","sha256":"6bda5c5dfa29cf34f101ddfea4cf341941cb2fc3ebc8432488a3271465bced7b","derived":false},
-    {"path":"shell/design.css","sha256":"586b46468a5d688ecafbdef2a8e0f5f57f2f81c6c840aef3ebc30b8058ed238c","derived":true}
+    {"path":"shell/design.css","sha256":"16b98a90206166559e6730665b298fb337cf7d0e6a1ebdda90ac787a0bad7510","derived":true}
   ],
   "cel_ir": [
     {"cel":"this == 'device'"},
@@ -1822,6 +1822,9 @@
     {"file":"robots.txt","target":"/srv/robots.txt"},
     {"file":"sitemap.xml","target":"/srv/sitemap.xml"},
     {"file":"shell/favicon.svg","target":"/srv/shell/favicon.svg"}
+  ],
+  "shell_chrome": [
+    {"nav":"none","branded":false,"strip_routes":0,"has_auth":false}
   ],
   "template_msg_ref": [
     {"screen":"router","path":"shell/screens/router.html","key":"app_title"},

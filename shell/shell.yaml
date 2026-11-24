@@ -209,6 +209,7 @@ local:
   place_answer: tab
   place_suggestion: tab
   offline_bundle: tab
+nav: none
 seed:
   planner_state:
     - id: planner
