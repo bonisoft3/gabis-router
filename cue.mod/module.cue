@@ -20,7 +20,7 @@ deps: {
 		default: true
 	}
 	"github.com/bonisoft3/mecha@v0": {
-		v:       "v0.35.0"
+		v:       "v0.35.1"
 		default: true
 	}
 	"github.com/bonisoft3/omnishell@v0": {
