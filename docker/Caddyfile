@@ -123,7 +123,8 @@
 # this file from plugins/pronto/resilience.
 (app) {
   @terminal not path /docs/* /shell/units/router-map/index.html /shell/units/router-map/vendor/maplibre-gl.css /shell/units/router-map/vendor/maplibre-gl.js /shell/units/router-map/vendor/pmtiles.js
-  header @terminal Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' {$PRONTO_RELEASE_SCRIPTS} 'unsafe-eval' 'inline-speculation-rules' https://cdn.jsdelivr.net/npm/babylonjs@7.54.3/ https://cdn.jsdelivr.net/npm/babylonjs@9.31.0/ https://cdn.jsdelivr.net/npm/babylonjs-loaders@9.31.0/; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://nominatim.openstreetmap.org https://tiles.openfreemap.org https://tiles.surita.dev; img-src 'self' data: blob: https://a.tile-cyclosm.openstreetmap.fr https://tile.openstreetmap.org; font-src 'self' data:; media-src 'self' blob:; frame-src 'self'; worker-src 'self' blob:; form-action 'self'; require-trusted-types-for 'script'; trusted-types omnishell-markup omnishell-url default"
+  header @terminal Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' {$PRONTO_RELEASE_SCRIPTS} 'unsafe-eval' 'inline-speculation-rules' https://cdn.jsdelivr.net/npm/babylonjs@7.54.3/ https://cdn.jsdelivr.net/npm/babylonjs@9.31.0/ https://cdn.jsdelivr.net/npm/babylonjs-loaders@9.31.0/; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://nominatim.openstreetmap.org https://tiles.openfreemap.org https://tiles.surita.dev; img-src 'self' data: blob: https://a.tile-cyclosm.openstreetmap.fr https://tile.openstreetmap.org; font-src 'self' data:; media-src 'self' blob:; frame-src 'self'; worker-src 'self' blob:; form-action 'self'; require-trusted-types-for 'script'; trusted-types omnishell-markup omnishell-url default; frame-ancestors 'none'"
+  header @terminal X-Frame-Options "DENY"
   @ladder path /docs/*
   header @ladder Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://cdn.jsdelivr.net/npm/marked@16.4.2/lib/marked.umd.js 'sha256-6ZoE2MzsuJRzSNxFVn9sEGmwr4upjZH423uYzEEtajk='; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'self'"
   @realm path /shell/units/router-map/index.html /shell/units/router-map/vendor/maplibre-gl.css /shell/units/router-map/vendor/maplibre-gl.js /shell/units/router-map/vendor/pmtiles.js
@@ -146,7 +147,16 @@
   # gateway's), and every upstream is sent the span's own; the access log names
   # its traceID. The exporter reads the standard OTEL_* environment.
   import tracing-{$PRONTO_TRACING:off}
-  log
+  log {
+    format filter {
+      wrap json
+      fields {
+        request>uri regexp "\?.*" ""
+        request>headers>Referer regexp "\?.*" ""
+        resp_headers>Location regexp "\?.*" ""
+      }
+    }
+  }
   # The origin every absolute address the app answers is spelled against,
   # read by a template as `http.vars.origin`. The deployment's, never the
   # request's: this door answers any Host (mecha's docs/proxy.md, "The origin").
