@@ -37,7 +37,7 @@
     {"path":"program_cel.cue","sha256":"af8ef4b0f304d73d1707d5ddf48223c0b96a03337f4bb0d292c19046d509e58e","derived":true},
     {"path":"program_derived.cue","sha256":"61c1209cd2c8d1708a9a1dfa15d0fbf80875eff58e40e472a6c7d8f6c1d7406e","derived":true},
     {"path":"shell/screens/router.css","sha256":"6bda5c5dfa29cf34f101ddfea4cf341941cb2fc3ebc8432488a3271465bced7b","derived":false},
-    {"path":"shell/design.css","sha256":"16b98a90206166559e6730665b298fb337cf7d0e6a1ebdda90ac787a0bad7510","derived":true}
+    {"path":"shell/design.css","sha256":"717110952a4ba011b2ffa15b6fbb16c6b3c329bc8d9ea371f43b66e56f312b45","derived":true}
   ],
   "cel_ir": [
     {"cel":"this == 'device'"},
